@@ -1,7 +1,11 @@
 {
   "name": "@run-dom/jsdom",
   "version": "0.0.1",
-  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BarakChamo/rundom.git",
+    "directory": "packages/jsdom"
+  },
   "files": [
     "dist",
     "src/jsdom-idl-utils.cjs",
@@ -20,6 +24,9 @@
       }
     },
     "./lib/generated/idl/utils.js": "./src/jsdom-idl-utils.cjs"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "bun build src/jsdom.ts --target=node --format=cjs --outfile=dist/jsdom-implementation.cjs --packages=external --define import.meta.url=RUN_DOM_MODULE_URL --banner 'const RUN_DOM_MODULE_URL = require(\"node:url\").pathToFileURL(__filename).href;' && cp src/entry.cjs dist/jsdom.cjs && cp src/entry.mjs dist/jsdom.js && bun build src/synchronous-http-worker.ts --target=node --format=cjs --outfile=dist/synchronous-http-worker.cjs --packages=external --define import.meta.url=RUN_DOM_MODULE_URL --banner 'const RUN_DOM_MODULE_URL = require(\"node:url\").pathToFileURL(__filename).href;' && node scripts/build-types.mjs",

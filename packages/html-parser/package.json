@@ -1,7 +1,11 @@
 {
   "name": "@run-dom/html-parser",
   "version": "0.0.1",
-  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BarakChamo/rundom.git",
+    "directory": "packages/html-parser"
+  },
   "files": [
     "dist",
     "native",
@@ -14,6 +18,9 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "node scripts/build.mjs",

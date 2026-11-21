@@ -1,7 +1,11 @@
 {
   "name": "@run-dom/dom",
   "version": "0.0.1",
-  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BarakChamo/rundom.git",
+    "directory": "packages/dom"
+  },
   "files": [
     "dist",
     "src",
@@ -14,6 +18,9 @@
       "import": "./dist/window.js",
       "require": "./dist/window.cjs"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "bun scripts/build-css-runtime.mjs && bun build src/window.ts --target=node --format=esm --outfile=dist/window.js --packages=external && bun build src/window.ts --target=node --format=cjs --outdir=dist --entry-naming=window-implementation.cjs --minify-whitespace --minify-syntax --sourcemap=linked --define import.meta.url=RUN_DOM_MODULE_URL --banner 'const RUN_DOM_MODULE_URL = require(\"node:url\").pathToFileURL(__filename).href;' && node scripts/build-window-cache.mjs",
