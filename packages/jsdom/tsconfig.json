@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["src", "test"],
+  "compilerOptions": {
+    "paths": {
+      "@run-dom/jsdom": ["./src/jsdom.ts"]
+    }
+  }
+}

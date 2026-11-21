@@ -1,0 +1,57 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "globalDependencies": ["tsconfig.json"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build", "^typecheck"]
+    },
+    "lint": {},
+    "test": {
+      "dependsOn": ["build"]
+    },
+    "@run-dom/rust#build": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/Cargo.*", "$TURBO_ROOT$/rust-toolchain.toml"],
+      "cache": false
+    },
+    "@run-dom/rust#lint": {
+      "cache": false
+    },
+    "@run-dom/rust#test": {
+      "cache": false,
+      "dependsOn": []
+    },
+    "@run-dom/html-parser#build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/Cargo.*",
+        "$TURBO_ROOT$/rust-toolchain.toml",
+        "$TURBO_ROOT$/crates/**"
+      ],
+      "outputs": ["dist/**", "native/**"],
+      "cache": false
+    },
+    "@run-dom/html-parser#lint": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/Cargo.*",
+        "$TURBO_ROOT$/rust-toolchain.toml",
+        "$TURBO_ROOT$/crates/**"
+      ],
+      "cache": false
+    },
+    "@run-dom/html-parser#test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/Cargo.*",
+        "$TURBO_ROOT$/rust-toolchain.toml",
+        "$TURBO_ROOT$/crates/**"
+      ],
+      "cache": false,
+      "dependsOn": ["build"]
+    }
+  }
+}

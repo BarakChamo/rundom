@@ -1,0 +1,113 @@
+# 07 Repository Conventions
+
+The repo shape is part of the contract: never invent a new structure when an existing package family
+fits. These rules assume a workspace monorepo; the project guide names the namespace, stack, and
+paths.
+
+## 7.1 Workspace Families
+
+- `apps/*`: private deployed entrypoints.
+- `packages/*`: public or potentially publishable reusable capabilities.
+- `libs/*`: private internal reusable utilities.
+
+These family names are rule vocabulary; a project guide may map differently named directories onto
+them.
+
+All workspaces share one package namespace, uncoupled from product, deployment, or repository names
+(the project guide names it); product names live in prose and executables, not import paths.
+
+Implementation lives under the workspace's source root. Inter-workspace APIs are the manifest's
+explicitly declared exports pointing to cohesive source modules (the profile names the mechanism); broad root barrels are prohibited — a root export fits only a package that
+is one small cohesive contract.
+
+## 7.2 Boundaries
+
+- Import other workspaces only through public exports — never their internals.
+- Cross-package imports use installed workspace names; package-internal references may use the
+  ecosystem's internal-alias mechanism (the profile names it).
+- Apps compose packages and libs; packages depend on other packages' public APIs; libs never depend
+  on apps.
+- Provider adapters isolate SDKs and quirks inside the owning package.
+
+The project guide records the exact permitted directions and their enforcement.
+
+## 7.3 Public API Discipline
+
+The manifest's declared exports define the public API — which in a monorepo also means inter-workspace APIs,
+exported schemas, CLI/API contracts, adapter capabilities, and persisted artifacts callers rely on.
+Export the smallest useful surface.
+
+Never export internal helpers, intermediate domain models, provider-specific types, or sequencing
+details; every export adds maintenance cost and needs tests and docs. Reserve `@internal` for useful
+test-only exports, not for hiding dead code.
+
+Review signals, not hard gates: a file past ~500 lines (split for ownership and testability; keep
+cohesive schemas, fixtures, and migrations together) and more than ~20 exports from one module
+(split into cohesive subpaths, not a broad aggregator).
+
+## 7.4 Schema Ownership
+
+The package that owns an operation owns its public schema and derived type; callers import the
+schema, never duplicate the shape. Packages are trust boundaries: public package functions parse
+untrusted inputs even when called from another workspace.
+
+## 7.5 Architecture Ownership
+
+The project guide and its architecture notes own repository-specific boundaries and state ownership.
+
+Canonical state is durable and trusted: reviewed config, schemas, public APIs, control files,
+compiled knowledge. Operational state is temporary: caches, sessions, local service state, retry
+markers, cursors. Cleanup may remove operational state when policy allows; it must never silently
+remove canonical state.
+
+Moving canonical ownership, adding a workspace family, introducing storage, or altering public API
+boundaries needs an ADR-level reason and matching docs. Never create a package to group helpers — no
+`date-utils` grab-bags; a package earns existence when an operation like `reconcileInventory(input)`
+hides classification, ordering, cleanup, and recovery policy behind one deep contract, testable and
+versionable on its own.
+
+## 7.6 Shared Primitives
+
+Never reimplement the shared primitives: the result type with its constructors, the invariant
+assertion with its failure type, and branded IDs or schema helpers once implemented. The profile
+fixes their exact names as the required API surface; the project guide names only where they live. A
+domain-specific utility stays local until a second package truly needs it. Changing the primitives
+is an architecture decision.
+
+## 7.7 Type-System Strictness
+
+Enable the profile's non-negotiable strictness settings, and never bypass the type system with the
+escape hatches it forbids. Narrow untyped or dynamically typed values before use, and follow the
+profile's declaration rules that keep strict checking in force across boundaries.
+
+## 7.8 Root Changes
+
+No new dependencies, packages, root-config changes, or build/test/lint behavior changes without
+explicit task scope or an ADR-level reason.
+
+## 7.9 Shared Vocabulary
+
+Consult the project glossary before naming domain APIs or docs; add durable vocabulary there, or
+write an inbox entry when a term needs curation. Any concept touched by two workspaces, commands, or
+docs gets one shared definition — never a parallel name for something the glossary already owns.
+
+## 7.10 Decomposition for Locality
+
+Organize a workspace's interior by capability, not by technical layer. `controllers/`, `services/`
+and `models/` scatter one capability across three directories, so every change is wide and every
+concurrent change overlaps (Rule 15.1). Group by the decision a module hides, which is what makes
+a change local (Parnas).
+
+**The deletion test**: removing a capability should delete one directory and unwire one export. If
+it takes edits across four layers, the boundary is in the wrong place.
+
+Rule 7.2's internal-import ban applies at module granularity too: a sibling capability's
+unpublished files are as off-limits as another workspace's internals. A capability earns *workspace*
+status — not merely directory status — when it needs independent ownership, release, or testing,
+which is also the point at which its boundary becomes machine-enforced rather than conventional.
+
+Expose a family of implementations through one port plus composition at the consumer: the consumer
+wires the implementations it actually uses, so nothing imports them all. Never a broad aggregator
+re-exporting every implementation (Rules 7.1, 7.3) — it pulls every dependency into every consumer
+and turns each addition into an edit of one shared file (Rule 15.2). A hand-maintained registry is a
+recorded deviation with that cost stated.

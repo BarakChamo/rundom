@@ -1,0 +1,12 @@
+# CSS interfaces, initialization and independent tree copies
+
+Reduce the existing >5 ms TurboDOM deficits: first role query on 256 rows (60.512 versus 4.215 ms), and warm full traversal of four 4,096-row documents (20.341 versus 4.639 ms). Keep counts and checks unchanged. No new public APIs, capability restrictions or parser selection changes.
+
+Boundaries: private CSS implementation classes and dispatch metadata, Window-local public declaration views, private bounded copy recipes, and Window binding installation. Preserve fresh public constructors/prototypes/functions, descriptor names/order/flags, foreign receiver ownership, readonly fresh computed snapshots, CSS mutation sequencing, independent mutable tree/Attr records, template contents and document/creation realms. Private state may be shared only when it carries no Window ownership.
+
+1. Pin cross-Window CSS accessor reflection and cached tree topology/namespace examples; inspect and measure the current complete interfaces. Share only private implementation setup, retaining Window-local keyed wrapper subclasses and views. Validate both parser backends.
+2. Generate repetitive private/public CSS accessor scaffolding from pinned dependency metadata at build time. Preserve exact descriptors and runtime implementations; no runtime eval, reduced grammar or hardcoded property subset. Measure public scaffolding and private dispatch initialization independently, then combine only confirmed improvements. Inspect Window binding installation for redundant descriptor passes without changing observable bindings.
+3. Compile tree child counts and positions into recipes, preallocate fresh topology and compare breadth/depth layout. Every public document still owns all records and attributes. Count guards, uncommon node kinds, namespace edits, cloning, adoption and close remain test cases.
+4. Finish builds before serial rotated fresh-process comparisons. First qualify each hypothesis on its canonical target, then parsing/update/style/query/interaction guards and real Vitest tests. Reject noise or material regressions. Only retained frontend changes receive complete default/native API, packed types/Vitest, memory and selected standards replay. Record pending fixtures and existing failures.
+
+Use the previous sealed release as baseline. Work in the existing isolated experimental checkout; original-source hashes protect integration. Preserve packed artifacts, sources, locks and reports while reclaiming only reinstallable inactive dependency folders when disk pressure requires it.

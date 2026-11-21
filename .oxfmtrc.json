@@ -1,0 +1,10 @@
+{
+  "ignorePatterns": [
+    ".agents/**",
+    ".claude/**",
+    ".turbo/**",
+    ".cache/**",
+    "target/**",
+    "**/dist/**"
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "name": "@run-dom/dom",
+  "version": "0.0.1",
+  "private": true,
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/window.ts",
+      "import": "./dist/window.js",
+      "require": "./dist/window.cjs"
+    }
+  },
+  "scripts": {
+    "build": "bun scripts/build-css-runtime.mjs && bun build src/window.ts --target=node --format=esm --outfile=dist/window.js --packages=external && bun build src/window.ts --target=node --format=cjs --outdir=dist --entry-naming=window-implementation.cjs --minify-whitespace --minify-syntax --sourcemap=linked --define import.meta.url=RUN_DOM_MODULE_URL --banner 'const RUN_DOM_MODULE_URL = require(\"node:url\").pathToFileURL(__filename).href;' && node scripts/build-window-cache.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint src test scripts",
+    "test": "node ../../node_modules/vitest/vitest.mjs run"
+  },
+  "dependencies": {
+    "@asamuzakjp/css-color": "7.1.3",
+    "@exodus/bytes": "1.16.0",
+    "@run-dom/html-parser": "workspace:*",
+    "bidi-js": "1.1.0",
+    "css-select": "7.0.0",
+    "css-tree": "3.2.1",
+    "cssstyle": "6.2.0",
+    "html-encoding-sniffer": "7.0.0",
+    "parse5": "8.1.0",
+    "saxes": "6.0.0",
+    "w3c-xmlserializer": "6.0.0",
+    "whatwg-url": "17.2.0",
+    "xpath": "0.0.35"
+  },
+  "devDependencies": {
+    "@types/css-tree": "2.3.11",
+    "esbuild": "0.28.2"
+  }
+}

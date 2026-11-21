@@ -1,0 +1,49 @@
+{
+  "name": "@run-dom/jsdom",
+  "version": "0.0.1",
+  "private": true,
+  "files": [
+    "dist",
+    "src/jsdom-idl-utils.cjs",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/jsdom.d.mts",
+        "default": "./dist/jsdom.js"
+      },
+      "require": {
+        "types": "./dist/jsdom.d.cts",
+        "default": "./dist/jsdom.cjs"
+      }
+    },
+    "./lib/generated/idl/utils.js": "./src/jsdom-idl-utils.cjs"
+  },
+  "scripts": {
+    "build": "bun build src/jsdom.ts --target=node --format=cjs --outfile=dist/jsdom-implementation.cjs --packages=external --define import.meta.url=RUN_DOM_MODULE_URL --banner 'const RUN_DOM_MODULE_URL = require(\"node:url\").pathToFileURL(__filename).href;' && cp src/entry.cjs dist/jsdom.cjs && cp src/entry.mjs dist/jsdom.js && bun build src/synchronous-http-worker.ts --target=node --format=cjs --outfile=dist/synchronous-http-worker.cjs --packages=external --define import.meta.url=RUN_DOM_MODULE_URL --banner 'const RUN_DOM_MODULE_URL = require(\"node:url\").pathToFileURL(__filename).href;' && node scripts/build-types.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p bench/lab/tsconfig.json",
+    "test": "node ../../node_modules/vitest/vitest.mjs run",
+    "lint": "oxlint src test bench scripts",
+    "benchmark": "node bench/smoke.mjs",
+    "benchmark:lab": "node bench/lab/cli.ts"
+  },
+  "dependencies": {
+    "@exodus/bytes": "1.16.0",
+    "@run-dom/dom": "workspace:*",
+    "@types/node": "24.10.1",
+    "html-encoding-sniffer": "7.0.0",
+    "tough-cookie": "6.0.2",
+    "undici": "8.12.1",
+    "whatwg-mimetype": "5.0.0"
+  },
+  "devDependencies": {
+    "@miaskiewicz/turbo-dom": "0.7.1",
+    "@run-dom/html-parser": "workspace:*",
+    "@testing-library/dom": "10.4.2",
+    "happy-dom": "21.0.4",
+    "jsdom": "30.1.3",
+    "zod": "4.6.7"
+  }
+}

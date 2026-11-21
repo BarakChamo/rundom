@@ -1,0 +1,18 @@
+[package]
+name = "run-dom-html-parser"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+run-dom-core = { path = "../dom-core" }
+html5ever = "=0.40.1"
+napi = { version = "=3.16.1", default-features = false, features = ["napi4", "dyn-symbols"] }
+napi-derive = "=3.7.0"
+
+[build-dependencies]
+napi-build = "=2.6.0"

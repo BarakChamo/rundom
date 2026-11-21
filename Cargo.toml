@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/dom-core", "crates/html-parser"]
+resolver = "3"

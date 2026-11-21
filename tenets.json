@@ -1,0 +1,35 @@
+{
+  "guide": "docs/project-guide.md",
+  "profiles": {
+    "typescript": [
+      "*.ts",
+      "**/*.ts",
+      "*.tsx",
+      "**/*.tsx",
+      "*.js",
+      "**/*.js",
+      "*.jsx",
+      "**/*.jsx",
+      "package.json",
+      "tsconfig*.json",
+      "bun.lock",
+      "docs/**",
+      "README.md",
+      "AGENTS.md",
+      "tenets.json"
+    ],
+    "rust": [
+      "crates/**",
+      "*.rs",
+      "**/*.rs",
+      "Cargo.toml",
+      "Cargo.lock",
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      "docs/**",
+      "README.md",
+      "AGENTS.md",
+      "tenets.json"
+    ]
+  }
+}

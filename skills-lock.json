@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "skills": {
+    "tenets": {
+      "source": "barakchamo/tenets",
+      "sourceType": "github",
+      "skillPath": "skills/tenets/SKILL.md",
+      "computedHash": "b699e4da5df6a3e96a4059bdcc3e17789004beda34ee49f3cbe2f361750a19f9"
+    },
+    "tenets-audit": {
+      "source": "barakchamo/tenets",
+      "sourceType": "github",
+      "skillPath": "skills/tenets-audit/SKILL.md",
+      "computedHash": "80c79747dc9806b346473c2a08e33444fdb18bd0b1df7ec2487a17af9a28d97e"
+    },
+    "tenets-check": {
+      "source": "barakchamo/tenets",
+      "sourceType": "github",
+      "skillPath": "skills/tenets-check/SKILL.md",
+      "computedHash": "424efb5c05dc63077d7c8c40b8ac6a6b1f62da0694623f533461a858bc02f340"
+    },
+    "tenets-init": {
+      "source": "barakchamo/tenets",
+      "sourceType": "github",
+      "skillPath": "skills/tenets-init/SKILL.md",
+      "computedHash": "05fd0ab8d57925104ac0e608fc8626110e19d73dad01ef0ba733567abca0aae8"
+    },
+    "tenets-plan": {
+      "source": "barakchamo/tenets",
+      "sourceType": "github",
+      "skillPath": "skills/tenets-plan/SKILL.md",
+      "computedHash": "e5b3aef1f673c48c0a582a0ae5031daa2d2ccf64f06d6e85c751aa6ec6b97bdc"
+    },
+    "tenets-realign": {
+      "source": "barakchamo/tenets",
+      "sourceType": "github",
+      "skillPath": "skills/tenets-realign/SKILL.md",
+      "computedHash": "60b9cd87a6056fe7fd7e43362d6f918f870675a411aae3368f5e0f4ab17b1d85"
+    },
+    "tenets-review": {
+      "source": "barakchamo/tenets",
+      "sourceType": "github",
+      "skillPath": "skills/tenets-review/SKILL.md",
+      "computedHash": "12a1ac1eb3e24c6de5a300c9d621fe04afa4ed8092da0239f27c186a6dfdcdf1"
+    }
+  }
+}

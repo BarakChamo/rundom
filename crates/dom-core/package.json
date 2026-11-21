@@ -1,0 +1,9 @@
+{
+  "name": "@run-dom/rust",
+  "private": true,
+  "scripts": {
+    "build": "cargo build --locked -p run-dom-core",
+    "lint": "cargo fmt --all -- --check && cargo clippy --locked --all-targets -p run-dom-core -- -D warnings",
+    "test": "cargo test --locked -p run-dom-core"
+  }
+}

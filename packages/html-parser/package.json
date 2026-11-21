@@ -1,0 +1,28 @@
+{
+  "name": "@run-dom/html-parser",
+  "version": "0.0.1",
+  "private": true,
+  "files": [
+    "dist",
+    "native",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint src scripts test && cargo clippy --locked --all-targets -p run-dom-html-parser -- -D warnings",
+    "test": "cargo test --locked -p run-dom-html-parser && node ../../node_modules/vitest/vitest.mjs run"
+  },
+  "dependencies": {
+    "neverthrow": "8.2.0",
+    "zod": "4.6.7"
+  }
+}

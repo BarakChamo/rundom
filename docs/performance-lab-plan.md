@@ -1,0 +1,22 @@
+# Performance laboratory batch
+
+The requirement is a repeatable cost model for the complete DOM package, with correctness checked before speed and realistic cold/warm, invalidation and lifetime boundaries. The implementation belongs to `packages/jsdom/bench/lab`; the root script is a command adapter. Production DOM semantics do not change in this batch. The preceding cascade-input change stays separately identified until full corpus qualification.
+
+## Contract
+
+`benchmark:lab prepare` builds and packs the current candidate into independent pinned consumers, records source/artifact/lock/toolchain/fixture identities and installs a resolver guard. `run <cohort> [options]` executes a serial rotated matrix, preserves every trial and capability failure, and writes a machine-readable report plus a readable comparison. `profile` uses Inspector CPU and allocation sampling with source attribution; `memory` uses explicit GC/lifetime checkpoints. Instrumented results are diagnostic and never timing baselines. CLI/file/worker boundaries are schema parsed, dimensions are bounded, child timeouts and failures are explicit. Reusing an output destination is rejected rather than silently overwriting evidence.
+
+Inputs parameterize provider (TypeScript candidate, explicit Rust, jsdom, Happy DOM, TurboDOM), operation count, tree size/depth, live windows, script mode and trial rounds. Providers perform the same operation and pass scenario-specific semantic checks. Unsupported behavior remains a recorded failure. Profiles and results record native selection/fallback counters; Rust speed claims require actual native work. Startup means fresh process/module state, not a flushed OS disk cache.
+
+## Substantial deliverables
+
+1. **Verified workload and report contracts.** Tests first: a no-op cannot pass a write/read workload; identity and event counts are checked; malformed configuration and incomplete/failed trials cannot become comparisons. Cover reads, writes, queries, style reuse/invalidation, events, MutationObserver delivery, parse/fragment/clone/serialization, startup, repeated create/close and multiple live windows. Include an empty-loop control; do not subtract it from results.
+2. **Reproducible timing and lifetime execution.** Pack/install frozen providers; record load/setup/first use/warm batch/cleanup/process times, CPU, GC observations and process memory. Rotate at least nine fresh-process trials for published comparisons, retain batch distributions and raw samples. Memory mode reports before/after forced GC and released references separately; RSS/external/native allocation are not inferred from heapUsed. Keep legacy smoke/framework gates as independently scoped integration evaluations.
+3. **Attribution and experiments.** Separate Inspector CPU and heap-sampling passes, raw DevTools artifacts and function/source summaries. Record lazy dependency loads and sampled GC costs. Explore independent-document worker parallelism separately from serial latency, including startup/transfer overhead. Keep capability reduction, shared metadata, cache policy, compression and native kernels as evidence-ranked experiments; no reduced capability profile may be labeled drop-in.
+4. **Measured baseline and optimization queue.** Run the matrix with frozen artifact hashes after tests/builds stop. Identify dominant costs for cold and warm paths, allocation/retention and scaling. Use end-to-end effect size, repeatability and correctness gates to decide the next implementation. Document regressions and uncertainty, including sample counts, batch-level p95, and profiler limitations. Preserve the previous rig's results without combining different source identities.
+
+## Gates and errors
+
+Owned benchmark contracts exercise real candidate and one external provider; the existing source/type/lint/test gate stays green. Worker nonzero exit, timeout, unsupported API, semantic mismatch and schema failure retain provider/scenario context and never receive a speed ratio. Invariant violations fail loudly. Reports distinguish verified comparisons from diagnostics and failed screens. A final selected full WPT run is required before the new cascade runtime inherits the prior 99.857% claim.
+
+Update root/package command tables, `docs/performance-lab.md`, and project guide routing. No speculative production feature flags, production forced GC, global caching of mutable Windows, or concurrent latency benchmarking.

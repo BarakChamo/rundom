@@ -1,0 +1,33 @@
+{
+  "name": "run-dom",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "crates/dom-core"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "oxfmt",
+    "check": "oxfmt --check && turbo run build typecheck lint test",
+    "conformance:api": "node scripts/jsdom-api.mjs",
+    "conformance:vitest": "node scripts/vitest-alias.mjs",
+    "benchmark": "turbo run build --filter=@run-dom/jsdom >&2 && bun run --cwd packages/jsdom benchmark",
+    "benchmark:framework": "node scripts/benchmark-framework.mjs",
+    "conformance:types": "node scripts/types-alias.mjs",
+    "conformance:native": "node scripts/conformance-native-parser.mjs",
+    "benchmark:lab": "node packages/jsdom/bench/lab/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "oxfmt": "0.76.0",
+    "oxlint": "1.91.0",
+    "turbo": "2.11.10",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  },
+  "packageManager": "bun@1.4.4"
+}
