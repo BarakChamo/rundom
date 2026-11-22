@@ -353,6 +353,14 @@
   ],
   [
     "components/radio/__tests__/radio.test.tsx",
+    "Radio mount and unmount component could be updated and unmounted without errors"
+  ],
+  [
+    "components/radio/__tests__/radio.test.tsx",
+    "Radio mount and unmount component could be updated and unmounted without errors"
+  ],
+  [
+    "components/radio/__tests__/radio.test.tsx",
     "Radio responses hover events"
   ],
   [
