@@ -405,8 +405,8 @@ it("cascades pending shorthand substitutions as individual longhands", () => {
     const target = window.document.querySelector("main");
     if (!target) throw new Error("Expected a styled target");
     const style = window.getComputedStyle(target);
-    expect(style.getPropertyValue("margin-top")).toBe("0");
-    expect(style.getPropertyValue("padding-left")).toBe("0");
+    expect(style.getPropertyValue("margin-top")).toBe("0px");
+    expect(style.getPropertyValue("padding-left")).toBe("0px");
     expect(style.getPropertyValue("border-width")).toBe("2px 2px 2px 8px");
     expect(style.getPropertyValue("border-top-color")).toBe("rgb(0, 0, 255)");
   } finally {

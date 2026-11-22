@@ -1,8 +1,10 @@
 // Parses author stylesheets and resolves declarations against private DOM state.
 import {
+  fontDeclaration,
   longhandDefinition,
   registeredProperty,
   specifiedDeclaration,
+  specifiedMediaQuery,
   type RegisteredProperty,
 } from "./css-reference.js";
 import { ownedString } from "./owned-string.js";
@@ -1053,6 +1055,7 @@ function shorthandLonghands(
     const nested = definitions.get(child)?.longhands;
     if (nested) pending.push(...nested);
   }
+  if (name === "background") visited.add("background-blend-mode");
   const result = [...visited];
   flattenedCSSLonghands.set(name, result);
   return result;
@@ -1189,6 +1192,12 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const requested = requestedStyleWrites.get(this);
       if (requested?.property === property) priority = requested.priority;
       else priority ??= requested?.priority ?? "";
+      if (
+        !this._readonly &&
+        this._values.has("font") &&
+        (property.startsWith("font-") || property === "line-height")
+      )
+        super.removeProperty("font");
       if (typeof value === "string" && value !== "") this.#writeRevision++;
       if (
         value &&
@@ -1271,6 +1280,17 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     override get cssText(): string {
       let text = super.cssText;
+      if (
+        this._values.has("background") &&
+        this._values.get("background-blend-mode") === "normal" &&
+        super.getPropertyPriority("background") ===
+          super.getPropertyPriority("background-blend-mode")
+      )
+        text = text
+          .replace(/(?:^|; )background-blend-mode: normal(?: !important)?;(?= |$)/, (match) =>
+            match.startsWith(";") ? ";" : "",
+          )
+          .trim();
       if (!text) return text;
       // Only a serialized physical border can be replaced in the declaration list below.
       const border = text.includes("border")
@@ -1459,6 +1479,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const longhands =
         name === "outline" ? outlineLonghands : shorthandLonghands(name, propertyDefinitions);
       if (this._readonly) return super.removeProperty(property);
+      if (name.startsWith("background-") && super.getPropertyValue(name))
+        super.removeProperty("background");
       if (!longhands.length && !isPhysicalBorder(name)) return super.removeProperty(property);
       const previous = this.getPropertyValue(name);
       const changed = this._onChange;
@@ -1487,6 +1509,13 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       return this.getPropertyValue(property) ? super.getPropertyPriority("outline-color") : "";
     }
     #specifiedBackground(): string | undefined {
+      const blend = super.getPropertyValue("background-blend-mode");
+      if (
+        blend &&
+        blend !== "normal" &&
+        !/^(?:inherit|initial|unset|revert(?:-layer|-rule)?)$/.test(blend)
+      )
+        return "";
       const names = propertyDefinitions.get("background")?.longhands ?? [];
       const values = names.map((name) => super.getPropertyValue(name));
       const first = values[0];
@@ -1693,7 +1722,9 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       if (property === "font" && this._computed) {
         const style = this.getPropertyValue("font-style");
-        const variant = this.getPropertyValue("font-variant");
+        const caps = this.getPropertyValue("font-variant-caps");
+        const variant = caps === "small-caps" ? caps : this.getPropertyValue("font-variant");
+        const width = fontWidthKeywords.get(this.getPropertyValue("font-width"));
         const weight = this.getPropertyValue("font-weight");
         const lineHeight = this.getPropertyValue("line-height");
         const size = this.getPropertyValue("font-size");
@@ -1702,6 +1733,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           style === "normal" ? "" : style,
           variant === "normal" ? "" : variant,
           weight === "normal" || weight === "400" ? "" : weight,
+          width === "normal" ? "" : width,
           lineHeight === "normal" ? size : `${size} / ${lineHeight}`,
           family,
         ]
@@ -1884,6 +1916,16 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         } else this._setProperty(name, components.join(" "), priority);
         return;
       }
+      if (name === "font" && !/var\(/i.test(value)) {
+        const font = fontDeclaration(value);
+        if (!font) return;
+        this.#removeProperty("font");
+        for (const [child, component] of font.entries) {
+          if (component) this._setProperty(child, component, priority);
+        }
+        this._setProperty("font", font.text, priority);
+        return;
+      }
       if (name === "size") {
         const parsed = parseSizeDeclaration(value);
         if (parsed !== undefined) this._setProperty(name, parsed, priority);
@@ -2012,6 +2054,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         }
         this.#removeProperty("background");
         for (const [child, component] of components) this._setProperty(child, component, priority);
+        this._setProperty("background-blend-mode", "normal", priority);
         // The existing provider serializer reads the complete, canonical longhand block.
         const probe = new Base();
         for (const [child, component] of components) probe._setProperty(child, component, priority);
@@ -2028,7 +2071,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         value &&
         !property.startsWith("--") &&
         !propertyDefinitions.get(name)?.longhands &&
-        (/^(?:position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
+        (/^(?:font-family$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
           name,
         ) ||
           (name.startsWith("grid-template-") && value.includes("calc(")))
@@ -2098,7 +2141,9 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     const getFont = font.get;
     Object.defineProperty(CSSStyleDeclaration.prototype, "font", {
       get(this: BaseDeclaration) {
-        return this._computed ? this.getPropertyValue("font") : Reflect.apply(getFont, this, []);
+        return this._computed
+          ? this.getPropertyValue("font")
+          : (this._values.get("font") ?? Reflect.apply(getFont, this, []));
       },
     });
   }
@@ -2710,7 +2755,17 @@ function createRuleInterfaces(
           "Imports and namespace rules cannot be nested",
           "HierarchyRequestError",
         );
-      if (errors.length || rules.length !== 1 || !entry)
+      let invalid = errors.length !== 0;
+      if (invalid && entry?.kind === "style" && rules.length === 1) {
+        const { parse }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+        try {
+          parse(String(rule), { context: "rule", parseValue: false });
+          invalid = false;
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+        }
+      }
+      if (invalid || rules.length !== 1 || !entry)
         throw new Exception("The rule could not be parsed", "SyntaxError");
       attach(entry, sheet, this);
       group.rules.splice(position, 0, entry);
@@ -3523,25 +3578,25 @@ export function parseMediaQuery(query: string): {
   const render = (node: MediaConditionNode) => generate(node as CssNode);
   const predicates: MediaPredicate[] = [];
   const serialized = mediaQueryMembers(query, css).map((member) => {
-    if (!member) return "not all";
+    if (!member) return member ? specifiedMediaQuery(member) : "not all";
     let item: CssNode;
     try {
       item = parse(member, { context: "mediaQuery" });
     } catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
-      return "not all";
+      return member ? specifiedMediaQuery(member) : "not all";
     }
     if (/resolution\s*:/i.test(member) && /calc\(/i.test(member))
       simplifyResolutionCalculations(item, css);
     const node = item as CssNode & MediaQueryNode;
-    if (node.type !== "MediaQuery") return "not all";
+    if (node.type !== "MediaQuery") return member ? specifiedMediaQuery(member) : "not all";
     const type = node.mediaType?.toLowerCase();
     const modifier = node.modifier?.toLowerCase();
     node.mediaType = type ?? null;
     node.modifier = modifier ?? null;
     const match = node.condition && compileMediaCondition(node.condition, render, !type);
     if ((node.condition && !match) || type === "and" || type === "or" || type === "layer")
-      return "not all";
+      return member ? specifiedMediaQuery(member) : "not all";
     const screen = !type || type === "all" || type === "screen";
     predicates.push((viewport) => {
       const value = screen ? (match ? match(viewport) : true) : false;
@@ -4458,8 +4513,7 @@ function parseSheet(
             condition.layerName = layer.name;
           } else {
             const tail = item.loc ? source.slice(item.loc.start.offset) : generate(item);
-            const queries = parseMediaQuery(tail).queries;
-            condition.media = ["not all", ...queries.slice(1)].join(", ");
+            condition.media = specifiedMediaQuery(tail);
             break;
           }
         }
@@ -5214,6 +5268,8 @@ const fontWidths = new Map([
   ["ultra-expanded", "200%"],
 ]);
 
+const fontWidthKeywords = new Map([...fontWidths].map(([keyword, width]) => [width, keyword]));
+
 /** Owns stylesheets and declarations for a single document. */
 export function createStyles(input: {
   document: Raw.Document;
@@ -5591,7 +5647,17 @@ export function createStyles(input: {
       const { rules } = parsed;
       const errors = parsed.errors.filter((message) => message !== "Colon is expected");
       const entry = rules[0];
-      if (errors.length || rules.length !== 1 || !entry)
+      let invalid = errors.length !== 0;
+      if (invalid && entry?.kind === "style" && rules.length === 1) {
+        const { parse }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+        try {
+          parse(String(rule), { context: "rule", parseValue: false });
+          invalid = false;
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+        }
+      }
+      if (invalid || rules.length !== 1 || !entry)
         throw new input.DOMException("The rule could not be parsed", "SyntaxError");
       if (entry.kind === "import") {
         if (!state.attached)
@@ -5634,12 +5700,15 @@ export function createStyles(input: {
       const sourceOwner = state.owner ?? state.sourceOwner;
       if (entry.kind === "import" && sourceOwner) {
         const base = state.href ?? input.baseURL();
-        loadImportRule(
+        trackImportTree(
           sourceOwner,
-          entry,
-          base,
-          new Set([base]),
-          state.encoding ?? input.documentEncoding(sourceOwner),
+          loadImportRule(
+            sourceOwner,
+            entry,
+            base,
+            new Set([base]),
+            state.encoding ?? input.documentEncoding(sourceOwner),
+          ),
         );
       }
       return position;
@@ -5774,10 +5843,14 @@ export function createStyles(input: {
     base: string,
     ancestors: ReadonlySet<string>,
     encoding: string,
-  ): void {
+  ): Promise<boolean> | undefined {
+    let pending: Promise<boolean>[] | undefined;
     for (const rule of record.rules) {
-      if (rule.kind === "import") loadImportRule(owner, rule, base, ancestors, encoding);
+      if (rule.kind !== "import") continue;
+      const load = loadImportRule(owner, rule, base, ancestors, encoding);
+      if (load) (pending ??= []).push(load);
     }
+    return pending && Promise.all(pending).then((outcomes) => outcomes.every(Boolean));
   }
 
   function loadImportRule(
@@ -5786,7 +5859,7 @@ export function createStyles(input: {
     base: string,
     ancestors: ReadonlySet<string>,
     encoding: string,
-  ): void {
+  ): Promise<boolean> | undefined {
     const url = URL.parse(rule.view.href, base);
     const importedSheet = createAttachedSheet({
       sourceOwner: owner,
@@ -5802,35 +5875,34 @@ export function createStyles(input: {
     if (ancestors.size >= 20 || ancestors.has(url.href)) return;
     if (!input.resourcesEnabled) return;
     const condition = rule.view.supportsText;
-    if (condition !== null && !css().supports(condition)) {
-      input.track(
-        Promise.resolve().then(() => input.importCompleted(owner, "load")),
-        owner,
-      );
-      return;
-    }
-    const pending = input.loadImport(owner, url.href, encoding).then((resource) => {
-      if (resource.status === "aborted") return;
-      if (resource.status === "failed") {
-        input.importCompleted(owner, "error");
-        return;
-      }
-      if (resource.status !== "loaded") return;
+    if (condition !== null && !css().supports(condition)) return Promise.resolve(true);
+    return input.loadImport(owner, url.href, encoding).then((resource) => {
+      if (resource.status !== "loaded") return resource.status !== "aborted";
       sheetState(importedSheet).href = resource.url;
       sheetState(importedSheet).encoding = resource.encoding ?? encoding;
       const imported = populateSheet(importedSheet, resource.code);
       rule.imported = imported;
       reportErrors(imported);
-      loadImports(
-        owner,
-        imported,
-        resource.url,
-        new Set([...ancestors, url.href, resource.url]),
-        resource.encoding ?? encoding,
+      return (
+        loadImports(
+          owner,
+          imported,
+          resource.url,
+          new Set([...ancestors, url.href, resource.url]),
+          resource.encoding ?? encoding,
+        ) ?? true
       );
-      input.importCompleted(owner, "load");
     });
-    input.track(pending, owner);
+  }
+
+  function trackImportTree(owner: Raw.Element, loading: Promise<boolean> | undefined): void {
+    if (loading)
+      input.track(
+        loading.then((completed) => {
+          if (completed && owner.tagName === "style") input.importCompleted(owner, "load");
+        }),
+        owner,
+      );
   }
 
   function applySheet(node: StyleOwner, text: string, base?: string, encoding?: string): Sheet {
@@ -5867,7 +5939,7 @@ export function createStyles(input: {
         : undefined;
     reportErrors(record);
     if (importBase !== undefined)
-      loadImports(node, record, importBase, new Set([importBase]), encoding);
+      trackImportTree(node, loadImports(node, record, importBase, new Set([importBase]), encoding));
     return record.sheet;
   }
 
@@ -6880,7 +6952,7 @@ export function createStyles(input: {
         continue;
       }
       if (name === "font-size" && computedFontSize !== undefined) {
-        result._setProperty(name, `${fontSize}px`, "");
+        result._setProperty(name, `${Number(fontSize.toPrecision(6))}px`, "");
         continue;
       }
       const substituted =
@@ -7087,7 +7159,7 @@ export function createStyles(input: {
     }
     // A shorthand serializer may have rewritten the longhand while storing font.
     if (specifiedFontSize !== undefined && computedFontSize !== undefined)
-      result._setProperty("font-size", `${fontSize}px`, "");
+      result._setProperty("font-size", `${Number(fontSize.toPrecision(6))}px`, "");
     // Finish the target before retaining it: public views must not rewrite color
     // and materialize their shared maps on every getComputedStyle call.
     if (target) setComputedForeground(result, color);

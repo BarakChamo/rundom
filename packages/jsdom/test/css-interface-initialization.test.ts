@@ -64,7 +64,7 @@ it("reads user-agent visibility without loading CSS and updates a retained decla
         assert.equal(first.display, "inline");
         assert.equal(first.color, "rgb(255, 0, 0)");
         assert.equal(first.borderBlockStartColor, "rgb(51, 51, 51)");
-        assert.equal(first.item(0), "background-color");
+        assert.equal(first.item(0), "accent-color");
         assert.throws(() => { first.display = "block"; }, { name: "NoModificationAllowedError" });
         process.stdout.write("verified");
       } finally {

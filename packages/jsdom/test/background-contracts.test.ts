@@ -36,7 +36,7 @@ describe.each([
   });
 
   it.each(["none", complex, "border-box content-box"])(
-    "leaves no stale shorthand after clearing all longhands of %s",
+    "retains the reset-only blend mode after clearing the other components of %s",
     (source) => {
       // Given: background stores no independently surviving declaration after its components are removed.
       const { window: w } = new Constructor();
@@ -45,7 +45,9 @@ describe.each([
         Reflect.set(style, "background", source);
         // When/Then: ordinary IDL setters clear both expanded values and the obsolete shorthand representation.
         for (const name of longhands) Reflect.set(style, `background-${name}`, "");
-        expect(style.length).toBe(0);
+        expect(style.length).toBe(1);
+        expect(style.cssText).toBe("background-blend-mode: normal;");
+        style.removeProperty("background-blend-mode");
         expect(style.cssText).toBe("");
       } finally {
         w.close();

@@ -75,16 +75,19 @@ describe.each([
   });
 
   it.each([
-    "6.25rem calc((100% - 6.25rem) / 1)",
-    "6.25rem 60% calc((40% - 6.25rem) / 2) calc((40% - 6.25rem) / 2)",
-  ])("retains all tracks in %s", (value) => {
+    ["6.25rem calc((100% - 6.25rem) / 1)", "6.25rem calc(100% - 6.25rem)"],
+    [
+      "6.25rem 60% calc((40% - 6.25rem) / 2) calc((40% - 6.25rem) / 2)",
+      "6.25rem 60% calc(20% - 3.125rem) calc(20% - 3.125rem)",
+    ],
+  ] as const)("retains all tracks in %s", (value, expected) => {
     // Given: mixed percentage/font-relative math cannot be reduced without layout context.
     const { window: w } = new Constructor();
     try {
       const style = w.document.createElement("p").style;
       style.setProperty("grid-template-columns", value);
       // When/Then: the complete valid track list survives native grammar validation.
-      expect(style.getPropertyValue("grid-template-columns")).toBe(value);
+      expect(style.getPropertyValue("grid-template-columns")).toBe(expected);
       const original = style.cssText;
       style.setProperty("grid-template-columns", "6rem invalid-track");
       expect(style.cssText).toBe(original);

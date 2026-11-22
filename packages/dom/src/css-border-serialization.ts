@@ -71,6 +71,16 @@ export function serializePhysicalBorder(
       return output;
     }
   }
+  // A complete physical side precedes the intersecting axis in CSSOM shorthand order.
+  for (const side of sides) {
+    const names = parts.map((part) => `border-${side}-${part}`);
+    if (!names.every((name) => components.has(name))) continue;
+    const entries = names.map((name) => read(name));
+    const value = combined(entries);
+    if (!value) continue;
+    output.push({ property: `border-${side}`, value, priority: entries[0]?.priority ?? "" });
+    for (const name of names) components.delete(name);
+  }
   // An independently complete width/style/color axis remains a box shorthand.
   for (const part of parts) {
     const names = sides.map((side) => `border-${side}-${part}`);
@@ -99,7 +109,8 @@ export function serializePhysicalBorder(
     if (image.value && image.priority === priority)
       output.push({ property: "border-image", ...image });
   }
-  return output;
+  // Preserve shorthand order within each importance group.
+  return output.sort((a, b) => Number(!!a.priority) - Number(!!b.priority));
 }
 
 /** Identifies only the physical family; logical borders and border-image longhands remain independent. */

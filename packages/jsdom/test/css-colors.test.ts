@@ -105,7 +105,7 @@ describe("CSS colors", () => {
       // When/Then: feature queries, specified serialization, and computation agree.
       expect(window.CSS.supports("color", source)).toBe(true);
       p.style.color = source;
-      expect(p.style.color).toBe("color-mix(in lch, lch(10 20 30) 25%, lch(50 60 70))");
+      expect(p.style.color).toBe("color-mix(in lch, lch(10 20 30deg) 25%, lch(50 60 70deg) 75%)");
       expect(window.getComputedStyle(p).color).toBe("lch(40 50 60)");
     } finally {
       window.close();

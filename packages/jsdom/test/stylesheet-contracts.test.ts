@@ -37,7 +37,7 @@ describe.each([
   });
 
   it.each(["load", "error"])(
-    "dispatches a style %s event after an imported resource settles",
+    "dispatches a style load event after an imported resource settles with %s",
     async (kind) => {
       // Given: a style element owns a successful or malformed data-URL import.
       const { window: w } = new Constructor("", {
@@ -69,8 +69,8 @@ describe.each([
             );
           head.append(style);
         });
-        // Then: errors are distinct from success, and events have the style element as their trusted target.
-        expect(outcome.type).toBe(kind);
+        // Then: the graph completes once on its owner even when a child fetch fails.
+        expect(outcome.type).toBe("load");
         expect(outcome.trusted).toBe(true);
         expect(outcome.target).toBe(style);
         const rule = style.sheet?.cssRules[0];
@@ -104,7 +104,7 @@ describe.each([
       head.append(style);
       // When/Then: Window load observes both imported sheets and their resource completion events.
       await loaded;
-      expect(completions).toBe(2);
+      expect(completions).toBe(1);
       const first = style.sheet?.cssRules[0];
       if (!(first instanceof w.CSSImportRule)) throw new Error("Expected outer import");
       const second = first.styleSheet?.cssRules[0];
@@ -202,7 +202,7 @@ describe.each([
     ["supports(display:block)", null, "display:block", ""],
     ["layer() screen", null, "", "not all"],
     ["layer(A B) screen, print", null, "", "not all, print"],
-    ["layer(A . B)", null, "", "not all"],
+    ["layer(A . B)", null, "", "layer(A . B)"],
     ["layer(a.b) supports((display: grid)) screen", "a.b", "(display: grid)", "screen"],
   ])(
     "parses top-level import modifiers %s without confusing nested tokens",

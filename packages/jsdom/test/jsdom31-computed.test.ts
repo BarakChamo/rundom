@@ -70,3 +70,15 @@ it("keeps registrations local to a window and exposes their initial values to re
     window.close();
   }
 });
+
+it("matches every enumerated value for an unstyled paragraph", () => {
+  const declarations = [Reference, JSDOM].map((Constructor) => {
+    const { window } = new Constructor("<p>x</p>");
+    const style = window.getComputedStyle(window.document.querySelector("p")!);
+    const entries = Array.from(style, (name) => [name, style.getPropertyValue(name!)]);
+    window.close();
+    return entries;
+  });
+  expect(declarations[0]).toHaveLength(544);
+  expect(declarations[1]).toEqual(declarations[0]);
+});

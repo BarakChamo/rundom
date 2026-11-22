@@ -30,7 +30,8 @@ describe.each([
         ["border-top", "solid"],
         ["border-style", "none"],
       ],
-      expected: "border-top-width: medium; border-top-color: currentcolor; border-style: none;",
+      expected:
+        "border-top: medium; border-right-style: none; border-bottom-style: none; border-left-style: none;",
     },
   ])(
     "serializes $text from current components in declaration order",

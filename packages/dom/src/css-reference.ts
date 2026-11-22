@@ -16,7 +16,7 @@ export function longhandDefinition(name: string): Property | undefined {
 }
 
 /** Returns the specified serialization of a valid CSS declaration in an ordinary style rule. */
-export function specifiedDeclaration(name: string, value: string): string | undefined {
+function parseDeclaration(name: string, value: string): unknown {
   if (!longhandDefinition(name)) return;
   const {
     createContext,
@@ -38,14 +38,46 @@ export function specifiedDeclaration(name: string, value: string): string | unde
   }: {
     isFailure(result: unknown): boolean;
   } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+  context ??= createContext({ _globalObject: globalThis });
+  const result = parseDestructuredDeclaration(name, value, false, context);
+  if (!isFailure(result)) return result;
+}
+
+export function specifiedDeclaration(name: string, value: string): string | undefined {
+  const parsed = parseDeclaration(name, value);
+  if (!parsed) return;
   const {
     serializeDeclarationValue,
   }: {
     serializeDeclarationValue(declaration: unknown): string;
   } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
-  context ??= createContext({ _globalObject: globalThis });
-  const result = parseDestructuredDeclaration(name, value, false, context);
-  if (!isFailure(result)) return serializeDeclarationValue(result);
+  return serializeDeclarationValue(parsed);
+}
+
+/** Expands a font shorthand and serializes it from all of its longhands in declaration order. */
+export function fontDeclaration(
+  value: string,
+): { text: string; entries: [string, string][] } | undefined {
+  const parsed = parseDeclaration("font", value);
+  if (!parsed) return;
+  const expand: (
+    declaration: unknown,
+  ) => { name: string }[] = require("rundom-css-reference/lib/jsdom/living/css/parse/shorthand.js");
+  const {
+    implementation: Declaration,
+  }: {
+    implementation: new (
+      global: object,
+      args: never[],
+      options: object,
+    ) => { getPropertyValue(property: string): string };
+  } = require("rundom-css-reference/lib/jsdom/living/css/CSSStyleDeclaration-impl.js");
+  const declarations = expand(parsed);
+  const style = new Declaration(globalThis, [], { baseURL: "about:blank", declarations });
+  return {
+    text: style.getPropertyValue("font"),
+    entries: declarations.map(({ name }) => [name, style.getPropertyValue(name)]),
+  };
 }
 
 export type RegisteredProperty = {
@@ -119,4 +151,25 @@ export function registeredProperty(
   )
     throw new Exception("Invalid initial value", "SyntaxError");
   return { ...definition, initialValue: serializeComponentValue(initial) };
+}
+
+/** Preserves valid general-enclosed syntax when the media evaluator cannot match a feature. */
+export function specifiedMediaQuery(value: string): string {
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    isFailure,
+  }: {
+    isFailure(value: unknown): boolean;
+  } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue(value: unknown): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const result = parseGrammar(value, "<media-query-list>");
+  return isFailure(result) ? "not all" : serializeComponentValue(result);
 }
