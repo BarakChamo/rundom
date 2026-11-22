@@ -15,7 +15,7 @@ for project in [os.environ['PROJECT']]:
     else:
      env.update(NODE_OPTIONS='--import='+str(root/'qualification/provider.mjs'),JSDOM_ENTRY=str(root/'packages/jsdom/dist/jsdom.cjs'))
      if provider=='nursery16':env['NODE_OPTIONS']+=' --max-semi-space-size=16'
-     if provider=='before':env['DOM_VARIANT']=str(v/'final-product')
+     if provider=='before':env['DOM_VARIANT']=str(root/'packages/dom/out/starting')
     cases=['--project','node:@mui/material','packages/mui-material/src/Autocomplete/Autocomplete.test.js'] if project=='mui' else ['components/'+x+'.test.tsx' for x in ['alert/__tests__/index','alert/__tests__/semantic','checkbox/__tests__/checkbox','checkbox/__tests__/group','radio/__tests__/radio','radio/__tests__/group','tag/__tests__/semantic','tag/__tests__/variant']]
     procs.append(subprocess.Popen(['node','node_modules/vitest/vitest.mjs','run',*cases,'--maxWorkers','1','--no-file-parallelism','--no-cache','--no-fsModuleCache','--testTimeout','120000','--reporter=json','--outputFile='+str(f)],cwd=d/project,env=env,start_new_session=True,stdout=logs[-1],stderr=subprocess.STDOUT))
    ids={p.pid for p in procs}

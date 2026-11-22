@@ -1,4 +1,5 @@
 // Evaluates CSS feature queries using the same syntax and selector parsers as stylesheets.
+import { ownedString } from "./owned-string.js";
 import { createRequire } from "node:module";
 import { parseSizeDeclaration } from "./css-sizing.js";
 import { hasContextlessPercentage } from "./css-numeric.js";
@@ -167,8 +168,8 @@ export function createCSSNamespace(selector: (source: string) => boolean) {
   const namespace = {
     supports(conditionOrProperty: string, value?: string): boolean {
       if (arguments.length === 0) throw new TypeError("A CSS condition or property is required");
-      const source = `${conditionOrProperty}`;
-      if (arguments.length > 1) return supportedDeclaration(source, `${value}`);
+      const source = ownedString(`${conditionOrProperty}`);
+      if (arguments.length > 1) return supportedDeclaration(source, ownedString(`${value}`));
       const condition = parseCondition(source) ?? parseCondition(`(${source})`);
       return condition !== undefined && evaluateCondition(condition, selector) === true;
     },

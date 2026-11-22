@@ -1,4 +1,5 @@
 // Parses author stylesheets and resolves declarations against private DOM state.
+import { ownedString } from "./owned-string.js";
 import { createRequire } from "node:module";
 import { serializePhysicalBorder, isPhysicalBorder } from "./css-border-serialization.js";
 import { InlineDeclaration, parseInlineBlock } from "./inline-declaration.js";
@@ -3030,6 +3031,7 @@ function parseStyleSheetSyntax(text: string, recent?: Map<string, WeakRef<CssNod
     rememberSyntax(cache, text, recurring);
     return { ast: recurring, errors: [] as string[], reused: true };
   }
+  text = ownedString(text);
   const errors: string[] = [];
   const ast = parseNestingStyleSheet(text, {
     parseRulePrelude: false,

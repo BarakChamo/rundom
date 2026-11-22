@@ -1,4 +1,5 @@
 // Owns Window-local DOM interfaces backed by the same tree that parse5 builds.
+import { ownedString } from "./owned-string.js";
 import {
   enqueueCustomReaction,
   invokeCustomReactions,
@@ -3314,6 +3315,7 @@ function buildWindow(
     const cache = isXML ? caches.xml : caches.html;
     const known = cache.get(selector);
     if (known) return known;
+    selector = ownedString(selector);
     const query = selector.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
     let compiled: SelectorPredicate;
     const subject = simpleSubjectAttribute(query);
@@ -3380,13 +3382,14 @@ function buildWindow(
 
   function query(node: Node, selector: string): Element | null {
     const root = container(node);
-    const text = String(selector);
+    let text = String(selector);
     const cached = root && reusableQuery(root, text, "first");
     if (cached) {
       if (!("records" in cached)) return cached[0] ?? null;
       const record = cached.records.at(0);
       return record ? wrapElement(record) : null;
     }
+    text = ownedString(text);
     const scope = root && isDocumentRecord(root) ? root.childNodes.find(tree.isElementNode) : root;
     const matches = selectorPredicate(text, xmlDocumentFor(raw(node)), scope ?? undefined);
     if (!root) return null;
@@ -3480,7 +3483,7 @@ function buildWindow(
 
   function queryAll(node: Node, selector: string): NodeList<Element> {
     const root = container(node);
-    const text = String(selector);
+    let text = String(selector);
     const cached = root && reusableQuery(root, text, "all");
     if (cached) {
       if ("records" in cached) return deferredQueryView(cached);
@@ -3491,6 +3494,7 @@ function buildWindow(
       }));
       return factory({ target, nodes: cached });
     }
+    text = ownedString(text);
     const scope = root && isDocumentRecord(root) ? root.childNodes.find(tree.isElementNode) : root;
     const matches = selectorPredicate(text, xmlDocumentFor(raw(node)), scope ?? undefined);
     const generation = revision;

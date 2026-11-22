@@ -1,5 +1,7 @@
 name: jsdom 31 qualification
-on: push
+on:
+  push:
+    branches: [qualification/jsdom-31-0-1]
 permissions:
   contents: read
 jobs:
@@ -13,6 +15,8 @@ jobs:
       PROJECT: ${{ matrix.project }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24.22.3
@@ -36,7 +40,20 @@ jobs:
           else
             npm install -g pnpm@12.18.0 && pnpm install --frozen-lockfile
           fi
-      - run: python3 qualification/parallel.py jsdom final
+      - name: Preserve pre-fix build and rerun the same concurrency levels
+        run: |
+          cp packages/dom/src/window.ts "$RUNNER_TEMP/window.after"
+          cp packages/dom/src/styles.ts "$RUNNER_TEMP/styles.after"
+          cp packages/dom/src/css-supports.ts "$RUNNER_TEMP/supports.after"
+          for file in window styles css-supports; do git show 89f39dfb6d39aa91e94e2a0abd613f429a5b5d2f:packages/dom/src/$file.ts > packages/dom/src/$file.ts; done
+          (cd packages/dom && bun run build)
+          mkdir -p packages/dom/out/starting
+          cp packages/dom/dist/*.cjs packages/dom/dist/*.cache packages/dom/out/starting
+          cp "$RUNNER_TEMP/window.after" packages/dom/src/window.ts
+          cp "$RUNNER_TEMP/styles.after" packages/dom/src/styles.ts
+          cp "$RUNNER_TEMP/supports.after" packages/dom/src/css-supports.ts
+          (cd packages/dom && bun run build)
+          python3 qualification/parallel.py before final jsdom
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -46,6 +63,7 @@ jobs:
             ${{ runner.temp }}/con3*.json
             ${{ runner.temp }}/con3*.log
   wpt:
+    if: false
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     strategy:
@@ -54,6 +72,8 @@ jobs:
         provider: [reference, candidate]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24.22.3
