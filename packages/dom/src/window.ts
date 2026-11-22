@@ -19102,6 +19102,9 @@ function buildWindow(
     get CSSNamespaceRule() {
       return styles().CSSNamespaceRule;
     }
+    get CSSStartingStyleRule() {
+      return styles().CSSStartingStyleRule;
+    }
     get CSSLayerBlockRule() {
       return styles().CSSLayerBlockRule;
     }

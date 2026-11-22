@@ -188,3 +188,17 @@ it("validates nested calculation dimensions before committing a transform", () =
     window.close();
   }
 });
+
+it("computes registered colors across layer order and stylesheet edits", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor(
+      '<style>@layer first, second; @layer second { @property --v { syntax: "<color>"; inherits: false; initial-value: green } } @layer first { @property --v { syntax: "<color>"; inherits: false; initial-value: red } }</style><p></p>',
+    );
+    const node = window.document.querySelector("p")!;
+    const view = window.getComputedStyle(node);
+    expect(view.getPropertyValue("--v")).toBe("rgb(0, 128, 0)");
+    window.document.styleSheets[0]!.deleteRule(1);
+    expect(view.getPropertyValue("--v")).toBe("rgb(255, 0, 0)");
+    window.close();
+  }
+});

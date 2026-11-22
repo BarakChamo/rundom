@@ -85,6 +85,29 @@ export function substitutionFrame(
   baseURL: () => string,
   registrations: ReadonlyMap<string, RegisteredProperty> | undefined,
 ): SubstitutionFrame {
+  let frame: SubstitutionFrame | undefined;
+  function materialize(): SubstitutionFrame {
+    return (frame ??= buildSubstitutionFrame(raw, parent, values, xml, baseURL, registrations));
+  }
+  return {
+    get document() {
+      return materialize().document;
+    },
+    get element() {
+      return materialize().element;
+    },
+    read: (name) => materialize().read(name),
+  };
+}
+
+function buildSubstitutionFrame(
+  raw: Raw.Element,
+  parent: SubstitutionFrame | undefined,
+  values: ReadonlyMap<string, string>,
+  xml: boolean,
+  baseURL: () => string,
+  registrations: ReadonlyMap<string, RegisteredProperty> | undefined,
+): SubstitutionFrame {
   const resolver: {
     hasResolvedStyle(element: object): boolean;
     getResolvedPropertyValue(name: string, element: object): string;

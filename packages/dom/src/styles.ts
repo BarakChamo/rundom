@@ -133,6 +133,7 @@ type ScopeRule = GroupingRuleView & {
   readonly start: string | null;
   readonly end: string | null;
 };
+type StartingStyleRule = GroupingRuleView & { readonly type: 0 };
 type LayerBlockRule = GroupingRuleView & { readonly type: 0; readonly name: string };
 type MediaRule = ConditionRuleView & {
   readonly type: 4;
@@ -230,6 +231,7 @@ type QualifiedRule = DeclarationRule &
   GroupingRuleView & { readonly type: 1; selectorText: string };
 type NestingMode = "style" | "scope";
 type StyleRule = (
+  | StartingStyleRule
   | DeclarationRule
   | NestedDeclarationsRule
   | QualifiedRule
@@ -280,6 +282,11 @@ type Rule =
       view: FontFeatureValuesRule & RuleParents;
     }
   | { kind: "layer-statement"; view: LayerStatementRule & RuleParents }
+  | {
+      kind: "starting-style";
+      view: StartingStyleRule & RuleParents;
+      rules: Rule[];
+    }
   | { kind: "layer-block"; view: LayerBlockRule & RuleParents; rules: Rule[] }
   | { kind: "media"; view: MediaRule & RuleParents; rules: Rule[] }
   | {
@@ -3087,6 +3094,18 @@ function createRuleInterfaces(
     }
   }
 
+  class CSSStartingStyleRule extends CSSGroupingRule<0> {
+    constructor(token: symbol, rules: Rule[]) {
+      super(token, 0, rules);
+    }
+    get cssText(): string {
+      return groupingText(this, "@starting-style");
+    }
+    get [Symbol.toStringTag](): string {
+      return "CSSStartingStyleRule";
+    }
+  }
+
   class CSSLayerBlockRule extends CSSGroupingRule<0> implements LayerBlockRule {
     readonly #name: string;
     constructor(token: symbol, name: string, rules: Rule[]) {
@@ -3283,6 +3302,7 @@ function createRuleInterfaces(
       rule.kind === "style" ||
       rule.kind === "media" ||
       rule.kind === "supports" ||
+      rule.kind === "starting-style" ||
       rule.kind === "container" ||
       rule.kind === "scope" ||
       rule.kind === "layer-block" ||
@@ -3319,6 +3339,7 @@ function createRuleInterfaces(
     CSSKeyframeRule,
     CSSPageRule,
     CSSLayerStatementRule,
+    CSSStartingStyleRule,
     CSSLayerBlockRule,
     CSSImportRule,
     setImportSheet(rule: ImportRule, sheet: Sheet) {
@@ -4452,9 +4473,20 @@ function parseSheet(
   }
 
   function readRule(node: CssNode, target: Rule[], mode?: NestingMode): void {
+    if (node.type === "Atrule" && node.name === "starting-style" && !node.prelude && node.block) {
+      const rules: Rule[] = [];
+      readContents(node.block, rules, mode);
+      target.push({
+        kind: "starting-style",
+        rules,
+        view: new interfaces.CSSStartingStyleRule(interfaces.key, rules),
+      });
+      return;
+    }
     if (
       mode &&
       node.type === "Atrule" &&
+      !(mode === "scope" && node.name === "property") &&
       !["media", "supports", "container", "layer", "scope", "import", "namespace"].includes(
         node.name,
       )
@@ -7082,6 +7114,7 @@ export function createStyles(input: {
     winners: ReadonlyMap<string, ComputedWinner>,
     custom: CustomBlock | undefined,
     substitution: SubstitutionFrame | undefined,
+    registrations: ReadonlyMap<string, RegisteredProperty> | undefined,
   ) {
     let resolver: ReturnType<typeof createVariableResolver> | undefined;
     function lookup(name: string): string | undefined {
@@ -7134,7 +7167,7 @@ export function createStyles(input: {
       }
       return expanded.getPropertyValue(name) || undefined;
     }
-    return { resolveValue, expandPending, substitution };
+    return { resolveValue, expandPending, substitution, registrations };
   }
 
   type ResolutionValues = {
@@ -7199,6 +7232,11 @@ export function createStyles(input: {
         result._setProperty(` ${placementIndex++}`, "1", "");
       if (inheritanceOnly && typeof winner !== "string" && winner.shorthand && !inherited.has(name))
         continue;
+      if (resolver.substitution && resolver.registrations?.has(name)) {
+        const computed = resolver.substitution.read(name);
+        if (computed) result._setProperty(name, computed, "");
+        continue;
+      }
       if (typeof winner === "string") {
         result._setProperty(name, winner, "");
         continue;
@@ -7550,6 +7588,8 @@ export function createStyles(input: {
     const deferred: DeferredComputed = {
       publish: views().deferredPublisher(
         (name) => {
+          if (resolver.substitution && resolver.registrations?.has(name))
+            return resolver.substitution.read(name);
           if (name === "color" && isSerializedRGB(values.color)) return values.color;
           // The shorthand and axes can affect each other's computed values.
           // Without a winner anywhere in the family, all three retain their initial value.
@@ -7651,6 +7691,9 @@ export function createStyles(input: {
     // Only layered styles pay for a global ordering pass. The table lives for this
     // computation, so CSSOM edits, media changes and adoption need no invalidation cache.
     let layerOrders: Map<Raw.ParentNode | undefined, Map<Rule, number>> | undefined;
+    let registrationsByScope:
+      | Map<Raw.ParentNode | undefined, Map<string, RegisteredProperty>>
+      | undefined;
     function layerOrder(target: Raw.ParentNode | undefined): Map<Rule, number> {
       const cache = (layerOrders ??= new Map());
       const previous = cache.get(target);
@@ -7722,7 +7765,14 @@ export function createStyles(input: {
               push(frame.sheet, rule.rules, parent);
           } else if (rule.kind === "supports") {
             if (rule.view.matches) push(frame.sheet, rule.rules, parent);
-          } else if (rule.kind === "style" || rule.kind === "scope" || rule.kind === "container") {
+          } else if (rule.kind === "property") {
+            assignments.set(rule, parent);
+          } else if (
+            rule.kind === "style" ||
+            rule.kind === "scope" ||
+            rule.kind === "container" ||
+            rule.kind === "starting-style"
+          ) {
             // Element-sensitive conditions reserve layer order even when they do not match this element.
             push(frame.sheet, rule.rules, parent);
           }
@@ -7744,6 +7794,36 @@ export function createStyles(input: {
         }
       }
       const order = new Map([...assignments].map(([rule, layer]) => [rule, layer.rank]));
+      const registrations = [...assignments]
+        .filter(([rule]) => rule.kind === "property")
+        .sort((left, right) => left[1].rank - right[1].rank);
+      if (registrations.length) {
+        const definitions = new Map<string, RegisteredProperty>();
+        for (const [rule] of registrations) {
+          if (rule.kind !== "property") continue;
+          const def = rule.view;
+          for (const name of def.names) {
+            try {
+              const registration = registeredProperty(
+                {
+                  name,
+                  syntax: def.syntax,
+                  inherits: def.inherits,
+                  ...(def.initialValue !== null ? { initialValue: def.initialValue } : {}),
+                },
+                undefined,
+                input.DOMException,
+              );
+              definitions.set(name, registration);
+            } catch (error) {
+              // Invalid descriptors keep their CSSOM rule but do not enter the registration map.
+              if (!(error instanceof input.DOMException && error.name === "SyntaxError"))
+                throw error;
+            }
+          }
+        }
+        (registrationsByScope ??= new Map()).set(target, definitions);
+      }
       cache.set(target, order);
       return order;
     }
@@ -7941,19 +8021,18 @@ export function createStyles(input: {
         for (const rule of hostContext || scoped || parentSelection
           ? rules
           : candidates(rules, sheet)) {
-          if (rule.kind === "property") {
-            if (!hostContext)
-              for (const name of rule.view.names) {
-                const def = rule.view;
-                (sheetRegistrations ??= new Map()).set(name, {
-                  name,
-                  syntax: def.syntax,
-                  inherits: def.inherits,
-                  ...(def.initialValue !== null ? { initialValue: def.initialValue } : {}),
-                });
-              }
-            continue;
+          if (
+            !hostContext &&
+            !sheetRegistrations &&
+            (rule.kind === "property" ||
+              rule.kind === "scope" ||
+              rule.kind === "container" ||
+              rule.kind === "starting-style")
+          ) {
+            layerOrder(targetScope);
+            sheetRegistrations = registrationsByScope?.get(targetScope);
           }
+          if (rule.kind === "property" || rule.kind === "starting-style") continue;
           if (rule.kind === "media") {
             if (mediaListState(rule.view.media).matches((viewport ??= input.viewport())))
               apply(
@@ -8387,7 +8466,7 @@ export function createStyles(input: {
             }
           }
         const substitutionValues =
-          usesSubstitution || parentFrame?.substitution
+          usesSubstitution || parentFrame?.substitution || registrations?.size
             ? new Map([...winners].map(([name, winner]) => [name, winner.value]))
             : undefined;
         const computedWinners: Map<string, ComputedWinner> = winners;
@@ -8560,7 +8639,12 @@ export function createStyles(input: {
             registrations,
           );
         }
-        const resolver = winningValueResolver(computedWinners, custom?.block, substitution);
+        const resolver = winningValueResolver(
+          computedWinners,
+          custom?.block,
+          substitution,
+          registrations,
+        );
         const { resolveValue } = resolver;
         const specifiedScheme = winners.get("color-scheme")?.value;
         const scheme =
@@ -8789,6 +8873,7 @@ export function createStyles(input: {
     CSSKeyframeRule: ruleInterfaces.CSSKeyframeRule,
     CSSPageRule: ruleInterfaces.CSSPageRule,
     CSSLayerStatementRule: ruleInterfaces.CSSLayerStatementRule,
+    CSSStartingStyleRule: ruleInterfaces.CSSStartingStyleRule,
     CSSLayerBlockRule: ruleInterfaces.CSSLayerBlockRule,
     get CSSStyleDeclaration() {
       return views().CSSStyleDeclaration;
