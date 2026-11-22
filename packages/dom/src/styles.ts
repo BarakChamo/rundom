@@ -10,6 +10,7 @@ import {
   type PendingShorthand,
   defaultMediaQuery,
   computedPositionArea,
+  computedPseudoTarget,
   longhandDefinition,
   registeredProperty,
   specifiedDeclaration,
@@ -81,6 +82,7 @@ type DeclarationFields = {
 const stylesheetInstances = new WeakSet<object>();
 
 type SelectorEntry = {
+  pseudo?: { text: string; match: (node: Raw.Element, root?: Raw.ParentNode) => boolean };
   match: (node: Raw.Element, root?: Raw.ParentNode) => boolean;
   specificity: number;
   hostOnly: boolean;
@@ -2009,7 +2011,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const name = property.toLowerCase();
       if (
         value.includes("(") &&
-        (substitutionFunction.test(value) || usesCalculationGrammar(name, value)) &&
+        (substitutionFunction.test(value) || usesTypedValueGrammar(name, value)) &&
         !propertyDefinitions.get(name)?.longhands
       ) {
         const serialized = specifiedDeclaration(property.startsWith("--") ? property : name, value);
@@ -4150,10 +4152,11 @@ function parseRuleSelection({
         // Validate the originating selector while keeping pseudo-elements out of element matching.
         const origin = parts.map((part) => generate(part)).join("");
         const subject = parts.at(-1)?.type === "Combinator" ? `${origin}*` : origin || "*";
-        compileSelector({ selector: subject, ...compileOptions });
+        const originMatches = compileSelector({ selector: subject, ...compileOptions });
         if (detailsStates) compileSelector({ selector: `*${detailsStates}`, ...compileOptions });
         selectors.push({
           match: neverMatchesElement,
+          pseudo: { text: pseudoText, match: originMatches },
           specificity: specificity(selector, nestingSpecificity),
           hostOnly: false,
         });
@@ -5059,12 +5062,12 @@ function simplifyCSSCalculation(value: string): string {
 }
 
 // These dimensions need font metrics or a writing mode from the element's cascade.
-function usesCalculationGrammar(name: string, text: string): boolean {
+function usesTypedValueGrammar(name: string, text: string): boolean {
   return (
     !name.startsWith("--") &&
     text.includes("(") &&
     ((name === "transform" && /[0-9](?:grad|rad|turn)\b/i.test(text)) ||
-      /(?:^|[^\w-])(?:min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
+      /(?:^|[^\w-])(?:image|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
         text,
       ) ||
       ((name === "transform" || /[/*]|\b(?:nan|infinity)\b/i.test(text)) && /calc\(/i.test(text)))
@@ -7262,7 +7265,7 @@ export function createStyles(input: {
         resolver.substitution &&
         !shorthand &&
         (substitutionFunction.test(specified) ||
-          usesCalculationGrammar(name, specified) ||
+          usesTypedValueGrammar(name, specified) ||
           variableSyntax.test(specified) ||
           (!isCustomProperty && elementDimension.test(specified)))
       ) {
@@ -7652,6 +7655,7 @@ export function createStyles(input: {
     available: SheetRecord[],
     proof?: FrameRevision,
     displays?: AncestorDisplays,
+    pseudo?: string,
   ): PublicDeclaration {
     let reusableEligible = proof !== undefined;
     let focusRevision: number | undefined;
@@ -7827,7 +7831,13 @@ export function createStyles(input: {
       cache.set(target, order);
       return order;
     }
-    const parents = [{ node, scope: root }];
+    const parents: { node: Raw.Element; scope: Raw.ParentNode | undefined; pseudo?: string }[] =
+      pseudo
+        ? [
+            { node, scope: root, pseudo },
+            { node, scope: root },
+          ]
+        : [{ node, scope: root }];
     let inheritedFrame: ComputedFrame | undefined;
     let scope = root;
     for (let parent = node.parentNode; parent;) {
@@ -7857,7 +7867,7 @@ export function createStyles(input: {
     let fontSize = inheritedFrame?.fontSize ?? initialFontSize;
     let rootFontSize = inheritedFrame?.rootFontSize ?? initialFontSize;
     let color = inheritedFrame?.color ?? initialColor;
-    for (const { node: element, scope } of parents.reverse()) {
+    for (const { node: element, scope, pseudo: activePseudo } of parents.reverse()) {
       let subjectTypeName: string | undefined;
       let subjectKeys: Set<string> | undefined;
       function elementSubjectKeys(): Set<string> {
@@ -7873,15 +7883,15 @@ export function createStyles(input: {
         return keys;
       }
       function candidates(rules: Rule[], sheet: Sheet): Rule[] {
-        if (!privateSheet(sheet)) return rules;
+        if (activePseudo || !privateSheet(sheet)) return rules;
         const index = cascadeSubjectIndex(rules, cascadeRuleIndexes, identityRule);
         return index ? indexedSubjects(index, elementSubjectKeys()) : rules;
       }
       let prior = result;
       const parentFrame = frame;
-      const role = element === node ? "target" : "ancestor";
+      const role = element === node && (!pseudo || activePseudo) ? "target" : "ancestor";
       const documentChild = element.parentNode?.nodeName === "#document";
-      const previous = computedFrames.get(element)?.[role];
+      const previous = activePseudo ? undefined : computedFrames.get(element)?.[role];
       const sameParent =
         previous &&
         (parentFrame ? previous.parent?.deref() === parentFrame : previous.parent === undefined);
@@ -7897,7 +7907,19 @@ export function createStyles(input: {
         userAgentDisplay,
         userAgentContentVisibility,
         needsDirection,
-      } = userAgentStyle(element);
+      } = activePseudo
+        ? {
+            isHTML: false,
+            tag: "",
+            button: false,
+            field: false,
+            hiddenInput: false,
+            userAgentColor: undefined,
+            userAgentDisplay: undefined,
+            userAgentContentVisibility: undefined,
+            needsDirection: false,
+          }
+        : userAgentStyle(element);
       const userAgentDirection = needsDirection ? input.directionality(element) : undefined;
       function sameEnvironment(cached: ComputedFrame): boolean {
         if (cached.substitution || cached.siblingColor || cached.registered || scriptRegistrations)
@@ -8159,7 +8181,13 @@ export function createStyles(input: {
                 ? rule.selectors
                 : (selection?.entries ?? []);
           let score = -1;
-          for (const { match, specificity, hostOnly, subjectKey, subjectType } of selectors) {
+          for (const entry of selectors) {
+            const { specificity, hostOnly, subjectKey, subjectType } = entry;
+            const match = activePseudo
+              ? entry.pseudo?.text === activePseudo
+                ? entry.pseudo.match
+                : neverMatchesElement
+              : entry.match;
             if (
               match === neverMatchesElement ||
               hostOnly !== hostContext ||
@@ -8201,7 +8229,7 @@ export function createStyles(input: {
         // Only private, individually anchored sheets can be omitted; unindexed
         // groups keep their exact place in document order.
         const index =
-          !hostContext && !didAdoptStylesheets
+          !activePseudo && !hostContext && !didAdoptStylesheets
             ? cascadeSubjectIndex(
                 records,
                 cascadeSheetIndexes,
@@ -8227,10 +8255,14 @@ export function createStyles(input: {
       applyScope(scope, false);
       const shadow = input.shadowRoot(element);
       if (shadow) applyScope(shadow, true);
-      const inline = inlineStyles?.get(element)?.style;
-      if (inline) take(inline, 2 ** 52);
-      else if (element.attrs.some((attr) => !attr.namespace && attr.name === "style" && attr.value))
-        take(inlineStyle(element), 2 ** 52);
+      if (!activePseudo) {
+        const inline = inlineStyles?.get(element)?.style;
+        if (inline) take(inline, 2 ** 52);
+        else if (
+          element.attrs.some((attr) => !attr.namespace && attr.name === "style" && attr.value)
+        )
+          take(inlineStyle(element), 2 ** 52);
+      }
       if (
         previous &&
         !sheetRegistrations &&
@@ -8296,7 +8328,7 @@ export function createStyles(input: {
 
             usesSubstitution ||=
               (value.includes("(") &&
-                (substitutionFunction.test(value) || usesCalculationGrammar(name, value))) ||
+                (substitutionFunction.test(value) || usesTypedValueGrammar(name, value))) ||
               (!name.startsWith("--") && elementDimension.test(value));
             const winner: Winner = { context, weight, proximity, value, base };
             const layer = important ? importantLayer : layerIndex;
@@ -8637,6 +8669,7 @@ export function createStyles(input: {
             !!input.isXML,
             baseURL,
             registrations,
+            inputs,
           );
         }
         const resolver = winningValueResolver(
@@ -8826,7 +8859,7 @@ export function createStyles(input: {
           characters: characters + (retainInputs ? inputCharacters : 0),
         };
         certify(frame);
-        rememberComputedFrame(element, role, frame);
+        if (!activePseudo) rememberComputedFrame(element, role, frame);
         if (frame.deferred && frameOrder.has(frame)) frame.deferred.retained = new WeakRef(frame);
         if (role === "target") return computedFrameView(frame);
         if (displays) displays.set(element, result?._values.get("display") === "none");
@@ -8891,7 +8924,13 @@ export function createStyles(input: {
     exposeSheet,
     inlineStyle: publicInlineStyle,
     computedStyle,
-    liveView(node: Raw.Element, read: () => PublicDeclaration | undefined) {
+    computedPseudoTarget,
+    pseudoStyle(node: Raw.Element, root: Raw.ParentNode, pseudo: string) {
+      return computeStyle(node, root, collect(root), undefined, undefined, pseudo);
+    },
+    liveView(node: Raw.Element, read: () => PublicDeclaration | undefined, pseudo?: string | null) {
+      if (pseudo !== undefined)
+        return views().liveView(read, () => pseudo !== null && input.isConnected(node));
       let frame: ComputedFrame | undefined;
       let snapshot: PublicDeclaration | undefined;
       return views().liveView(

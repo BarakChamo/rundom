@@ -77,6 +77,13 @@ export type SubstitutionFrame = {
   read(name: string): string;
 };
 
+type CascadeBlock = {
+  entries: readonly { name: string; value: string; important: boolean }[];
+  weight: number;
+  hostContext: boolean;
+  layerIndex: number | undefined;
+};
+
 export function substitutionFrame(
   raw: Raw.Element,
   parent: SubstitutionFrame | undefined,
@@ -84,10 +91,19 @@ export function substitutionFrame(
   xml: boolean,
   baseURL: () => string,
   registrations: ReadonlyMap<string, RegisteredProperty> | undefined,
+  sources?: readonly CascadeBlock[],
 ): SubstitutionFrame {
   let frame: SubstitutionFrame | undefined;
   function materialize(): SubstitutionFrame {
-    return (frame ??= buildSubstitutionFrame(raw, parent, values, xml, baseURL, registrations));
+    return (frame ??= buildSubstitutionFrame(
+      raw,
+      parent,
+      values,
+      xml,
+      baseURL,
+      registrations,
+      sources,
+    ));
   }
   return {
     get document() {
@@ -107,6 +123,7 @@ function buildSubstitutionFrame(
   xml: boolean,
   baseURL: () => string,
   registrations: ReadonlyMap<string, RegisteredProperty> | undefined,
+  sources?: readonly CascadeBlock[],
 ): SubstitutionFrame {
   const resolver: {
     hasResolvedStyle(element: object): boolean;
@@ -217,6 +234,37 @@ function buildSubstitutionFrame(
       specificity: [0, 0, 0],
     },
   ];
+  // Deferred rollback needs the identity of each matching rule, including losing declarations.
+  if (sources && sources.length > 1) {
+    const deferred = new Set<string>();
+    for (const [name, text] of values)
+      if (substitutionFunction.test(text) || /var\(/i.test(text)) deferred.add(name);
+    for (const source of sources) {
+      const block = new Map<string, unknown>();
+      for (const { name, value, important } of source.entries) {
+        if (!deferred.has(name)) continue;
+        const declaration = parser.parseDestructuredDeclaration(name, value, important, element);
+        if (!isFailure(declaration)) {
+          block.set(name, declaration);
+          declarations.delete(name);
+        }
+      }
+      if (block.size)
+        state.candidates.push({
+          declarations: block,
+          matched: true,
+          specificity: [source.weight, 0, 0],
+          context: {
+            root: document,
+            origin: 3,
+            attached: source.weight === 2 ** 52,
+            encapsulation: source.hostContext ? 1 : 0,
+            layer: source.layerIndex === undefined ? null : { order: source.layerIndex },
+            namespaces: new Map(),
+          },
+        });
+    }
+  }
   const defaults = defaultsFor(raw);
   if (defaults)
     state.candidates.unshift({

@@ -1180,6 +1180,7 @@ const realmTreeOperations = new WeakMap<
     computedStyle: (
       node: Raw.Element,
       root?: Raw.ParentNode,
+      pseudo?: string,
     ) => ReturnType<ReturnType<typeof createStyles>["computedStyle"]>;
     templateOwner: (owner: Raw.Document) => Raw.Document;
     queueDocumentSelectionChange: (owner: Raw.Document) => void;
@@ -2944,7 +2945,10 @@ function buildWindow(
     documentEncoding,
     initializeCopiedTree,
     nativeHTMLElementPrototype,
-    computedStyle: (node, root) => styles().computedStyle(node, root),
+    computedStyle: (node, root, pseudo) =>
+      pseudo && root
+        ? styles().pseudoStyle(node, root, pseudo)
+        : styles().computedStyle(node, root),
     templateOwner,
     queueDocumentSelectionChange,
     frameWindow,
@@ -6072,7 +6076,7 @@ function buildWindow(
     return state;
   }
 
-  function domString(value: string): string {
+  function domString(value: unknown): string {
     if (typeof value === "symbol") throw new TypeError("Cannot convert a Symbol to a string");
     return String(value);
   }
@@ -19476,18 +19480,28 @@ function buildWindow(
       mediaQueryFinalizer?.register(list, reference);
       return list;
     }
-    getComputedStyle(node: Element) {
+    getComputedStyle(node: Element, pseudoElement: unknown = undefined) {
       const record = element(node);
       if (closed) styles().closeComputed();
-      return styles().liveView(record, () => {
-        if (closed) return;
-        const scope = styleScope(record);
-        if (!scope || !isDocumentRecord(treeRoot(record, true))) return;
-        const owner = actualOwnerRecord(record);
-        const realm = documentRealms.get(owner);
-        const foreign = realm && realm !== token && realmTreeOperations.get(realm)?.computedStyle;
-        return foreign ? foreign(record, scope) : styles().computedStyle(record, scope);
-      });
+      const text = pseudoElement == null ? "" : domString(pseudoElement);
+      const pseudo = text.startsWith(":") ? styles().computedPseudoTarget(text) : undefined;
+      return styles().liveView(
+        record,
+        () => {
+          if (closed || pseudo === null) return;
+          const scope = styleScope(record);
+          if (!scope || !isDocumentRecord(treeRoot(record, true))) return;
+          const owner = actualOwnerRecord(record);
+          const realm = documentRealms.get(owner);
+          const foreign = realm && realm !== token && realmTreeOperations.get(realm)?.computedStyle;
+          if (pseudo)
+            return foreign
+              ? foreign(record, scope, pseudo)
+              : styles().pseudoStyle(record, scope, pseudo);
+          return foreign ? foreign(record, scope) : styles().computedStyle(record, scope);
+        },
+        pseudo,
+      );
     }
     readonly DocumentFragment = DocumentFragment;
     readonly ShadowRoot = ShadowRoot;

@@ -202,3 +202,36 @@ it("computes registered colors across layer order and stylesheet edits", () => {
     window.close();
   }
 });
+
+it("resolves a live pseudo-element style against its originating element", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor(
+      '<style>p::before { content: "x"; font-size: attr(data-size type(<percentage>)); color: green }</style><p data-size="150%" style="font-size:20px;color:red"></p>',
+    );
+    const node = window.document.querySelector("p")!;
+    const view = Reflect.apply(window.getComputedStyle, window, [node, "::before"]);
+    expect(view.getPropertyValue("color")).toBe("rgb(0, 128, 0)");
+    expect(view.getPropertyValue("font-size")).toBe("30px");
+    node.setAttribute("data-size", "300%");
+    expect(view.getPropertyValue("font-size")).toBe("60px");
+    expect(window.getComputedStyle(node).getPropertyValue("font-size")).toBe("20px");
+    expect(Reflect.apply(window.getComputedStyle, window, [node, "::unknown"]).length).toBe(0);
+    window.close();
+  }
+});
+
+it("rolls back the winning rule after branch or attribute substitution", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor(
+      "<style>p {color: green} p {--on:yes; color: if(style(--on:yes):revert-rule; else:red)}</style><p></p>",
+    );
+    const node = window.document.querySelector("p")!;
+    const view = window.getComputedStyle(node);
+    expect(view.color).toBe("rgb(0, 128, 0)");
+    node.style.setProperty("color", "attr(data-key type(*), revert-rule)");
+    expect(view.color).toBe("rgb(0, 128, 0)");
+    node.setAttribute("data-key", "blue");
+    expect(view.color).toBe("rgb(0, 0, 255)");
+    window.close();
+  }
+});

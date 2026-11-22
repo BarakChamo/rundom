@@ -384,3 +384,36 @@ export function createDescriptorRuleParser(baseURL: () => string, changed: () =>
     },
   };
 }
+
+/** Returns the canonical selector for a supported computed-style pseudo target. */
+export function computedPseudoTarget(text: string): string | null {
+  const {
+    parsePseudoElementSelectors,
+  }: {
+    parsePseudoElementSelectors(input: string, global: object): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue(value: unknown): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const {
+    elements,
+  }: {
+    elements: Record<string, unknown>;
+  } = require("rundom-css-reference/lib/jsdom/living/css/values/pseudos.js");
+  const selectors = parsePseudoElementSelectors(text, globalThis);
+  if (!Array.isArray(selectors)) return null;
+  let result = "";
+  for (const token of selectors) {
+    const name = token.name ?? token.value;
+    if (
+      name === "part" ||
+      name === "slotted" ||
+      !Object.hasOwn(elements, token.name ? name + "()" : name)
+    )
+      return null;
+    result += serializeComponentValue(token);
+  }
+  return result || null;
+}
