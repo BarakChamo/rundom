@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [antd, mui]
+        project: ${{ fromJSON(contains(github.event.head_commit.message, 'MUI groups') && '["mui"]' || '["antd","mui"]') }}
     env:
       PROJECT: ${{ matrix.project }}
       MATCHED: ${{ contains(github.event.head_commit.message, 'matched benchmark only') && '1' || '' }}
