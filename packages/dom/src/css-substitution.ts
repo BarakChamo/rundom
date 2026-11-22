@@ -6,7 +6,7 @@ import type { DefaultTreeAdapterTypes as Raw } from "parse5";
 import type { RegisteredProperty } from "./css-reference.js";
 
 const require = createRequire(import.meta.url);
-export const substitutionFunction = /(?:^|[^\w-])(?:attr|if)\(/i;
+export const substitutionFunction = /(?:^|[^\w-])(?:attr|ident|if)\(/i;
 
 type EvaluationDocument = {
   _parentDocument: null;
@@ -30,6 +30,7 @@ type TypeSelector = {
     pseudos: unknown;
   }[];
 };
+const otherElementSibling = { nodeType: 1 };
 let defaultRules: Map<string, Map<string, unknown>> | undefined;
 
 // Unconditional type selectors provide the browser origin below the author winners.
@@ -203,6 +204,18 @@ function buildSubstitutionFrame(
     _namespaceURI: raw.namespaceURI,
     _localName: raw.tagName,
     parentElement: parent?.element ?? null,
+    get parentNode() {
+      const parentNode = raw.parentNode;
+      if (!parentNode) return null;
+      return {
+        *_children(): Iterable<{ nodeType: number }> {
+          for (const child of parentNode.childNodes) {
+            if (child === raw) yield element;
+            else if ("tagName" in child) yield otherElementSibling;
+          }
+        },
+      };
+    },
     getAttributeNodeNS(namespace: string | null, name: string) {
       return (
         raw.attrs.find((attr) => (attr.namespace ?? null) === namespace && attr.name === name) ??

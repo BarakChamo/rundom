@@ -5088,14 +5088,15 @@ function usesTypedValueGrammar(name: string, text: string): boolean {
     (name === "filter" ||
       name === "backdrop-filter" ||
       (name === "transform" && /[0-9](?:grad|rad|turn)\b/i.test(text)) ||
-      /(?:^|[^\w-])(?:image|image-set|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
+      /(?:^|[^\w-])(?:calc-size|sibling-count|sibling-index|image|image-set|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
         text,
       ) ||
       ((name === "transform" || /[/*]|\b(?:nan|infinity)\b/i.test(text)) && /calc\(/i.test(text)))
   );
 }
 
-const elementDimension = /^[+-]?(?:\d*\.)?\d+(?:e[+-]?\d+)?(?:r?(?:ex|cap|ch|ic|lh)|[sld]?v[ib])$/i;
+const elementDimension =
+  /^[+-]?(?:\d*\.)?\d+(?:e[+-]?\d+)?(?:r?(?:ex|cap|ch|ic|lh)|[sld]?v[ib]|cq(?:w|h|i|b|min|max)|grad|rad|turn|dpi|dpcm|dppx)$/i;
 
 function computeNumericValue(value: string, readViewport: () => Viewport): string {
   if (value.endsWith("ms") && /^[+-]?(?:\d*\.)?\d+(?:e[+-]?\d+)?ms$/i.test(value))
@@ -8348,6 +8349,8 @@ export function createStyles(input: {
               hasRollback = true;
 
             usesSubstitution ||=
+              ((name === "container-type" || name === "container") &&
+                /(?:^|[ /])(?:inline-)?size(?:$| )/.test(value)) ||
               (value.includes("(") &&
                 (substitutionFunction.test(value) || usesTypedValueGrammar(name, value))) ||
               (!name.startsWith("--") && elementDimension.test(value));

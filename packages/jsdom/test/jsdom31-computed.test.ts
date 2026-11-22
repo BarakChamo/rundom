@@ -249,3 +249,17 @@ it("computes filter defaults and preserves the specified image and decoration gr
     window.close();
   }
 });
+
+it("resolves each container axis at the nearest eligible ancestor and reads sibling indices", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor(
+      '<main style="container-type:size;width:400px"><div style="container-type:inline-size;writing-mode:vertical-rl;height:300px"><i></i> text <p style="writing-mode:horizontal-tb;margin-left:1cqw;margin-top:1cqh;z-index:sibling-index()"></p></div></main>',
+    );
+    const node = window.document.querySelector("p")!;
+    const style = window.getComputedStyle(node);
+    expect(style.getPropertyValue("margin-left")).toBe("4px");
+    expect(style.getPropertyValue("margin-top")).toBe("3px");
+    expect(style.getPropertyValue("z-index")).toBe("2");
+    window.close();
+  }
+});
