@@ -355,9 +355,22 @@ jobs:
       - name: Run the three Scully Jest suites in both provider orders
         env:
           PROJECT: scully
+          LEGACY_ADAPTER: ${{ contains(github.event.head_commit.message, 'Jest 27 adapter') }}
         run: |
           root="$PWD"
           cd "$RUNNER_TEMP/scully"
+          if [[ "$LEGACY_ADAPTER" == true ]]; then
+            python3 - <<'PYJEST'
+          from pathlib import Path
+          path=Path("node_modules/jest-environment-jsdom/build/index.js")
+          source=path.read_text()
+          old="Object.defineProperty(this.global, 'document', {"
+          assert source.count(old)==1 and source.count("().sendTo(")==1
+          source=source.replace("().sendTo(", "().forwardTo(")
+          source=source.replace(old, "if (Object.getOwnPropertyDescriptor(this.global, 'document')?.configurable) "+old)
+          path.write_text(source)
+          PYJEST
+          fi
           cmd=(node node_modules/jest/bin/jest.js --config tests/jest/src/jest.config.js --runInBand --json --runTestsByPath)
           for name in baseHrefRewrite flash-prevention seoOptimize; do cmd+=("tests/jest/src/__tests__/$name.spec.ts"); done
           source "$root/qualification/balanced-project.sh"
