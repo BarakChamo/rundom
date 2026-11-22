@@ -6,6 +6,7 @@ permissions:
   contents: read
 jobs:
   performance:
+    if: false
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -70,7 +71,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        provider: [candidate]
+        provider: [candidate, reference]
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,10 +96,14 @@ jobs:
           if [[ "${{ matrix.provider }}" = candidate ]]; then
             export RUN_DOM_API_PRELOAD=1 NODE_OPTIONS="--import=$PWD/scripts/jsdom-api.mjs"
           fi
+          python3 qualification/capture-wpt.py
+          export WPT_SHARD=${{ matrix.shard }} WPT_OBSERVATIONS="$RUNNER_TEMP/subtests.jsonl"
           cd .cache/jsdom-reference
           node node_modules/mocha/bin/mocha.js --reporter json --reporter-option output="$RUNNER_TEMP/wpt.json" test/web-platform-tests/run-wpts.js
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: wpt-${{ matrix.provider }}
-          path: ${{ runner.temp }}/wpt.json
+          name: wpt-${{ matrix.provider }}-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/wpt.json
+            ${{ runner.temp }}/subtests.jsonl
