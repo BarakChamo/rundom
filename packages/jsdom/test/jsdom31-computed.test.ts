@@ -311,3 +311,16 @@ it("resolves a pending background shorthand with registered and CSS-wide custom 
     window.close();
   }
 });
+
+it("serializes border radius after an unrelated inline style change", () => {
+  const { window } = new JSDOM('<p style="border-radius: 2px; color: orange"></p>');
+  try {
+    const element = window.document.querySelector("p")!;
+    element.style.color = "red";
+    expect(element.getAttribute("style")).toBe("border-radius: 2px; color: red;");
+    element.style.borderTopRightRadius = "4px";
+    expect(element.style.borderRadius).toBe("2px 4px 2px 2px");
+  } finally {
+    window.close();
+  }
+});

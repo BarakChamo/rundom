@@ -1406,7 +1406,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         }
         text = serializeDeclarationBlock(declarations.join(" "), shorthandSources?.get(this));
       } else if (
-        /(?:^|; )(?:(?:column|row)-rule-(?:width|style|color|inset)|grid-(?:template|auto)|corner-|animation-range-)/.test(
+        /(?:^|; )(?:(?:column|row)-rule-(?:width|style|color|inset)|grid-(?:template|auto)|corner-|border-(?:top|bottom)-(?:left|right)-radius|animation-range-)/.test(
           text,
         )
       )
