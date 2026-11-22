@@ -540,7 +540,6 @@ function declarationProperties(): readonly StyleProperty[] {
   const names = new Set([...overrides, "size", ...vendorNames]);
   return (publicDeclarationProperties = Array.from(names, (name) => ({
     name,
-    readKey: name === "contentVisibility" ? "content-visibility" : name,
     property:
       name === "cssFloat"
         ? "float"
@@ -3906,7 +3905,14 @@ function parseSheet(
   const rules: Rule[] = [];
   if (ast.type !== "StyleSheet") return { text, rules, errors };
 
-  if (reused && !namespaces?.size && nesting === undefined) {
+  // A cacheable one-rule sheet can publish its first compilation directly into the
+  // per-Window plan. Its next owner only needs independent mutable CSSOM slots.
+  const cacheSingleRule =
+    ast.children.size === 1 &&
+    ast.children.first?.type === "Rule" &&
+    errors.length === 0 &&
+    text.length <= maximumLargeStylesheetLength;
+  if ((reused || cacheSingleRule) && !namespaces?.size && nesting === undefined) {
     let plan = flatPlans.get(ast);
     if (plan === undefined) {
       plan = prepareFlatRules({ ast, generate, declaration, isXML, statePseudos });
@@ -6829,6 +6835,18 @@ export function createStyles(input: {
       publish: views().deferredPublisher(
         (name) => {
           if (name === "color" && isSerializedRGB(values.color)) return values.color;
+          // The shorthand and axes can affect each other's computed values.
+          // Without a winner anywhere in the family, all three retain their initial value.
+          if (
+            (name === "overflow" || name === "overflow-x" || name === "overflow-y") &&
+            !winners.has("all") &&
+            !winners.has("overflow") &&
+            !winners.has("overflow-x") &&
+            !winners.has("overflow-y") &&
+            !winners.has("overflow-block") &&
+            !winners.has("overflow-inline")
+          )
+            return "visible";
           const custom = name.startsWith("--");
           if ((!custom && !independentProperties.has(name)) || winners.has("all")) return;
           const known = reads?.get(name);

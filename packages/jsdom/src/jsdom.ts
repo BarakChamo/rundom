@@ -36,7 +36,7 @@ type Options = {
   resources?: "usable" | (TransportOptions & { userAgent?: string });
 };
 
-const defaultUserAgent = `Mozilla/5.0 (${process.platform || "unknown OS"}) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/30.1.3`;
+const defaultUserAgent = `Mozilla/5.0 (${process.platform || "unknown OS"}) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/31.0.1`;
 
 function userAgentFor(resources: Options["resources"]): string {
   return (

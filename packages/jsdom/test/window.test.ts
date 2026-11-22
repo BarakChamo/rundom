@@ -438,7 +438,7 @@ it("supports legacy virtual-console forwarding and error suppression", () => {
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM, Console: VirtualConsole },
-  { name: "jsdom 30.1.3", Constructor: reference, Console: ReferenceConsole },
+  { name: "jsdom 31.0.1", Constructor: reference, Console: ReferenceConsole },
 ])("$name public Window contracts", ({ Constructor, Console }) => {
   it("creates a fresh quirks-mode document for empty markup", () => {
     // Given two separately created empty windows
@@ -2899,7 +2899,7 @@ describe("RunDOM package", () => {
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name source locations", ({ Constructor }) => {
   it("reports original offsets for parsed nodes after a document mutation", () => {
     // Given: a source-tracked document with implied structure.
@@ -2934,7 +2934,7 @@ describe.each([
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name document URL", ({ Constructor }) => {
   it("updates retained Location and document views together after reconfiguration", () => {
     // Given: a Window with a canonicalized URL and a retained Location.
@@ -3938,7 +3938,7 @@ it("keeps repeated HTML documents and template contents independent", () => {
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name reflected token lists", ({ Constructor }) => {
   it("reflects link relationships and output control IDs through stable live lists", () => {
     // Given elements whose reflected attributes contain repeated tokens.

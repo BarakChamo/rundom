@@ -1,6 +1,6 @@
 // Checks complete document tokenization against the pinned parse5 tree, including text-node boundaries.
 import assert from "node:assert/strict";
-import { parse, type ParserError } from "parse5";
+import { defaultTreeAdapter, parse, type ParserError } from "parse5";
 import { describe, expect, it } from "vitest";
 import { parseLiteralDocument } from "../src/inactive-parser.js";
 
@@ -9,8 +9,12 @@ const special = "abcde&amp;fghij&#13;klmno\r\npqrst\fuvwxyz\0\uD800!\uDC00🌲";
 describe("inactive HTML literal runs", () => {
   for (const source of [
     `<table>\n${words}\r\n<tr><td>${special}</table>${words}`,
+    `<body><p><b>${words}</p>${words}<frameset><frame></frameset>`,
+    `<table>    <tr><td><pre>\n${words}</pre></td></tr>    ${words}</table><select><option>${words}</select>`,
     `<div title="${words}${special}" data-v='${special}${words}' foo=${special}></div>`,
     `<script>${words}<!-- <script> ${special} </script> --> </script><style>${words}${special}</style>`,
+    `<script>${"longName && other\nvalue &amp;\r\n".repeat(64)}<!--<script>--></script><style>${words}&amp;\n</style>`,
+    `<textarea>\n${"ordinary\nwords &amp;\r\n".repeat(64)}</textarea><pre>\n${words}</pre>`,
     `<textarea>\n${words}${special}</textarea><title>${words}</title>`,
     `<svg><foreignObject><template><p>${words}</template></foreignObject></svg><!--${special}--!>`,
     `<!doctype html><plaintext>${words}${special}</plaintext>`,
@@ -29,6 +33,24 @@ describe("inactive HTML literal runs", () => {
       }
     });
   }
+
+  it("preserves the text insertion calls observed by a custom tree adapter", () => {
+    const source = `<p>${words}</p>`;
+    function insertions(parser: typeof parseLiteralDocument) {
+      const chunks: string[] = [];
+      parser(source, {
+        treeAdapter: {
+          ...defaultTreeAdapter,
+          insertText(parent, text) {
+            chunks.push(text);
+            defaultTreeAdapter.insertText(parent, text);
+          },
+        },
+      });
+      return chunks;
+    }
+    expect(insertions(parseLiteralDocument)).toEqual(insertions(parse));
+  });
 
   it("preserves parse errors and location offsets across CRLF and non-BMP input", () => {
     const source = `<p a="${words}🌲\r\n" a="duplicate">\0</p>`;

@@ -66,7 +66,7 @@ export function prepareCohort(options: { from?: string | undefined } = {}): Coho
   };
   const consumers: Record<string, Record<string, string>> = {
     "run-dom": local,
-    jsdom: { jsdom: "30.1.3" },
+    jsdom: { jsdom: "31.0.1" },
     "happy-dom": { "happy-dom": "21.0.4" },
     "turbo-dom": { "@miaskiewicz/turbo-dom": "0.7.1" },
     tools: { zod: "4.6.7" },
@@ -149,7 +149,7 @@ export function prepareCohort(options: { from?: string | undefined } = {}): Coho
     ),
     versions: {
       candidate: "0.0.1",
-      jsdom: "30.1.3",
+      jsdom: "31.0.1",
       happyDOM: "21.0.4",
       turboDOM: "0.7.1",
       testingLibrary: "10.4.2",

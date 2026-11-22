@@ -52,7 +52,7 @@ const providers = [
       "@run-dom/html-parser": "file:../html-parser.tgz",
     },
   },
-  { name: "jsdom", environment: "jsdom", dependencies: { jsdom: "30.1.3" } },
+  { name: "jsdom", environment: "jsdom", dependencies: { jsdom: "31.0.1" } },
   { name: "happy-dom", environment: "happy-dom", dependencies: { "happy-dom": "21.0.4" } },
   ...(options["include-turbo"]
     ? [{ name: "turbo-dom", environment: "", dependencies: { "@miaskiewicz/turbo-dom": "0.7.1" } }]
@@ -262,7 +262,7 @@ const report = {
   directory,
   rounds,
   pools,
-  versions: { ...common, jsdom: "30.1.3", "happy-dom": "21.0.4", "@run-dom/jsdom": "0.0.1" },
+  versions: { ...common, jsdom: "31.0.1", "happy-dom": "21.0.4", "@run-dom/jsdom": "0.0.1" },
   ...(options["include-turbo"] ? { turboDOMVersion: "0.7.1" } : {}),
   fixtureSHA256: hash(fixture),
   ...(stressFixture ? { stressFixtureSHA256: hash(stressFixture), testsPerTrial: testCount } : {}),

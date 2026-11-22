@@ -10,7 +10,7 @@ const { JSDOM: reference }: { JSDOM: typeof JSDOM } = require("jsdom");
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name XMLHttpRequest", ({ Constructor }) => {
   it("exposes the request and upload event target hierarchy", () => {
     // Given a request and its stable upload target.

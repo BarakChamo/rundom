@@ -13,7 +13,7 @@ const { JSDOM: reference }: { JSDOM: typeof JSDOM } = require("jsdom");
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name markup input", ({ Constructor }) => {
   it("uses the BOM over a conflicting transport charset and respects view bounds", () => {
     // Given: a UTF-16LE HTML payload in a view into a larger buffer.

@@ -2,6 +2,33 @@
 import { expect, it } from "vitest";
 import { JSDOM } from "@run-dom/jsdom";
 
+it("preserves overflow axes and CSS property aliases across snapshot materialization", () => {
+  const { window } = new JSDOM(
+    "<style>main { display: block; max-width: 12px }</style><main></main>",
+  );
+  try {
+    const main = window.document.querySelector("main");
+    if (!(main instanceof window.HTMLElement)) throw new Error("Expected an HTML element");
+    const initial = window.getComputedStyle(main);
+    main.style.setProperty("overflow-x", "hidden");
+    const clipped = window.getComputedStyle(main);
+    main.style.setProperty("overflow-x", "scroll");
+    expect([
+      Reflect.get(initial, "overflow"),
+      Reflect.get(initial, "overflowX"),
+      Reflect.get(initial, "overflowY"),
+    ]).toEqual(["visible", "visible", "visible"]);
+    expect(Reflect.get(initial, "maxWidth")).toBe("12px");
+    expect(Reflect.get(clipped, "overflowX")).toBe("hidden");
+    expect(clipped.getPropertyValue("overflow-x")).toBe("hidden");
+    expect(clipped.length).toBeGreaterThan(0);
+    expect(Reflect.get(clipped, "overflowX")).toBe("hidden");
+    expect(Reflect.get(window.getComputedStyle(main), "overflowX")).toBe("scroll");
+  } finally {
+    window.close();
+  }
+});
+
 it("keeps computed initial and inherited keywords stable across snapshot enumeration", () => {
   const { window } = new JSDOM(
     "<style>main{pointer-events:none} p{display:unset;float:initial}</style><main><p></p></main>",
@@ -622,5 +649,56 @@ it("uses native indexed iteration independently of an overridden item method", (
     expect(calls).toBe(1);
   } finally {
     w.close();
+  }
+});
+
+it("reuses identical rule source without sharing a mutable selector or declaration", () => {
+  const source = ".first { color: red }";
+  const { window } = new JSDOM(
+    `<style>${source}</style><style>${source}</style><p class="first"></p>`,
+  );
+  try {
+    const { document } = window;
+    const first = document.styleSheets[0]?.cssRules[0];
+    const second = document.styleSheets[1]?.cssRules[0];
+    const node = document.querySelector("p");
+    if (
+      !(first instanceof window.CSSStyleRule) ||
+      !(second instanceof window.CSSStyleRule) ||
+      !node
+    )
+      throw new Error("Expected two rules and their target");
+    first.selectorText = ".renamed";
+    first.style.color = "blue";
+    expect(second.selectorText).toBe(".first");
+    expect(second.style.color).toBe("red");
+    expect(window.getComputedStyle(node).color).toBe("rgb(255, 0, 0)");
+  } finally {
+    window.close();
+  }
+});
+
+it("tracks selector changes across equal writes, attribute removal and insertion", () => {
+  const { window } = new JSDOM("<style>main:has([data-on]) { color: red }</style><main></main>");
+  try {
+    const { document } = window;
+    const main = document.querySelector("main");
+    if (!main) throw new Error("Expected a main element");
+    const child = document.createElement("i");
+    const initial = window.getComputedStyle(main).color;
+    child.setAttribute("data-on", "");
+    expect(window.getComputedStyle(main).color).toBe(initial);
+    main.append(child);
+    const active = window.getComputedStyle(main);
+    expect(active.color).toBe("rgb(255, 0, 0)");
+    const observer = new window.MutationObserver(() => {});
+    observer.observe(child, { attributes: true, attributeOldValue: true });
+    child.setAttribute("data-on", "");
+    expect(observer.takeRecords()[0]?.oldValue).toBe("");
+    child.removeAttribute("data-on");
+    expect(window.getComputedStyle(main).color).toBe(initial);
+    expect(active.color).toBe("rgb(255, 0, 0)");
+  } finally {
+    window.close();
   }
 });

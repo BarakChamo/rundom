@@ -9,6 +9,8 @@ console.log(serialize());
 window.close();
 ```
 
+For complete inactive HTML documents of at least 1,024 code units, the TypeScript parser can consume ordinary body text and its intervening whitespace in a single run. Source-location and parse-error collection use the stock parse5 tokenizer. [Real-document measurements](../../docs/real-project-performance-2026-11-22.md)
+
 The CommonJS build compacts syntax and whitespace and ships a linked source map. It preserves interface constructor names, which consumers can observe through `constructor.name`. A separately packed CSS runtime bundles the pinned toolchain while retaining lazy initialization per capability. It minifies internal identifiers and explicitly preserves the exposed declaration constructor name. Its build adapter shares the declared color backend across direct and declaration-parser requests without changing installed reference dependencies. CommonJS dependency loading uses the installed artifact URL, so it does not depend on the producer checkout.
 
 Window text encoding uses the same codec as the Node facade’s markup decoder. `TextEncoder.encode()` and `TextEncoderStream` allocate output bytes in the Window realm. Each decoder retains independent state across chunks. Text streams preserve split surrogate pairs and byte sequences, BOM and fatal-error settings, backpressure, and cancellation. Their readable and writable endpoints use Node’s stream implementations; complete stream realm isolation remains pending.

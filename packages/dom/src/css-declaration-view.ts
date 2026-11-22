@@ -48,7 +48,7 @@ function indexOf(key: PropertyKey): number | undefined {
     return index;
   return;
 }
-export type StyleProperty = { name: string; property: string; readKey: string };
+export type StyleProperty = { name: string; property: string };
 
 let publicPropertyNames: ReadonlyMap<string, StyleProperty> | undefined;
 
@@ -240,7 +240,7 @@ export function createDeclarationViews(input: {
   const write = input.write;
   let published = false;
   let openedProperties: string[] | undefined;
-  function installProperty({ name, property, readKey }: StyleProperty): void {
+  function installProperty({ name, property }: StyleProperty): void {
     Object.defineProperty(propertyPrototype, name, {
       configurable: true,
       enumerable: true,
@@ -248,7 +248,7 @@ export function createDeclarationViews(input: {
         const style = receiver(this);
         const deferred = deferredDeclarations.get(style);
         return deferred
-          ? (deferred.read(readKey) ?? readNamedProperty(deferred.materialize(), name))
+          ? (deferred.read(property) ?? readNamedProperty(deferred.materialize(), name))
           : readNamedProperty(style, name);
       },
       set(value: unknown) {

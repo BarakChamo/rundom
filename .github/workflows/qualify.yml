@@ -1,0 +1,82 @@
+name: jsdom 31 qualification
+on: push
+permissions:
+  contents: read
+jobs:
+  performance:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [antd, mui]
+    env:
+      PROJECT: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - name: Prepare upstream test project
+        shell: bash
+        run: |
+          if [[ "$PROJECT" = antd ]]; then
+            repo=ant-design/ant-design; rev=613e2200c9446a912dd463e060aef9c66c430854
+          else
+            repo=mui/material-ui; rev=4c499c5a4c00dcece4ae60e5d33ec810def4f2ba
+          fi
+          dest="$RUNNER_TEMP/$PROJECT"; mkdir -p "$dest"
+          curl -fsSL --retry 3 "https://codeload.github.com/$repo/tar.gz/$rev" | tar xz --strip-components=1 -C "$dest"
+          cd "$dest"
+          if [[ "$PROJECT" = antd ]]; then
+            npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund && npm run version
+          else
+            npm install -g pnpm@12.18.0 && pnpm install --frozen-lockfile
+          fi
+      - run: python3 qualification/parallel.py jsdom final
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-${{ matrix.project }}
+          path: |
+            ${{ runner.temp }}/batch3*.json
+            ${{ runner.temp }}/con3*.json
+            ${{ runner.temp }}/con3*.log
+  wpt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [reference, candidate]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - run: |
+          git clone --depth 1 --branch v31.0.1 https://github.com/jsdom/jsdom.git .cache/jsdom-reference
+          cd .cache/jsdom-reference
+          npm ci
+          mkdir -p test/web-platform-tests/tests
+          curl -fsSL --retry 3 https://codeload.github.com/web-platform-tests/wpt/tar.gz/2971340498805350babb6c167e0df98eaa380f98 | tar xz --strip-components=1 -C test/web-platform-tests/tests
+          cd test/web-platform-tests/tests
+          python wpt.py make-hosts-file | sudo tee -a /etc/hosts >/dev/null
+      - run: |
+          if [[ "${{ matrix.provider }}" = candidate ]]; then
+            export RUN_DOM_API_PRELOAD=1 NODE_OPTIONS="--import=$PWD/scripts/jsdom-api.mjs"
+          fi
+          cd .cache/jsdom-reference
+          node node_modules/mocha/bin/mocha.js --reporter json --reporter-option output="$RUNNER_TEMP/wpt.json" test/web-platform-tests/run-wpts.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wpt-${{ matrix.provider }}
+          path: ${{ runner.temp }}/wpt.json

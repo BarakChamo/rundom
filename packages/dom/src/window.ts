@@ -661,7 +661,7 @@ function parseInactiveHTML(
   const settings = parserFormOptions(markup, options);
   // Form ownership and source locations are attached during parsing and must be preserved.
   if (settings.treeAdapter || settings.sourceCodeLocationInfo || markup.length > parseTemplateLimit)
-    return parseLiteralDocument(markup, settings);
+    return parseLiteralDocument(markup, settings, options.treeAdapter === undefined);
   const scriptingEnabled = settings.scriptingEnabled ?? true;
   let entry = recentParseTemplate;
   if (entry?.markup !== markup || entry.scriptingEnabled !== scriptingEnabled) {
@@ -3056,8 +3056,9 @@ function buildWindow(
     namesChanged = true,
     idsChanged = true,
     stylesheetMembershipChanged = true,
+    styleChanged = true,
   } = {}): void {
-    computedStyleRevision++;
+    if (styleChanged) computedStyleRevision++;
     revision++;
     if (stylesheetMembershipChanged) {
       stylesheetDiscoveryRevision++;
@@ -5495,9 +5496,17 @@ function buildWindow(
     attr: AttributeRecord,
     oldValue: string | null,
   ): void {
-    computedStyleRevision++;
-    invalidateQueryIndices();
     const { name, namespace } = attr;
+    // These attributes affect the cascade through selector matching. An unattached
+    // root is outside document-frame reuse, and equal values leave selectors unchanged.
+    const selectorOnly =
+      !namespace &&
+      (name === "class" || name === "role" || name.startsWith("data-") || name.startsWith("aria-"));
+    const styleChanged =
+      !selectorOnly ||
+      (record.parentNode !== null && (oldValue === null || attribute(record, name) !== oldValue));
+    if (styleChanged) computedStyleRevision++;
+    invalidateQueryIndices();
     // A detached element cannot displace a document match. Insertion invalidates its key.
     if (!namespace && name === "id" && record.parentNode) {
       invalidateDocumentId(oldValue);
@@ -5526,6 +5535,7 @@ function buildWindow(
         namesChanged: (name === "name" || name === "id") && isDocumentNamedElement(record),
         idsChanged: false,
         stylesheetMembershipChanged: name === "type" && htmlChildNamed(record, "style"),
+        styleChanged,
       });
     queueMutation({
       type: "attributes",
