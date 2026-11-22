@@ -26,6 +26,7 @@ jobs:
         project: ${{ fromJSON(contains(github.event.head_commit.message, 'MUI groups') && '["mui"]' || '["antd","mui"]') }}
     env:
       PROJECT: ${{ matrix.project }}
+      TRACE_MEMORY: ${{ contains(github.event.head_commit.message, 'trace memory at four workers') && '1' || '' }}
       MATCHED: ${{ contains(github.event.head_commit.message, 'matched benchmark only') && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
