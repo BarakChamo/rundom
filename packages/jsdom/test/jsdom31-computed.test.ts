@@ -318,8 +318,8 @@ it("serializes border radius after an unrelated inline style change", () => {
     const element = window.document.querySelector("p")!;
     element.style.color = "red";
     expect(element.getAttribute("style")).toBe("border-radius: 2px; color: red;");
-    element.style.borderTopRightRadius = "4px";
-    expect(element.style.borderRadius).toBe("2px 4px 2px 2px");
+    element.style.setProperty("border-top-right-radius", "4px");
+    expect(element.style.getPropertyValue("border-radius")).toBe("2px 4px 2px 2px");
   } finally {
     window.close();
   }
