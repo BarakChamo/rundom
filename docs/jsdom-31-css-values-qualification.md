@@ -240,6 +240,10 @@ The separate four-command telemetry run sampled each Node process every 250 ms. 
 
 | Project | Provider  | Group peak MiB | Node RSS MiB | Used V8 heap MiB | Allocated V8 heap MiB | External MiB |
 | ------- | --------- | -------------- | ------------ | ---------------- | --------------------- | ------------ |
+| antd    | RunDOM    | 2,972          | 2,969        | 392              | 847                   | 149          |
+| antd    | jsdom     | 2,878          | 2,879        | 303              | 775                   | 222          |
+| antd    | Happy DOM | 2,779          | 2,766        | 339              | 751                   | 172          |
+| antd    | TurboDOM  | 2,642          | 2,640        | 346              | 789                   | 122          |
 | mui     | RunDOM    | 3,723          | 3,550        | 1,232            | 2,005                 | 255          |
 | mui     | jsdom     | 3,588          | 3,395        | 1,090            | 1,971                 | 245          |
 | mui     | Happy DOM | 3,757          | 3,674        | 999              | 2,239                 | 250          |
