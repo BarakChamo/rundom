@@ -2,9 +2,9 @@ from pathlib import Path
 import json,sys,time,os,subprocess,hashlib
 root=Path.cwd();d=Path(os.environ['RUNNER_TEMP']); v=d
 for project in [os.environ['PROJECT']]:
- for n in [1,2,4]:
+ for n in ([4] if os.getenv('TRACE_MEMORY') else [1,2,4]):
   for provider in sys.argv[1:]:
-   tag=f'{project}-{n}-{provider}'
+   tag=f'{project}-{n}-{provider}' + ('-trace' if os.getenv('TRACE_MEMORY') else '')
    if (d/('batch3-'+tag+'.json')).exists():continue
    procs=[];files=[];logs=[];peak=0;start=time.monotonic()
    for i in range(n):
@@ -16,6 +16,7 @@ for project in [os.environ['PROJECT']]:
      env.update(NODE_OPTIONS='--import='+str(root/'qualification/provider.mjs'),JSDOM_ENTRY=str(root/'packages/jsdom/dist/jsdom.cjs'))
      if provider=='nursery16':env['NODE_OPTIONS']+=' --max-semi-space-size=16'
      if provider=='before':env['DOM_VARIANT']=str(root/'packages/dom/out/starting')
+    if os.getenv('TRACE_MEMORY'):env['MEMORY_TRACE']=str(d/f'memory-{tag}-{i}')
     cases=['--project','node:@mui/material','packages/mui-material/src/Autocomplete/Autocomplete.test.js'] if project=='mui' else ['components/'+x+'.test.tsx' for x in ['alert/__tests__/index','alert/__tests__/semantic','checkbox/__tests__/checkbox','checkbox/__tests__/group','radio/__tests__/radio','radio/__tests__/group','tag/__tests__/semantic','tag/__tests__/variant']]
     procs.append(subprocess.Popen(['node','node_modules/vitest/vitest.mjs','run',*cases,'--maxWorkers','1','--no-file-parallelism','--no-cache','--no-fsModuleCache','--testTimeout','120000','--reporter=json','--outputFile='+str(f)],cwd=d/project,env=env,start_new_session=True,stdout=logs[-1],stderr=subprocess.STDOUT))
    ids={p.pid for p in procs}

@@ -17,10 +17,11 @@ type DeferredDeclaration = {
 };
 const deferredDeclarations = new WeakMap<object, DeferredDeclaration>();
 const implementations = new WeakMap<object, DeclarationImplementation>();
+const computedOwners = new WeakMap<object, (view: object) => DeclarationImplementation>();
 const viewFactories = new WeakMap<object, ReturnType<typeof createDeclarationViews>["expose"]>();
 
 function declarationImplementation(view: object): DeclarationImplementation {
-  const implementation = implementations.get(view);
+  const implementation = implementations.get(view) ?? computedOwners.get(view)?.(view);
   if (!implementation) throw new TypeError("Illegal invocation");
   return implementation;
 }
@@ -146,6 +147,7 @@ function indexedHandler(
 
 /** Creates Window-local public prototypes while retaining only private implementation ownership. */
 export function createDeclarationViews(input: {
+  emptyComputed: () => DeclarationImplementation;
   styleProperties: () => readonly StyleProperty[];
   write: (style: DeclarationImplementation, name: string, property: string, value: unknown) => void;
   objectPrototype: object;
@@ -369,6 +371,33 @@ export function createDeclarationViews(input: {
     (target) => inlineTarget(target)._length,
     (target, index) => inlineTarget(target).item(index),
   );
+  let computedValues: WeakMap<object, DeclarationImplementation> | undefined = new WeakMap();
+  let empty: DeclarationImplementation | undefined;
+  function computedValue(view: object): DeclarationImplementation {
+    return computedValues?.get(view) ?? (empty ??= input.emptyComputed());
+  }
+  const computedHandler = indexedHandler(
+    privateLookup,
+    (target) => {
+      const value = computedValue(target);
+      return indexedLength(value, inheritedIndices.get(value));
+    },
+    (target, index) => {
+      const value = computedValue(target);
+      return indexedItem(value, index, inheritedIndices.get(value));
+    },
+  );
+  function publishComputed(
+    prototype: object,
+    value: DeclarationImplementation,
+  ): CSSStyleProperties {
+    const target = Object.create(prototype) as CSSStyleProperties;
+    const view = new Proxy<CSSStyleProperties>(target, computedHandler);
+    computedValues?.set(target, value);
+    computedValues?.set(view, value);
+    computedOwners.set(view, computedValue);
+    return view;
+  }
   return {
     CSSStyleDeclaration,
     hasNativePropertyReader(): boolean {
@@ -404,24 +433,8 @@ export function createDeclarationViews(input: {
       const prototype = properties.has(implementation)
         ? CSSStyleProperties.prototype
         : pageDeclarationPrototype();
-      let handler = indexedHandlers.get(implementation);
-      if (!handler)
-        indexedHandlers.set(
-          implementation,
-          (handler = indexedDeclaration(
-            implementation,
-            published ? Reflect : privateLookup,
-            inherited,
-          )),
-        );
       if (inherited) inheritedIndices.set(implementation, inherited);
-      const ownedHandler = handler;
-      return () => {
-        const target = Object.create(prototype) as CSSStyleProperties;
-        const view = new Proxy<CSSStyleProperties>(target, ownedHandler);
-        implementations.set(view, implementation);
-        return view;
-      };
+      return () => publishComputed(prototype, implementation);
     },
     deferredPublisher(
       read: DeferredDeclaration["read"],
@@ -475,13 +488,10 @@ export function createDeclarationViews(input: {
         },
       });
       deferredDeclarations.set(implementation, { read: readPending, materialize });
-      const handler = indexedDeclaration(implementation, published ? Reflect : privateLookup);
-      return () => {
-        const target = Object.create(CSSStyleProperties.prototype) as CSSStyleProperties;
-        const view = new Proxy<CSSStyleProperties>(target, handler);
-        implementations.set(view, implementation);
-        return view;
-      };
+      return () => publishComputed(CSSStyleProperties.prototype, implementation);
+    },
+    closeComputed(): void {
+      computedValues = undefined;
     },
     register(implementation: DeclarationImplementation, hasStyleProperties: boolean): void {
       if (hasStyleProperties) properties.add(implementation);

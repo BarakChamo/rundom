@@ -172,6 +172,15 @@ type NestedDeclarationsRule = {
   readonly style: PublicDeclaration;
   readonly cssText: string;
 };
+type PropertyRule = {
+  readonly type: 0;
+  readonly names: readonly string[];
+  readonly name: string;
+  readonly syntax: string;
+  readonly inherits: boolean;
+  readonly initialValue: string | null;
+  readonly cssText: string;
+};
 type QualifiedRule = DeclarationRule &
   GroupingRuleView & { readonly type: 1; selectorText: string };
 type NestingMode = "style" | "scope";
@@ -179,6 +188,7 @@ type StyleRule = (
   | DeclarationRule
   | NestedDeclarationsRule
   | QualifiedRule
+  | PropertyRule
   | ImportRule
   | MediaRule
   | SupportsRule
@@ -215,6 +225,7 @@ type Rule =
   | { kind: "keyframe"; view: KeyframeRule & RuleParents }
   | { kind: "keyframes"; view: KeyframesRule & RuleParents; rules: KeyframeEntry[] }
   | { kind: "page"; view: PageRule & RuleParents; rules: Rule[] }
+  | { kind: "property"; view: PropertyRule & RuleParents }
   | { kind: "counter-style"; view: CounterStyleRule & RuleParents }
   | { kind: "layer-statement"; view: LayerStatementRule & RuleParents }
   | { kind: "layer-block"; view: LayerBlockRule & RuleParents; rules: Rule[] }
@@ -2200,6 +2211,37 @@ function createRuleInterfaces(
       return `@font-face { ${this.style.cssText}${this.style.length ? " " : ""}}`;
     }
   }
+  class CSSPropertyRule extends CSSRule<0> implements PropertyRule {
+    #registration: Omit<PropertyRule, "type" | "cssText" | "name">;
+    constructor(token: symbol, registration: Omit<PropertyRule, "type" | "cssText" | "name">) {
+      super(token, 0);
+      this.#registration = registration;
+    }
+    get names() {
+      return this.#registration.names;
+    }
+    get name() {
+      return this.names.length === 1 ? this.names[0]! : "";
+    }
+    get inherits() {
+      return this.#registration.inherits;
+    }
+    get syntax() {
+      return this.#registration.syntax;
+    }
+    get initialValue() {
+      return this.#registration.initialValue;
+    }
+    get cssText() {
+      const { ident, string }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+      const names = this.names.map((name) => ident.encode(name)).join(", ");
+      const initial = this.initialValue === null ? "" : `initial-value: ${this.initialValue}; `;
+      return `@property ${names} { syntax: ${string.encode(this.syntax)}; inherits: ${this.inherits}; ${initial}}`;
+    }
+    get [Symbol.toStringTag]() {
+      return "CSSPropertyRule";
+    }
+  }
   interface CSSCounterStyleRule extends Record<CounterDescriptor, string> {}
   class CSSKeyframeRule extends CSSRule<8> implements KeyframeRule {
     #keyText: string;
@@ -2860,6 +2902,7 @@ function createRuleInterfaces(
     CSSStyleRule,
     CSSNestedDeclarations,
     CSSFontFaceRule,
+    CSSPropertyRule,
     CSSNamespaceRule,
     CSSCounterStyleRule,
     CSSKeyframesRule,
@@ -3033,14 +3076,18 @@ function parseStyleSheetSyntax(text: string, recent?: Map<string, WeakRef<CssNod
   }
   text = ownedString(text);
   const errors: string[] = [];
-  const ast = parseNestingStyleSheet(text, {
-    parseRulePrelude: false,
-    parseAtrulePrelude: false,
-    parseValue: false,
-    onParseError(error) {
-      errors.push(error.message);
+  const ast = parseNestingStyleSheet(
+    text,
+    {
+      parseRulePrelude: false,
+      parseAtrulePrelude: false,
+      parseValue: false,
+      onParseError(error) {
+        errors.push(error.message);
+      },
     },
-  });
+    (message) => errors.push(message),
+  );
   // Consumers only read this AST. CSSOM rules and parse diagnostics are built for each sheet.
   if (!errors.length && text.length <= maximumLargeStylesheetLength) {
     const limit = cache === stylesheetSyntax ? maximumCachedSyntaxEntries : 8;
@@ -4262,6 +4309,78 @@ function parseSheet(
       });
       return;
     }
+    if (
+      node.type === "Atrule" &&
+      node.name.toLowerCase() === "property" &&
+      node.block &&
+      node.prelude
+    ) {
+      const { ident, lexer }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+      const names: string[] = [];
+      let prelude: CssNode;
+      try {
+        prelude = parse(generate(node.prelude), { context: "atrulePrelude", atrule: "property" });
+      } catch {
+        return;
+      }
+      if (prelude.type !== "AtrulePrelude") return;
+      let needsName = true;
+      for (const part of prelude.children) {
+        if (!needsName) {
+          if (part.type !== "Operator" || part.value !== ",") return;
+          needsName = true;
+          continue;
+        }
+        needsName = false;
+        if (part.type !== "Identifier") return;
+        const name = ident.decode(part.name);
+        if (!name.startsWith("--") || name === "--") return;
+        names.push(name);
+      }
+      if (needsName) return;
+      let syntax: string | undefined;
+      let inherits: boolean | undefined;
+      let initialValue: string | null = null;
+      for (const desc of node.block.children) {
+        if (desc.type !== "Declaration" || desc.important) continue;
+        const value = generate(desc.value);
+        switch (desc.property.toLowerCase()) {
+          case "syntax": {
+            const parsed = parse(value, { context: "value" });
+            const token =
+              parsed.type === "Value" && parsed.children.size === 1 ? parsed.children.first : null;
+            if (token?.type === "String") syntax = token.value;
+            break;
+          }
+          case "inherits":
+            if (/^(true|false)$/i.test(value)) inherits = value.toLowerCase() === "true";
+            break;
+          case "initial-value":
+            initialValue = value;
+            break;
+        }
+      }
+      if (!names.length || !syntax || inherits === undefined) return;
+      if (syntax !== "*") {
+        if (!initialValue) return;
+        // Match each registered alternative with CSS Tree's value grammar.
+        const types =
+          /^(?:<(?:length|number|percentage|length-percentage|color|image|url|integer|angle|time|resolution|transform-function|transform-list|custom-ident)>|[-_a-zA-Z][\w-]*)[+#]?$/;
+        const alternatives = syntax.split("|").map((part) => part.trim());
+        if (!alternatives.every((part) => types.test(part))) return;
+        if (!alternatives.some((part) => lexer.match(part, initialValue!).error === null)) return;
+      }
+      target.push({
+        kind: "property",
+        view: new interfaces.CSSPropertyRule(interfaces.key, {
+          names: Object.freeze(names),
+          syntax,
+          inherits,
+          initialValue,
+        }),
+      });
+      return;
+    }
     if (node.type === "Atrule" && node.name === "font-face" && node.block) {
       const style = declaration();
       for (const child of node.block.children) {
@@ -4987,8 +5106,13 @@ export function createStyles(input: {
   );
   const declarationKey = Symbol();
   let declarationViews: ReturnType<typeof createDeclarationViews> | undefined;
-  function views() {
+  function views(): ReturnType<typeof createDeclarationViews> {
     return (declarationViews ??= createDeclarationViews({
+      emptyComputed: () => {
+        const empty = declaration();
+        empty._readonly = true;
+        return empty;
+      },
       styleProperties: declarationProperties,
       write: writePublicStyleProperty,
       objectPrototype: input.objectPrototype,
@@ -7929,6 +8053,7 @@ export function createStyles(input: {
   }
 
   return {
+    closeComputed: () => views().closeComputed(),
     StyleSheet,
     css,
     CSSStyleSheet,
@@ -7944,6 +8069,7 @@ export function createStyles(input: {
     CSSGroupingRule: ruleInterfaces.CSSGroupingRule,
     CSSConditionRule: ruleInterfaces.CSSConditionRule,
     CSSFontFaceRule: ruleInterfaces.CSSFontFaceRule,
+    CSSPropertyRule: ruleInterfaces.CSSPropertyRule,
     CSSNamespaceRule: ruleInterfaces.CSSNamespaceRule,
     CSSCounterStyleRule: ruleInterfaces.CSSCounterStyleRule,
     CSSKeyframesRule: ruleInterfaces.CSSKeyframesRule,

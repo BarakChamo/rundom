@@ -4,6 +4,7 @@ import type { Block, CssLocation, CssNode, List, ParseOptions } from "css-tree";
 const require = createRequire(import.meta.url);
 type Parse = typeof import("css-tree").parse;
 type Tokens = {
+  BadString: number;
   Delim: number;
   Comma: number;
   Colon: number;
@@ -325,7 +326,37 @@ function compactStyleSheet(source: string): CssNode | undefined {
 }
 
 /** Parses stylesheet structure using the same token stream for nesting detection and recovery. */
-export function parseNestingStyleSheet(source: string, options: ParseOptions): CssNode {
+export function parseNestingStyleSheet(
+  source: string,
+  options: ParseOptions,
+  report: (message: string) => void,
+): CssNode {
+  // Only tokenize separately when a raw delimiter count could reach the upstream
+  // nesting limit, or multiline quoted text could contain a bad-string token.
+  const openings = /[[({]/g;
+  let count = 0;
+  if (source.length >= 129) while (count < 129 && openings.test(source)) count++;
+  if (count === 129 || (/["']/.test(source) && /[\n\r\f]/.test(source))) {
+    const runtime = css();
+    const tokens = runtime.tokenTypes;
+    const stack: number[] = [];
+    let exceeded = false;
+    runtime.tokenize(source, (type) => {
+      if (exceeded) return;
+      if (type === tokens.BadString) report("Bad string");
+      if (type === tokens.Function || type === tokens.LeftParenthesis)
+        stack.push(tokens.RightParenthesis);
+      else if (type === tokens.LeftCurlyBracket) stack.push(tokens.RightCurlyBracket);
+      else if (type === tokens.LeftSquareBracket) stack.push(tokens.RightSquareBracket);
+      else if (type === stack.at(-1)) stack.pop();
+      exceeded = stack.length > 128;
+    });
+    if (exceeded) {
+      const empty: CssNode = { type: "StyleSheet", children: new runtime.List<CssNode>() };
+      report("CSS nesting limit exceeded");
+      return empty;
+    }
+  }
   if (
     !options.positions &&
     options.parseRulePrelude === false &&

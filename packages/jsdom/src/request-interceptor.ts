@@ -33,6 +33,46 @@ function outgoingHeaders(headers: Headers): Record<string, string | string[]> {
   return output;
 }
 
+// A user promise can outlive its Window. Its settlement handlers must release the
+// dispatcher continuation on abort while still disposing of a late response body.
+function cancellableResponse(
+  result: ReturnType<Callback>,
+  signal: AbortSignal,
+): Promise<Response | undefined> {
+  const waiting = Promise.withResolvers<Response | undefined>();
+  const slot: { continuation?: typeof waiting; reason?: unknown } = { continuation: waiting };
+  const cancel = () => {
+    slot.reason = signal.reason;
+    slot.continuation?.reject(slot.reason);
+    delete slot.continuation;
+  };
+  if (signal.aborted) cancel();
+  else signal.addEventListener("abort", cancel, { once: true });
+  observeResponse(result, slot);
+  void waiting.promise.then(
+    () => signal.removeEventListener("abort", cancel),
+    () => signal.removeEventListener("abort", cancel),
+  );
+  return waiting.promise;
+}
+
+function observeResponse(
+  result: ReturnType<Callback>,
+  slot: { continuation?: PromiseWithResolvers<Response | undefined>; reason?: unknown },
+): void {
+  void Promise.resolve(result).then(
+    (response) => {
+      if (slot.continuation) slot.continuation.resolve(response);
+      else if (response?.body) void response.body.cancel(slot.reason).catch(() => {});
+      delete slot.continuation;
+    },
+    (error: unknown) => {
+      slot.continuation?.reject(error);
+      delete slot.continuation;
+    },
+  );
+}
+
 /** Intercepts a request before transport. Returning undefined passes it to the next dispatcher. */
 export function requestInterceptor(callback: Callback): Dispatcher.DispatcherComposeInterceptor {
   if (typeof callback !== "function")
@@ -158,7 +198,7 @@ export function requestInterceptor(callback: Callback): Dispatcher.DispatcherCom
       let response: Response | undefined;
       let forwarded = false;
       try {
-        response = await callback(request, { element });
+        response = await cancellableResponse(callback(request, { element }), signal);
         if (signal.aborted) {
           await response?.body?.cancel(reason);
           return;

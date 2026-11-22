@@ -213,6 +213,12 @@ export class JSDOM {
               );
             },
           }),
+      reportXMLParsingError: (cause) => {
+        this.virtualConsole.emit(
+          "jsdomError",
+          Object.assign(new Error("Could not parse XML", { cause }), { type: "xml-parsing" }),
+        );
+      },
       reportStyleError: (sheetText, cause) => {
         const error = new Error("Could not parse CSS stylesheet", { cause });
         this.virtualConsole.emit(

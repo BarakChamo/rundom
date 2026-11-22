@@ -459,6 +459,8 @@ type WindowSettings = {
   frameDepth?: number;
   storageAreas?: () => StorageAreas;
   frameLoaded?: () => void;
+  frameFailed?: (error: unknown) => void;
+  reportXMLParsingError?: (cause: unknown) => void;
   frameClosed?: () => void;
   loadTextResource?: (input: {
     kind: "script" | "stylesheet" | "frame";
@@ -1404,6 +1406,7 @@ type Slotable = Raw.Element | Raw.TextNode;
 const manualSlotFor = new WeakMap<Slotable, Raw.Element>();
 const manualSlotMembers = new WeakMap<Raw.Element, Set<Slotable>>();
 const assignedSlotSnapshots = new WeakMap<Raw.Node, Map<Raw.Element, Slotable[]>>();
+const scriptAsyncCleared = new WeakSet<Raw.Element>();
 const startedScripts = new WeakSet<Raw.Element>();
 let attrRecords: WeakMap<object, AttributeRecord> | undefined;
 let attrOwners: WeakMap<object, Raw.Element> | undefined;
@@ -2373,6 +2376,8 @@ function buildWindow(
     loadImmediates = undefined;
   }
   let closed = false;
+  let stopActiveParser: (() => void) | undefined;
+  let focusFixupPending = false;
   class DOMException extends HostDOMException {}
 
   class QuotaExceededError extends DOMException {
@@ -5500,6 +5505,14 @@ function buildWindow(
     attr: AttributeRecord,
     oldValue: string | null,
   ): void {
+    if (!focusFixupPending && focusStates.get(source)?.element && !closed) {
+      focusFixupPending = true;
+      timers.setTimeout(() => {
+        focusFixupPending = false;
+        const focused = focusStates.get(source)?.element;
+        if (focused && !focusable(focused, window)) focusViewport();
+      });
+    }
     const { name, namespace } = attr;
     // These attributes affect the cascade through selector matching. An unattached
     // root is outside document-frame reuse, and equal values leave selectors unchanged.
@@ -12900,6 +12913,14 @@ function buildWindow(
       if (value == null) Element.prototype.removeAttribute.call(this, "crossorigin");
       else Element.prototype.setAttribute.call(this, "crossorigin", `${value}`);
     }
+    get async(): boolean {
+      const node = element(this);
+      return !scriptAsyncCleared.has(node) || attribute(node, "async") !== null;
+    }
+    set async(value: boolean) {
+      scriptAsyncCleared.add(element(this));
+      Element.prototype.toggleAttribute.call(this, "async", Boolean(value));
+    }
     get defer(): boolean {
       return attribute(element(this), "defer") !== null;
     }
@@ -12921,6 +12942,7 @@ function buildWindow(
     }
     override setAttribute(name: string, value: string): void {
       super.setAttribute(name, value);
+      if (String(name).toLowerCase() === "async") scriptAsyncCleared.add(element(this));
       if (String(name).toLowerCase() === "src") activateInsertedScript(element(this));
     }
   }
@@ -18104,6 +18126,9 @@ function buildWindow(
   function closeWindow(): void {
     if (closed) return;
     closed = true;
+    styleBinding?.closeComputed();
+    stopActiveParser?.();
+    stopActiveParser = undefined;
     cancelScheduledLoads();
     cachedNodeListFactory = undefined;
     advanceRevision();
@@ -18113,7 +18138,7 @@ function buildWindow(
     resourceTimingOverflow = undefined;
     resourceObservers?.clear();
     frameCallbacks?.clear();
-    resourceAbort?.abort();
+    cancelResourceRequests();
     socketAbort?.abort();
     for (const node of frameStates.keys()) closeFrame(node);
     if (frameCount) refreshFrameIndices();
@@ -18907,13 +18932,26 @@ function buildWindow(
     return control;
   }
 
+  function cancelResourceRequests(): void {
+    const controller = resourceAbort;
+    if (!controller) return;
+    controller.abort();
+    // Node keeps the calling Window alive through an abort reason's lazy stack.
+    // A page-supplied formatter can throw after cancellation has completed.
+    try {
+      void controller.signal.reason.stack;
+    } catch {}
+  }
+
   function stopWindow(): void {
     const stoppingLoad = readyState !== "complete" && !documentLoadStopped;
     if (stoppingLoad) {
+      stopActiveParser?.();
+      stopActiveParser = undefined;
       documentLoadStopped = true;
       cancelScheduledLoads();
     }
-    resourceAbort?.abort();
+    cancelResourceRequests();
     resourceAbort = undefined;
     if (stoppingLoad) options.frameClosed?.();
   }
@@ -19009,6 +19047,9 @@ function buildWindow(
     }
     get CSSMediaRule() {
       return styles().CSSMediaRule;
+    }
+    get CSSPropertyRule() {
+      return styles().CSSPropertyRule;
     }
     get CSSFontFaceRule() {
       return styles().CSSFontFaceRule;
@@ -19401,6 +19442,7 @@ function buildWindow(
     }
     getComputedStyle(node: Element) {
       const record = element(node);
+      if (closed) styles().closeComputed();
       const scope = styleScope(record);
       const owner = scope && isDocumentRecord(scope) ? scope : actualOwnerRecord(record);
       const realm = documentRealms.get(owner);
@@ -19955,8 +19997,9 @@ function buildWindow(
       options.reportResourceError?.("script", target?.href ?? src, cause);
       return;
     }
-    if (executeAfter && !signal.aborted) await executeAfter;
-    if (closed || signal.aborted) return;
+    if (signal.aborted) return;
+    if (executeAfter) await executeAfter;
+    if (closed) return;
     if (!evaluateScript(script, response.code, response.url, 0)) return;
     // Resource completion follows evaluation's promise continuation. Once
     // execution started, document destruction does not cancel its load event.
@@ -20057,8 +20100,18 @@ function buildWindow(
     void pending.then(release, release);
   }
 
+  let orderedScripts: Promise<void> | undefined;
   function activateInsertedScript(script: Raw.Element): void {
-    trackResource(startScript(script), "load");
+    const ordered = scriptAsyncCleared.has(script) && attribute(script, "async") === null;
+    const pending = startScript(script, ordered ? orderedScripts : undefined);
+    if (ordered && pending) {
+      orderedScripts = pending;
+      const release = () => {
+        if (orderedScripts === pending) orderedScripts = undefined;
+      };
+      void pending.then(release, release);
+    }
+    trackResource(pending, "load");
   }
 
   function connected(node: Raw.Element): boolean {
@@ -20323,19 +20376,29 @@ function buildWindow(
         }
         closeFrameRealm(state.realm);
         const { inheritedOrigin: _origin, inheritedBase: _base, ...loaded } = childOptions;
-        state.realm = createChildWindow({ ...loaded, ...metadata, markup: code, url: loadedURL });
+        state.realm = createChildWindow({
+          ...loaded,
+          ...metadata,
+          frameFailed,
+          markup: code,
+          url: loadedURL,
+        });
         if (metadata?.contentType === "image/svg+xml") {
           const svgOrigin = URL.parse(loadedURL)?.origin;
           if (svgOrigin) state.svgOrigin = svgOrigin;
         }
       })
-      .catch((cause: unknown) => {
+      .catch(frameFailed);
+    function frameFailed(cause: unknown): void {
+      try {
         if (!signal.aborted && !closed && frameStates.get(node) === state) {
           handle.dispatchEvent(new Event("error"));
-          options.reportResourceError?.("frame", target.href, cause);
+          options.reportResourceError?.("frame", target!.href, cause);
         }
+      } finally {
         complete();
-      });
+      }
+    }
   }
 
   let parsedRadioRecords: WeakSet<Raw.Element> | undefined;
@@ -20567,6 +20630,7 @@ function buildWindow(
       attrs: AttributeRecord[],
     ): Raw.Element {
       const node = adapter.createElement(tagName, namespace, attrs);
+      if (tagName === "script" && namespace === html.NS.HTML) scriptAsyncCleared.add(node);
       if (
         !customDefinitions ||
         isInTemplate() ||
@@ -20661,25 +20725,40 @@ function buildWindow(
     if (!parsing()) return;
     needsParserRadioScan = !endOfInput || /<input[\t\n\f\r />]/i.test(markup);
     if (options.isXML) {
-      let pending: Promise<void> | undefined;
-      const onScript = (script: Raw.Element): void => {
+      const onScript = (script: Raw.Element) => {
         advanceRevision();
-        pending = pending
-          ? pending.then(() => (parsing() ? startScript(script) : undefined))
-          : startScript(script);
+        return startScript(script);
       };
       try {
-        parseXML({
+        const pending = parseXML({
           document: source,
           markup,
           url: url.href,
+          ...(customDefinitions
+            ? { createElement: liveParserAdapter(tree, () => false).createElement }
+            : {}),
+          ...(customDefinitions || parserOptions.scriptingEnabled ? { active: parsing } : {}),
           ...(parserOptions.scriptingEnabled ? { onScript } : {}),
         });
+        if (pending) {
+          void pending
+            .then(() => {
+              if (parsing()) finishLoading();
+            })
+            .catch((error: unknown) => {
+              if (!parsing()) return;
+              if (isXMLParseError(error)) {
+                options.reportXMLParsingError?.(error);
+                finishLoading();
+              } else if (options.frameFailed) options.frameFailed(error);
+              else options.reportScriptError?.(error);
+            });
+          return;
+        }
       } catch (error) {
         if (!options.frameParent || !isXMLParseError(error)) throw error;
         replaceChildren(source, [xmlParserError(error.message)]);
       }
-      trackResource(pending);
       finishLoading();
       return;
     }
@@ -20773,6 +20852,7 @@ function buildWindow(
 
     let streamEnded = endOfInput;
     function finishParsedMarkup(): void {
+      if (streamEnded && stopActiveParser === stop) stopActiveParser = undefined;
       if (!parsing()) return;
       cachedDocumentBase = undefined;
       if (parsedShadows) for (const root of parsedShadows) reconcileSlots(root);
@@ -20835,7 +20915,13 @@ function buildWindow(
       asynchronousParser = true;
       parser?.tokenizer.pause();
       const resume = () => {
-        if (parsing()) parser?.tokenizer.resume(finishParsedMarkup);
+        if (!parsing()) return;
+        try {
+          parser?.tokenizer.resume(finishParsedMarkup);
+        } catch (error) {
+          if (options.frameFailed) options.frameFailed(error);
+          else options.reportScriptError?.(error);
+        }
       };
       void pending.then(resume, (error: unknown) => {
         if (options.reportScriptError) options.reportScriptError(error);
@@ -20851,7 +20937,7 @@ function buildWindow(
     const parseSVGScripts =
       parserOptions.scriptingEnabled && (!endOfInput || /<svg[\t\n\f\r />]/i.test(markup));
     parser = new Parser<Raw.DefaultTreeAdapterMap>(
-      parsedShadows || parseSVGScripts
+      parsedShadows || parseSVGScripts || /<style[\t\n\f\r />]/i.test(markup) || !endOfInput
         ? {
             ...liveParserSettings,
             treeAdapter: {
@@ -20864,6 +20950,14 @@ function buildWindow(
               },
               onItemPop(node, newTop) {
                 parserAdapter.onItemPop?.(node, newTop);
+                if (
+                  node.tagName === "style" &&
+                  node.namespaceURI === html.NS.HTML &&
+                  connected(node)
+                ) {
+                  (parserStylesheetOwners ??= new WeakSet()).add(node);
+                  styles().applyInline(node);
+                }
                 if (
                   parseSVGScripts &&
                   node.namespaceURI === html.NS.SVG &&
@@ -20879,6 +20973,8 @@ function buildWindow(
       handleParsedScript,
     );
     const currentParser = parser;
+    const stop = () => currentParser.tokenizer.pause();
+    stopActiveParser = stop;
     const write: MarkupWriter = (chunk, last) => {
       if (!parsing() || streamEnded) return;
       streamEnded = last;

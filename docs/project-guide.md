@@ -78,14 +78,14 @@ TypeScript browser-facing APIs use exception contracts where the platform requir
 
 Each owned source file starts with its durable responsibility. Public entry points document examples and limitations. Use Vitest `test/*.test.ts` beside the owning package and Cargo integration tests in `crates/dom-core/tests/`.
 
-The upstream reference is jsdom 30.1.3 at commit `058c0f55f369a70bcb113d660ae562b9066f2d44`. Qualification requires packed Node alias tests, named upstream jsdom and WPT outcomes, and runner fixtures on both backends once integrated. Record missing assertions, harness failures, and browser-confirmed differences separately. Require equal checked behavior before comparing implementations. Run benchmarks uncached in serial fresh processes and record Node version, provider versions, platform, startup, verified completion, warm work, and memory separately.
+The upstream qualification target is jsdom 31.0.1 at commit `b76da26fd3b2786771b493f0bbec8dbd7a3d36d0`. Qualification requires packed Node alias tests, named upstream jsdom and WPT outcomes, and runner fixtures on both backends once integrated. Record missing assertions, harness failures, and browser-confirmed differences separately. Require equal checked behavior before comparing implementations. Run benchmarks uncached in serial fresh processes and record Node version, provider versions, platform, startup, verified completion, warm work, and memory separately.
 
 ### Upstream API probe
 
 Prepare a separate, unchanged checkout and install its locked test dependencies.
 
 ```sh
-git clone --depth 1 --branch v30.1.3 https://github.com/jsdom/jsdom.git .cache/jsdom-reference
+git clone --depth 1 --branch v31.0.1 https://github.com/jsdom/jsdom.git .cache/jsdom-reference
 npm --prefix .cache/jsdom-reference ci
 bun run build
 bun run conformance:api reference
@@ -137,6 +137,8 @@ The native transport is now compact wire version two; `compact-transport.ts` che
 ### Performance laboratory
 
 The TypeScript rig in `packages/jsdom/bench/lab` owns frozen multi-provider scenarios, separate timing/CPU/allocation/memory modes and independent-document worker experiments. `bun run benchmark:lab prepare` builds a cohort; `run`, `memory`, `profile` and `parallel` consume its absolute path. See [performance laboratory](performance-lab.md) for commands, bounded dimensions, evidence contracts and interpretation. Benchmark code has its own strict TypeScript project with DOM ambient types; production source retains its existing Node-only compilation. The package typecheck command checks both. Timing is deliberately outside Turbo caching.
+
+The [November 22 real-project investigation](real-project-performance-2026-11-22.md) records paired Mozilla Readability timings, Material UI worker allocation profiles, compatibility results and rejected experiments. The [stylesheet and concurrency follow-up](stylesheet-concurrency-2026-11-22.md) measures complete Ant Design and Material UI commands at one, two and four concurrent runs.
 
 The measured optimization queue and raw-artifact index are in [performance findings](performance-lab-results.md). The completed batch contract is [collection/query performance](collection-performance-plan.md). The branch storage and ID lookup results are in [packed DOM benchmarks](packed-topology-performance.md). Record host contention, lifecycle policy, first-use costs and all correctness failures. Replay WPT before carrying forward an agreement percentage.
 

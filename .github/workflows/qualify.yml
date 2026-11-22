@@ -54,6 +54,7 @@ jobs:
           cp "$RUNNER_TEMP/supports.after" packages/dom/src/css-supports.ts
           (cd packages/dom && bun run build)
           python3 qualification/parallel.py before final jsdom
+          TRACE_MEMORY=1 python3 qualification/parallel.py before final jsdom
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -62,14 +63,14 @@ jobs:
             ${{ runner.temp }}/batch3*.json
             ${{ runner.temp }}/con3*.json
             ${{ runner.temp }}/con3*.log
+            ${{ runner.temp }}/memory-*.jsonl
   wpt:
-    if: false
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
-        provider: [reference, candidate]
+        provider: [candidate]
     steps:
       - uses: actions/checkout@v4
         with:
