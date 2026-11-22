@@ -1259,7 +1259,11 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return owner.removeProperty.call(this, property);
       }
       const name = canonicalProperty(cssInput(property));
-      if (this._readonly) return super.removeProperty(name);
+      if (this._readonly)
+        throw new this._global.DOMException(
+          `Cannot remove property "${property}" from a read-only style declaration.`,
+          "NoModificationAllowedError",
+        );
       // Native shorthand setters remove their serialized entry while rebuilding
       // longhands. Only a public removal expands to the complete declaration.
       if (requestedStyleWrites.has(this)) return super.removeProperty(name);
@@ -1274,8 +1278,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       const value = cssInput(text);
       if (this._readonly) {
-        super.cssText = value;
-        return;
+        throw new this._global.DOMException(
+          "Cannot set cssText on a read-only style declaration.",
+          "NoModificationAllowedError",
+        );
       }
       this.#updateStyle(() => {
         this.#setCSSText(value);
@@ -1730,7 +1736,11 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         : canonicalProperty(inputName.toLowerCase());
       const text = cssInput(value);
       const importance = cssInput(priority).toLowerCase();
-      if (this._readonly) return super.setProperty(name, text, importance);
+      if (this._readonly)
+        throw new this._global.DOMException(
+          `Cannot set property "${inputName}" on a read-only style declaration.`,
+          "NoModificationAllowedError",
+        );
       if (text && importance && importance !== "important") return;
       this.#updateStyle(() => {
         const previous = requestedStyleWrites.get(this);

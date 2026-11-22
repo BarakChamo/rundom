@@ -19,7 +19,7 @@ it("recomputes specificity when the same declarations match with different selec
     if (!(rule instanceof w.CSSStyleRule)) throw new Error("Expected rule");
     rule.selectorText = "p";
     expect(w.getComputedStyle(p).color).toBe("rgb(0, 0, 255)");
-    expect(before.color).toBe("rgb(255, 0, 0)");
+    expect(before.color).toBe("rgb(0, 0, 255)");
   } finally {
     w.close();
   }
@@ -61,7 +61,7 @@ it("tracks automatic control direction after value changes without attribute cha
     input.value = "עברית";
     expect(input.getAttribute("value")).toBe("Latin");
     expect(w.getComputedStyle(input).getPropertyValue("direction")).toBe("rtl");
-    expect(first.getPropertyValue("direction")).toBe("ltr");
+    expect(first.getPropertyValue("direction")).toBe("rtl");
     expect(w.getComputedStyle(bdi).getPropertyValue("direction")).toBe("ltr");
     bdi.textContent = "עברית";
     expect(w.getComputedStyle(bdi).getPropertyValue("direction")).toBe("rtl");

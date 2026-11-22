@@ -1,5 +1,6 @@
 // Covers stylesheet cascade and selector behavior through the public Window.
 import { describe, expect, it } from "vitest";
+import { createWindow } from "@run-dom/dom";
 import { JSDOM, requestInterceptor } from "@run-dom/jsdom";
 
 describe("Window stylesheets", () => {
@@ -17,7 +18,7 @@ describe("Window stylesheets", () => {
       node.style.setProperty("background-color", "rgba(4,5,6,0.125)", "important");
       expect(node.style.getPropertyValue("background-color")).toBe("rgba(4, 5, 6, 0.125)");
       expect(node.style.getPropertyPriority("background-color")).toBe("important");
-      expect(style.getPropertyValue("background-color")).toBe("rgba(170, 187, 204, 0.867)");
+      expect(style.getPropertyValue("background-color")).toBe("rgba(4, 5, 6, 0.125)");
     } finally {
       window.close();
     }
@@ -76,16 +77,16 @@ describe("Window stylesheets", () => {
       // When the ID selector is changed to a class with the same specificity as the later rule.
       rule.selectorText = ".tile";
 
-      // Then the old snapshot retains the ID winner and the later class wins the new cascade.
+      // Then the retained and fresh declarations both see the new winner.
       expect(rule.selectorText).toBe(".tile");
-      expect(before.color).toBe("rgb(255, 0, 0)");
+      expect(before.color).toBe("rgb(0, 0, 255)");
       expect(window.getComputedStyle(target).color).toBe("rgb(0, 0, 255)");
     } finally {
       window.close();
     }
   });
 
-  it("keeps unread properties from the original cascade after viewport and CSSOM edits", () => {
+  it("updates unread declarations after viewport and CSSOM edits and clears them on detachment", () => {
     // Given: a declaration whose width and visibility depend on media and a custom property.
     const { window } = new JSDOM(
       "<style>@media (min-width: 500px) { main { --gap: 10px } " +
@@ -103,15 +104,13 @@ describe("Window stylesheets", () => {
       if (!sheet) throw new Error("Expected the authored stylesheet");
       sheet.insertRule("main { --gap: 25px !important }");
       const updated = window.getComputedStyle(target);
-      target.remove();
-
-      // Then: both declarations retain their own values and enumeration.
-      expect(original.getPropertyValue("visibility")).toBe("hidden");
-      expect(original.getPropertyValue("width")).toBe("90px");
-      expect(original.getPropertyValue("--gap")).toBe("10px");
-      expect(Array.from(original)).toContain("width");
-      expect(updated.getPropertyValue("width")).toBe("125px");
+      expect(original.getPropertyValue("width")).toBe("125px");
       expect(updated.getPropertyValue("--gap")).toBe("25px");
+      target.remove();
+      expect(original.getPropertyValue("visibility")).toBe("");
+      expect(original.getPropertyValue("width")).toBe("");
+      expect(Array.from(original)).toEqual([]);
+      expect(updated.getPropertyValue("--gap")).toBe("");
       window.close();
       expect(original.length).toBe(0);
       expect(updated.getPropertyValue("--gap")).toBe("");
@@ -142,9 +141,9 @@ describe("Window stylesheets", () => {
       main.style.setProperty("--tone-47", "29px");
       expect(window.getComputedStyle(first).getPropertyValue("width")).toBe("29px");
 
-      // Then: the earlier declaration retains all inherited values in enumeration order.
-      expect(original.getPropertyValue("--tone-47")).toBe("47px");
-      expect(original.getPropertyValue("width")).toBe("47px");
+      // Then: the retained declaration exposes the updated inherited values in enumeration order.
+      expect(original.getPropertyValue("--tone-47")).toBe("29px");
+      expect(original.getPropertyValue("width")).toBe("29px");
       const names = Array.from(original);
       const customStart = names.indexOf("--tone-0");
       expect(names.slice(customStart, customStart + theme.length)).toEqual(
@@ -172,9 +171,9 @@ describe("Window stylesheets", () => {
       );
       const captured = window.getComputedStyle(section);
       section.setAttribute("style", "--tone: rgba(4,5,6,1); color:var(--tone)");
-      // Then both indexed access and the named getter reflect their own snapshot.
+      // Then enumeration and the named getter both reflect the updated declaration.
       expect(Array.from(captured).filter((name) => name === "color")).toHaveLength(1);
-      expect(captured.getPropertyValue("color")).toBe("rgba(12, 34, 56, 0.125)");
+      expect(captured.getPropertyValue("color")).toBe("rgb(4, 5, 6)");
       expect(window.getComputedStyle(leaf).getPropertyValue("color")).toBe("rgb(4, 5, 6)");
     } finally {
       window.close();
@@ -194,7 +193,7 @@ describe("Window stylesheets", () => {
       const old = window.getComputedStyle(target);
       outer.className = "outer";
       // Then matching can backtrack to a more distant ancestor and sees the subsequent class mutation.
-      expect(old.getPropertyValue("opacity")).toBe("0.25");
+      expect(old.getPropertyValue("opacity")).toBe("1");
       expect(window.getComputedStyle(target).getPropertyValue("opacity")).toBe("1");
     } finally {
       window.close();
@@ -217,9 +216,9 @@ describe("Window stylesheets", () => {
       const sheet = window.document.styleSheets[0];
       if (!sheet) throw new Error("Expected an inline stylesheet");
       sheet.insertRule("button.hot:focus{opacity:0.8}", sheet.cssRules.length);
-      // Then source order and specificity are preserved in each independent snapshot.
-      expect(first.getPropertyValue("opacity")).toBe("0.4");
-      expect(focused.getPropertyValue("opacity")).toBe("0.6");
+      // Then the newest matching rule wins in every live declaration.
+      expect(first.getPropertyValue("opacity")).toBe("0.8");
+      expect(focused.getPropertyValue("opacity")).toBe("0.8");
       expect(window.getComputedStyle(button).getPropertyValue("opacity")).toBe("0.8");
     } finally {
       window.close();
@@ -245,9 +244,9 @@ describe("Window stylesheets", () => {
       section.style.setProperty("--t39", "73px");
       const current = window.getComputedStyle(target);
 
-      // Then each snapshot retains its token values and enumerates each owned name exactly once.
+      // Then each declaration sees the current tokens and enumerates each name once.
       expect(current.getPropertyValue("width")).toBe("73px");
-      expect(old.getPropertyValue("width")).toBe("39px");
+      expect(old.getPropertyValue("width")).toBe("73px");
       const names = Array.from(old).filter((name) => name?.startsWith("--"));
       expect(names).toEqual([
         "--leaf",
@@ -258,7 +257,7 @@ describe("Window stylesheets", () => {
       for (const [name, value] of [
         ["--root", "5px"],
         ["--leaf", "8px"],
-        ["--local", "39px"],
+        ["--local", "73px"],
       ] as const)
         expect(old.getPropertyValue(name)).toBe(value);
     } finally {
@@ -293,8 +292,8 @@ describe("Window stylesheets", () => {
       expect(names[visibility - 1]).toBe("--a-27");
       expect(snapshot.item(visibility + 1)).toBe("--b-0");
       expect(Object.keys(snapshot)).toHaveLength(snapshot.length);
-      expect(snapshot.getPropertyValue("--b-27")).toBe("27px");
-      expect(snapshot.getPropertyValue("width")).toBe("27px");
+      expect(snapshot.getPropertyValue("--b-27")).toBe("99px");
+      expect(snapshot.getPropertyValue("width")).toBe("99px");
       expect(window.getComputedStyle(first).getPropertyValue("width")).toBe("99px");
     } finally {
       window.close();
@@ -412,9 +411,9 @@ describe("Window stylesheets", () => {
       changeDuringRead = true;
       const updated = window.getComputedStyle(target);
 
-      // Then: the new declaration and retained snapshot represent their own reads.
+      // Then: both declarations see the width after the viewport callback.
       expect(updated.getPropertyValue("width")).toBe("25px");
-      expect(previous.getPropertyValue("width")).toBe("100px");
+      expect(previous.getPropertyValue("width")).toBe("25px");
     } finally {
       window.close();
     }
@@ -451,9 +450,9 @@ describe("Window stylesheets", () => {
       if (!sheet) throw new Error("Expected the author sheet");
       sheet.insertRule(".theme { --space: 12px !important }", sheet.cssRules.length);
 
-      // Then: the newest cascade and the earlier public snapshot each preserve their values.
+      // Then: the retained public declaration follows the newest cascade.
       expect(window.getComputedStyle(second).getPropertyValue("width")).toBe("12px");
-      expect(previous.getPropertyValue("width")).toBe("6px");
+      expect(previous.getPropertyValue("width")).toBe("12px");
     } finally {
       window.close();
     }
@@ -482,7 +481,7 @@ describe("Window stylesheets", () => {
       window.innerWidth = 800;
       expect(window.getComputedStyle(second).getPropertyValue("width")).toBe("12px");
       expect(window.getComputedStyle(first).getPropertyValue("width")).toBe("12px");
-      expect(previous.getPropertyValue("width")).toBe("3px");
+      expect(previous.getPropertyValue("width")).toBe("12px");
     } finally {
       window.close();
     }
@@ -516,10 +515,10 @@ describe("Window stylesheets", () => {
       button.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
       expect(window.getComputedStyle(target).getPropertyValue("visibility")).toBe("hidden");
 
-      // Then: moving focus restores visibility without altering the older snapshot.
+      // Then: moving focus restores visibility and updates the retained declaration.
       other.focus();
       expect(window.getComputedStyle(target).getPropertyValue("visibility")).toBe("visible");
-      expect(keyboard.getPropertyValue("visibility")).toBe("hidden");
+      expect(keyboard.getPropertyValue("visibility")).toBe("visible");
     } finally {
       window.close();
     }
@@ -909,7 +908,7 @@ it("evaluates adopted stylesheet media rules against the current viewport", () =
 });
 
 it("reports media query matches and delivers change events on resize", () => {
-  const { window } = new JSDOM();
+  const { window } = createWindow("");
   try {
     const query = window.matchMedia("(min-width: 800px)");
     expect(query instanceof window.EventTarget).toBe(true);
@@ -937,7 +936,7 @@ it("reports media query matches and delivers change events on resize", () => {
 });
 
 it("shares viewport range comparisons between matchMedia and the cascade", () => {
-  const { window } = new JSDOM(
+  const { window } = createWindow(
     "<style>p { color: red } @media (400px <= width < 800px) { p { color: green } }</style><p></p>",
   );
   try {
@@ -962,7 +961,7 @@ it("shares viewport range comparisons between matchMedia and the cascade", () =>
 });
 
 it("evaluates nested media conditions and preserves unknown values under negation", () => {
-  const { window } = new JSDOM(
+  const { window } = createWindow(
     "<style>p { color: red } @media screen and ((width > 900px) or (height < 200px))" +
       " { p { color: green } }</style><p></p>",
   );
@@ -986,7 +985,7 @@ it("evaluates nested media conditions and preserves unknown values under negatio
 });
 
 it("recovers media query alternatives independently at CSS token boundaries", () => {
-  const { window } = new JSDOM(
+  const { window } = createWindow(
     "<style>@media broken), (min-width: 1px) { p { color: green } }</style><p></p>",
   );
   try {
@@ -1005,7 +1004,7 @@ it("recovers media query alternatives independently at CSS token boundaries", ()
 });
 
 it("normalizes resolution calculations and compares them with device pixel ratio", () => {
-  const { window } = new JSDOM(
+  const { window } = createWindow(
     "<style>p { color: red } @media (min-resolution: calc(96dpi + 1x))" +
       " { p { color: green } }</style><p></p>",
   );
@@ -1646,7 +1645,9 @@ it("normalizes RGB declarations while preserving priority and readonly behavior"
     expect(paragraph.style.getPropertyPriority("color")).toBe("important");
     const computed = window.getComputedStyle(paragraph);
     expect(computed.color).toBe("rgb(0, 128, 0)");
-    expect(() => computed.setProperty("color", "rgb(0,0,255)")).toThrow("can not be modified");
+    expect(() => computed.setProperty("color", "rgb(0,0,255)")).toThrow(
+      "read-only style declaration",
+    );
   } finally {
     window.close();
   }
@@ -2277,7 +2278,7 @@ it("preserves cascade order and mutations across many individual stylesheets", (
     exposed.deleteRule(0);
     first.remove();
     expect(window.getComputedStyle(target).getPropertyValue("--winner")).toBe("15");
-    expect(original.getPropertyValue("--winner")).toBe("16");
+    expect(original.getPropertyValue("--winner")).toBe("15");
   } finally {
     window.close();
   }
@@ -2310,11 +2311,11 @@ it("keeps private media and pseudo-element sheets ordered across CSSOM exposure"
     expect(read().getPropertyValue("--overlay")).toBe("changed");
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 320 });
     expect(read().getPropertyValue("--slot")).toBe("");
-    expect(wide.getPropertyValue("--slot")).toBe("4");
+    expect(wide.getPropertyValue("--slot")).toBe("");
     target.className = "item7";
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
     expect(read().getPropertyValue("--slot")).toBe("7");
-    expect(wide.getPropertyValue("--overlay")).toBe("last");
+    expect(wide.getPropertyValue("--overlay")).toBe("");
   } finally {
     window.close();
   }
@@ -2345,7 +2346,7 @@ it("gives rules with identical private declarations independent editable CSSOM v
     expect(window.getComputedStyle(first).getPropertyValue("--value")).toBe("two");
     expect(window.getComputedStyle(second).getPropertyValue("--value")).toBe("one");
     expect(right.style.getPropertyValue("border-left-width")).toBe("3px");
-    expect(a.getPropertyValue("--value")).toBe("one");
+    expect(a.getPropertyValue("--value")).toBe("two");
   } finally {
     window.close();
   }
@@ -2371,7 +2372,7 @@ it("parses utility rules and preserves recovery after a newline-terminated decla
     expect(media.cssRules.item(91)?.cssText).toContain(".item91");
     source.textContent = utility + ".item91{--slot:changed;\n}";
     expect(window.getComputedStyle(target).getPropertyValue("--slot")).toBe("changed");
-    expect(original.getPropertyValue("--slot")).toBe("91");
+    expect(original.getPropertyValue("--slot")).toBe("changed");
   } finally {
     window.close();
   }

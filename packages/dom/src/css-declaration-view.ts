@@ -397,10 +397,7 @@ export function createDeclarationViews(input: {
       return indexedItem(value, index, inheritedIndices.get(value));
     },
   );
-  function publishComputed(
-    prototype: object,
-    value: ComputedSource,
-  ): CSSStyleProperties {
+  function publishComputed(prototype: object, value: ComputedSource): CSSStyleProperties {
     const target = Object.create(prototype) as CSSStyleProperties;
     const view = new Proxy<CSSStyleProperties>(target, computedHandler);
     computedValues?.set(target, value);

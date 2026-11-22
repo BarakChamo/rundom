@@ -507,7 +507,7 @@ describe.each([
         },
       ]) {
         expect(edit).toThrow(window.DOMException);
-        expect(edit).toThrow(/can not be modified/);
+        expect(edit).toThrow(/read-only style declaration/);
       }
       expect(style.getPropertyValue("visibility")).toBe("hidden");
       expect(style.getPropertyValue("background-color")).toBe("rgba(0, 0, 0, 0)");
@@ -535,7 +535,7 @@ describe.each([
       const light = window.getComputedStyle(child);
       expect(light.getPropertyValue("border-top-color")).toBe("rgb(255, 0, 0)");
       expect(light.color).toBe("rgb(255, 0, 0)");
-      expect(dark.color).toBe("rgb(0, 0, 255)");
+      expect(dark.color).toBe("rgb(255, 0, 0)");
     } finally {
       window.close();
     }
@@ -627,7 +627,7 @@ describe.each([
       expect(first.getPropertyValue("padding")).toBe("30px 20px");
       parent.style.setProperty("font-size", "20px");
       expect(window.getComputedStyle(child).getPropertyValue("padding")).toBe("60px 20px");
-      expect(first.getPropertyValue("padding")).toBe("30px 20px");
+      expect(first.getPropertyValue("padding")).toBe("60px 20px");
     } finally {
       window.close();
     }

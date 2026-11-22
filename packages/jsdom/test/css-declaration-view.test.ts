@@ -33,7 +33,7 @@ describe("CSSStyleDeclaration public views", () => {
       const before = b.window.getComputedStyle(node);
       color.set.call(style, "green");
       expect(color.get.call(style)).toBe("green");
-      expect(before.color).toBe("rgb(0, 0, 255)");
+      expect(before.color).toBe("rgb(0, 128, 0)");
       expect(a.window.document.querySelector("p")?.style.color).toBe("red");
       expect(() => color.get?.call({})).toThrow("Illegal invocation");
     } finally {

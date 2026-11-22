@@ -19628,7 +19628,10 @@ function buildWindow(
   Object.defineProperty(CharacterData.prototype, "previousElementSibling", { enumerable: true });
   Object.defineProperty(CharacterData.prototype, "nextElementSibling", { enumerable: true });
   Object.defineProperty(HTMLIFrameElement.prototype, "getSVGDocument", { enumerable: true });
-  if (options.jsdomCompatibility) Reflect.deleteProperty(HTMLElement.prototype, "inert");
+  if (options.jsdomCompatibility) {
+    Reflect.deleteProperty(HTMLElement.prototype, "inert");
+    Reflect.deleteProperty(WindowMembers.prototype, "matchMedia");
+  }
   Object.defineProperty(HTMLElement.prototype, "nonce", { enumerable: true });
   Object.defineProperty(SVGElement.prototype, "nonce", { enumerable: true });
   // These prototypes receive the complete global event handler descriptor table.

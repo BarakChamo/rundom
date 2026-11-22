@@ -1,4 +1,4 @@
-// Pins computed-style snapshot isolation and dependencies under repeated accessibility-style reads.
+// Pins computed-style liveness and dependencies under repeated accessibility-style reads.
 import { expect, it } from "vitest";
 import { JSDOM } from "@run-dom/jsdom";
 
@@ -17,12 +17,12 @@ it("preserves overflow axes and CSS property aliases across snapshot materializa
       Reflect.get(initial, "overflow"),
       Reflect.get(initial, "overflowX"),
       Reflect.get(initial, "overflowY"),
-    ]).toEqual(["visible", "visible", "visible"]);
+    ]).toEqual(["visible", "scroll", "visible"]);
     expect(Reflect.get(initial, "maxWidth")).toBe("12px");
-    expect(Reflect.get(clipped, "overflowX")).toBe("hidden");
-    expect(clipped.getPropertyValue("overflow-x")).toBe("hidden");
+    expect(Reflect.get(clipped, "overflowX")).toBe("scroll");
+    expect(clipped.getPropertyValue("overflow-x")).toBe("scroll");
     expect(clipped.length).toBeGreaterThan(0);
-    expect(Reflect.get(clipped, "overflowX")).toBe("hidden");
+    expect(Reflect.get(clipped, "overflowX")).toBe("scroll");
     expect(Reflect.get(window.getComputedStyle(main), "overflowX")).toBe("scroll");
   } finally {
     window.close();
@@ -40,7 +40,7 @@ it("keeps computed initial and inherited keywords stable across snapshot enumera
     if (!parent || !child) throw new Error("Expected a parent and child");
     const captured = window.getComputedStyle(child);
     parent.style.setProperty("pointer-events", "auto");
-    expect(captured.getPropertyValue("pointer-events")).toBe("none");
+    expect(captured.getPropertyValue("pointer-events")).toBe("auto");
     expect(captured.display).toBe("inline");
     expect(captured.getPropertyValue("float")).toBe("none");
     expect(window.getComputedStyle(child).getPropertyValue("pointer-events")).toBe("auto");
@@ -150,7 +150,7 @@ it("preserves color tokens in computed custom properties until used by a color l
   }
 });
 
-it("returns independent readonly snapshots with stable indexed declarations", () => {
+it("returns distinct readonly declarations with live values", () => {
   // Given: repeated reads must not expose a shared mutable public declaration.
   const { window } = new JSDOM(
     "<style>p{color:red;margin:1px 2px;font:italic 16px serif}</style><p>text</p>",
@@ -173,8 +173,8 @@ it("returns independent readonly snapshots with stable indexed declarations", ()
     const third = window.getComputedStyle(node);
     expect(third.color).toBe("rgb(0, 0, 255)");
     expect(third.getPropertyValue("margin-left")).toBe("4px");
-    expect(first.color).toBe("rgb(255, 0, 0)");
-    expect(second.color).toBe("rgb(255, 0, 0)");
+    expect(first.color).toBe("rgb(0, 0, 255)");
+    expect(second.color).toBe("rgb(0, 0, 255)");
     expect(first.getPropertyPriority("color")).toBe("");
   } finally {
     window.close();
@@ -225,8 +225,8 @@ it("tracks inherited custom properties, ancestor fonts, and scheme changes", () 
     main.setAttribute("style", "--size:3em;font-size:20px;color-scheme:dark;color:CanvasText");
     const next = window.getComputedStyle(child);
     expect(next.getPropertyValue("width")).toBe("60px");
-    expect(next.color).not.toBe(first.color);
-    expect(first.getPropertyValue("width")).toBe("20px");
+    expect(next.color).toBe(first.color);
+    expect(first.getPropertyValue("width")).toBe("60px");
   } finally {
     window.close();
   }
@@ -316,14 +316,14 @@ it("resolves relative computed URLs against the current document base", () => {
       'url("https://example.test/second/image.png")',
     );
     expect(first.getPropertyValue("background-image")).toBe(
-      'url("https://example.test/first/image.png")',
+      'url("https://example.test/second/image.png")',
     );
   } finally {
     window.close();
   }
 });
 
-it("keeps an unread relative URL from the snapshot's original document base", () => {
+it("resolves an unread relative URL against the current document base", () => {
   // Given: the ancestor already needed the document base during cascade construction.
   const { window } = new JSDOM(
     "<base href='/first/'><style>main{background-image:url(parent.png)}" +
@@ -340,9 +340,9 @@ it("keeps an unread relative URL from the snapshot's original document base", ()
     base.setAttribute("href", "/next/");
     const after = window.getComputedStyle(node);
 
-    // Then: each declaration uses the base that belonged to its own read.
+    // Then: both declarations resolve against the current base.
     expect(before.getPropertyValue("background-image")).toBe(
-      'url("https://example.test/first/child.png")',
+      'url("https://example.test/next/child.png")',
     );
     expect(after.getPropertyValue("background-image")).toBe(
       'url("https://example.test/next/child.png")',
@@ -431,7 +431,7 @@ it("reads the destination document's styles after adoption and reinsertion", () 
     second.window.document.body?.append(node);
     expect(second.window.getComputedStyle(node).color).toBe("rgb(0, 0, 255)");
     expect(first.window.getComputedStyle(node).color).toBe("rgb(0, 0, 255)");
-    expect(snapshot.color).toBe("rgb(255, 0, 0)");
+    expect(snapshot.color).toBe("rgb(0, 0, 255)");
   } finally {
     first.window.close();
     second.window.close();
@@ -504,8 +504,8 @@ it("isolates indexed reflection and expandos on repeated computed snapshots", ()
     // When/Then: new values and old snapshots remain independent after reflection operations.
     node.setAttribute("style", "color:blue;margin:4px;--token:next");
     expect(window.getComputedStyle(node).color).toBe("rgb(0, 0, 255)");
-    expect(first.color).toBe("rgb(255, 0, 0)");
-    expect(second.getPropertyValue("--token")).toBe("value");
+    expect(first.color).toBe("rgb(0, 0, 255)");
+    expect(second.getPropertyValue("--token")).toBe("next");
   } finally {
     window.close();
   }
@@ -618,7 +618,7 @@ it("copies computed indices without invoking an overridden public item method", 
     expect(calls).toBe(1);
     node.setAttribute("style", "color:blue");
     expect(w.getComputedStyle(node).color).toBe("rgb(0, 0, 255)");
-    expect(second.color).toBe("rgb(255, 0, 0)");
+    expect(second.color).toBe("rgb(0, 0, 255)");
     expect(calls).toBe(1);
   } finally {
     w.close();
@@ -697,7 +697,7 @@ it("tracks selector changes across equal writes, attribute removal and insertion
     expect(observer.takeRecords()[0]?.oldValue).toBe("");
     child.removeAttribute("data-on");
     expect(window.getComputedStyle(main).color).toBe(initial);
-    expect(active.color).toBe("rgb(255, 0, 0)");
+    expect(active.color).toBe(initial);
   } finally {
     window.close();
   }

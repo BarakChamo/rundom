@@ -39,7 +39,7 @@ it("exposes CSS declaration accessors before loading the style engine", () => {
   expect(output).toBe("verified");
 });
 
-it("reads user-agent visibility without loading CSS and retains the original snapshot", () => {
+it("reads user-agent visibility without loading CSS and updates a retained declaration", () => {
   const entry = fileURLToPath(new URL("../dist/jsdom.cjs", import.meta.url));
   const output = execFileSync(
     process.execPath,
@@ -61,8 +61,8 @@ it("reads user-agent visibility without loading CSS and retains the original sna
         const second = window.getComputedStyle(button);
         assert.notEqual(first, second);
         assert.equal(second.display, "inline");
-        assert.equal(first.display, "none");
-        assert.equal(first.color, "rgb(0, 0, 0)");
+        assert.equal(first.display, "inline");
+        assert.equal(first.color, "rgb(255, 0, 0)");
         assert.equal(first.borderBlockStartColor, "rgb(51, 51, 51)");
         assert.equal(first.item(0), "background-color");
         assert.throws(() => { first.display = "block"; }, { name: "NoModificationAllowedError" });
@@ -135,7 +135,10 @@ it("defers inline declaration parsing through a simple cssText round trip", () =
     assert.equal(style.color,"blue");
     style.display="block";
     assert.equal(style,p.style);
-    assert.equal(w.getComputedStyle(p).display,"block");
+    const live=w.getComputedStyle(p);
+    assert.equal(live.display,"");
+    w.document.body.append(p);
+    assert.equal(live.display,"block");
     w.close();
   `,
     ],

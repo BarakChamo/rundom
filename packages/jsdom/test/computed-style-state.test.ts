@@ -413,9 +413,9 @@ describe("CSS longhand clearing", () => {
       main.style.setProperty("--edge", "7px solid red");
       main.style.setProperty("--theme", "new");
       const fresh = window.getComputedStyle(child);
-      expect(old.getPropertyValue("border-top-color")).toBe("rgb(22, 119, 255)");
-      expect(old.getPropertyValue("--theme")).toBe("old");
-      expect(ancestor.getPropertyValue("border-top-width")).toBe("3px");
+      expect(old.getPropertyValue("border-top-color")).toBe("rgb(255, 0, 0)");
+      expect(old.getPropertyValue("--theme")).toBe("new");
+      expect(ancestor.getPropertyValue("border-top-width")).toBe("7px");
       expect(Array.from(ancestor)).toContain("border-top-color");
       expect(fresh.getPropertyValue("border-top-color")).toBe("rgb(255, 0, 0)");
       expect(fresh.getPropertyValue("--theme")).toBe("new");

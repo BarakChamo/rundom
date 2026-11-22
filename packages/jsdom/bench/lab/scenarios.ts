@@ -516,17 +516,19 @@ export function prepareScenario(
         run = read(() => {
           const before = window.getComputedStyle(target),
             fresh = window.getComputedStyle(target);
+          const initial = before.color;
           target.style.color = "rgb(0, 0, 255)";
           const after = window.getComputedStyle(target);
           const correct =
             before !== fresh &&
-            before.color === "rgb(255, 0, 0)" &&
-            fresh.color === "rgb(255, 0, 0)" &&
+            initial === "rgb(255, 0, 0)" &&
+            before.color === "rgb(0, 0, 255)" &&
+            fresh.color === "rgb(0, 0, 255)" &&
             after.color === "rgb(0, 0, 255)";
           target.style.color = "";
           return (
             correct &&
-            after.color === "rgb(0, 0, 255)" &&
+            after.color === "rgb(255, 0, 0)" &&
             window.getComputedStyle(target).color === "rgb(255, 0, 0)"
           );
         });
