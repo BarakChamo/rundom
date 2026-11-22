@@ -2152,6 +2152,11 @@ function finalizeWindowInterfaces(window: object, nodePrototype: object, vm: boo
 const windowShapeKeys = [Symbol(), Symbol()] as const;
 const documentViews = new WeakMap<Raw.Document, object>();
 const HostDOMException = globalThis.DOMException;
+const exceptionConstants = Object.fromEntries(
+  Object.keys(HostDOMException)
+    .filter((name) => name.endsWith("_ERR"))
+    .map((name) => [name, Object.getOwnPropertyDescriptor(HostDOMException, name)!]),
+);
 let hostFormDataClass: typeof globalThis.FormData | undefined;
 
 function hostFormData(): typeof globalThis.FormData {
@@ -2381,6 +2386,8 @@ function buildWindow(
   let stopActiveParser: (() => void) | undefined;
   let focusFixupPending = false;
   class DOMException extends HostDOMException {}
+  Object.defineProperties(DOMException, exceptionConstants);
+  Object.defineProperties(DOMException.prototype, exceptionConstants);
 
   class QuotaExceededError extends DOMException {
     readonly #quota: number | null;

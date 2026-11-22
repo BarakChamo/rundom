@@ -229,6 +229,8 @@ describe("Selector contracts", () => {
       const rule = sheet.cssRules[0];
       if (!(rule instanceof window.CSSStyleRule)) throw new Error("Expected style rule");
       // When/Then: selector queries, cascade, and CSSOM use the same valid syntax.
+      expect(p.matches(String.raw`[foo="bar" \69]`)).toBe(true);
+      expect(() => p.matches('[foo="bar" İ]')).toThrow();
       expect(p.matches('[foo="bar"/**/i]')).toBe(true);
       expect(rule.selectorText).toBe('[foo="bar" i]');
       expect(window.getComputedStyle(p).color).toBe("rgb(255, 0, 0)");

@@ -1,7 +1,13 @@
 // Adapts CSS selectors to the raw DOM tree without going through public getters.
 import { createRequire } from "node:module";
 import { defaultTreeAdapter as tree, html, type DefaultTreeAdapterTypes as Raw } from "parse5";
-import { normalizeSelector, parseSelectorList, customStateIdentifier } from "./selector-syntax.js";
+import {
+  normalizeSelector,
+  parseSelectorList,
+  customStateIdentifier,
+  validSelectorCompounds,
+  purePseudoSelector,
+} from "./selector-syntax.js";
 import { checkedness, inputType, isInput } from "./input-state.js";
 import { hasCustomState } from "./custom-state.js";
 import { elementLocalName, xmlSpecial } from "./xml.js";
@@ -306,6 +312,8 @@ function adaptSelector(
       node: import("css-tree").CssNode,
       item: import("css-tree").ListItem<import("css-tree").CssNode>,
     ) {
+      if (node.type === "Selector" && !validSelectorCompounds(node))
+        throw new Error("Invalid compound selector");
       if (node.type === "NestingSelector")
         item.data = { type: "PseudoClassSelector", name: "scope", children: null };
     },
@@ -598,7 +606,6 @@ function adaptSelector(
         }
       }
     } else if (node.type === "AttributeSelector") {
-      if (node.flags && !node.matcher) throw new Error("Attribute selector flags require a value");
       if (node.name.name.startsWith("|")) {
         node.name.name = node.name.name.slice(1);
       } else if (node.name.name.startsWith("*|")) {
@@ -996,6 +1003,9 @@ export function compileSelector(input: {
     require("./css-runtime.cjs").cssSelect;
   const { selector, isXML, scope } = input;
   try {
+    const pseudoOnly = purePseudoSelector(input.selector);
+    if (pseudoOnly === null) throw new Error("Invalid pseudo-element selector");
+    if (pseudoOnly) return () => false;
     const { source, names } = liveStateSelector(normalizeSelector(selector));
     const pseudo = names?.get("checked");
     const statePseudos = { ...input.statePseudos };

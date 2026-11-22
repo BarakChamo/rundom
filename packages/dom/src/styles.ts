@@ -7,7 +7,7 @@ import {
   grammarLonghands,
   serializeShorthand,
   serializeDeclarationBlock,
-  type PendingShorthand,
+  type ShorthandSource,
   defaultMediaQuery,
   computedPositionArea,
   computedPseudoTarget,
@@ -50,7 +50,12 @@ import {
   specifiedColorFunction,
   systemColor,
 } from "./css-colors.js";
-import { parseSelectorList, customStateIdentifier } from "./selector-syntax.js";
+import {
+  parseSelectorList,
+  customStateIdentifier,
+  validSelectorCompounds,
+  purePseudoSelector,
+} from "./selector-syntax.js";
 import { compileSelector, compileSimpleSubject, compileTreeSelector } from "./selectors.js";
 import { queryDependsOnTreeOrFocus, queryDependsOnlyOnTree } from "./query-index.js";
 import { elementLocalName, xmlSpecial } from "./xml.js";
@@ -220,11 +225,11 @@ type PropertyRule = {
   readonly cssText: string;
 };
 // Inheritance keeps unitless line heights as multipliers. Public snapshots expose their used length.
-let pendingShorthands: WeakMap<object, Map<string, PendingShorthand>> | undefined;
-function setPendingShorthand(owner: object, child: string, value: PendingShorthand): void {
-  pendingShorthands ??= new WeakMap();
-  let entries = pendingShorthands.get(owner);
-  if (!entries) pendingShorthands.set(owner, (entries = new Map()));
+let shorthandSources: WeakMap<object, Map<string, ShorthandSource>> | undefined;
+function setShorthandSource(owner: object, child: string, value: ShorthandSource): void {
+  shorthandSources ??= new WeakMap();
+  let entries = shorthandSources.get(owner);
+  if (!entries) shorthandSources.set(owner, (entries = new Map()));
   entries.set(child, value);
 }
 const unitlessLineHeights = new WeakMap<object, string>();
@@ -1252,7 +1257,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     #writeRevision = 0;
 
     override _setProperty(property: string, value: string, priority?: string): void {
-      pendingShorthands?.get(this)?.delete(property);
+      shorthandSources?.get(this)?.delete(property);
       const requested = requestedStyleWrites.get(this);
       if (requested?.property === property) priority = requested.priority;
       else priority ??= requested?.priority ?? "";
@@ -1323,6 +1328,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     #borderColorOrder = 0;
     snapshotBlock(limit = 96, characterLimit = 8192): DeclarationBlock | undefined {
+      if (shorthandSources?.get(this)?.size) return;
       if (this._values.size > limit || this._length > limit || this._priorities.size > limit)
         return;
       let characters = 0;
@@ -1350,20 +1356,21 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     override get cssText(): string {
       let text = super.cssText;
-      if (pendingShorthands?.get(this)?.size) {
+      if (shorthandSources?.get(this)?.size) {
         // CSSOM deliberately hides the value of a longhand with a pending shorthand.
         // Feed its specified source into the serializer while preserving original order.
         const declarations: string[] = [];
         for (let i = 0; i < this._length; i++) {
           const name = this[i];
           if (!name) continue;
-          const value =
-            pendingShorthands?.get(this)?.get(name)?.text ?? super.getPropertyValue(name);
+          const value = shorthandSources?.get(this)?.has(name)
+            ? "initial"
+            : super.getPropertyValue(name);
           declarations.push(
             name + ": " + value + (super.getPropertyPriority(name) ? " !important;" : ";"),
           );
         }
-        text = serializeDeclarationBlock(declarations.join(" "), pendingShorthands?.get(this));
+        text = serializeDeclarationBlock(declarations.join(" "), shorthandSources?.get(this));
       } else if (
         /(?:^|; )(?:(?:column|row)-rule-(?:width|style|color|inset)|grid-(?:template|auto)|corner-|animation-range-)/.test(
           text,
@@ -1491,7 +1498,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return;
       }
       // Clear through the dependency, then own declaration ordering and importance.
-      pendingShorthands?.get(this)?.clear();
+      shorthandSources?.get(this)?.clear();
       super.cssText = "";
       const { parse, generate }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
       let list: CssNode;
@@ -1575,7 +1582,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (name.startsWith("background-") && super.getPropertyValue(name))
         super.removeProperty("background");
       if (!longhands.length && !isPhysicalBorder(name)) {
-        pendingShorthands?.get(this)?.delete(name);
+        shorthandSources?.get(this)?.delete(name);
         return super.removeProperty(property);
       }
       const previous = this.getPropertyValue(name);
@@ -1585,7 +1592,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       try {
         super.removeProperty(name);
         for (const child of longhands) {
-          pendingShorthands?.get(this)?.delete(child);
+          shorthandSources?.get(this)?.delete(child);
           super.removeProperty(child);
         }
         if (isPhysicalBorder(name)) {
@@ -1695,17 +1702,17 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         if (inherited) return inherited.get(property) ?? this._values.get(property) ?? "";
       }
       property = canonicalProperty(property);
-      if (pendingShorthands?.get(this)?.has(property)) return "";
+      if (shorthandSources?.get(this)?.get(property)?.pending) return "";
       if (property === "font" && !this._computed && this._values.has("font"))
         return this._values.get("font")!;
       const children =
         property === "font" && this._computed ? undefined : grammarLonghands(property);
-      if (children && pendingShorthands?.get(this)?.size) {
-        const source = pendingShorthands?.get(this)?.get(children[0]!);
+      if (children && shorthandSources?.get(this)?.size) {
+        const source = shorthandSources?.get(this)?.get(children[0]!);
         if (
           source?.shorthand === property &&
           children.every((child) => {
-            const entry = pendingShorthands?.get(this)?.get(child);
+            const entry = shorthandSources?.get(this)?.get(child);
             return entry?.shorthand === property && entry.text === source.text;
           })
         )
@@ -2053,15 +2060,16 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return;
       }
       if (name !== "font" && grammarLonghands(name)) {
-        const shorthand = expandedDeclaration(name, value);
+        const shorthand = expandedDeclaration(name, value, priority === "important");
         if (!shorthand) return;
         for (const [i, [child, component]] of shorthand.entries.entries()) {
           const declaration = shorthand.declarations[i]!;
           this._setProperty(child, component || shorthand.text, priority);
-          if (declaration.pending)
-            setPendingShorthand(this, child, {
+          if (declaration.pending || /repeat\(/i.test(shorthand.text))
+            setShorthandSource(this, child, {
               shorthand: name,
               text: shorthand.text,
+              pending: !!declaration.pending,
               declaration,
             });
         }
@@ -2225,7 +2233,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         value &&
         !property.startsWith("--") &&
         !propertyDefinitions.get(name)?.longhands &&
-        (/^(?:font-family$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
+        (/^(?:font-family$|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
           name,
         ) ||
           (name.startsWith("grid-template-") && value.includes("calc(")))
@@ -3975,6 +3983,24 @@ function parseRuleSelection({
   if (!selectorText) return;
   // State-independent functional selectors and pseudo-elements can share the
   // same compiled matchers across Windows. Unknown or escaped pseudos stay local.
+  if (!nesting && !namespaces?.size) {
+    const pure = purePseudoSelector(selectorText);
+    if (pure === null) return;
+    if (pure) {
+      const [ids, classes, types] = pure.specificity;
+      return {
+        text: pure.text,
+        entries: [
+          {
+            match: neverMatchesElement,
+            pseudo: { text: pure.text, match: () => true },
+            hostOnly: false,
+            specificity: specificityScore({ ids, classes, types }),
+          },
+        ],
+      };
+    }
+  }
   let selections: Map<string, ParsedRuleSelection> | undefined;
   if (
     !featureQuery &&
@@ -4025,21 +4051,14 @@ function parseRuleSelection({
     return;
   }
   if (prelude.type !== "SelectorList" || (featureQuery && prelude.children.size !== 1)) return;
-  let invalidTypeOrder = false;
+  let invalidCompound = false;
   walk(prelude, {
     visit: "Selector",
-    enter(node) {
-      let hasSimple = false;
-      for (const part of node.children) {
-        if (part.type === "Combinator") hasSimple = false;
-        else {
-          if (part.type === "TypeSelector" && hasSimple) invalidTypeOrder = true;
-          hasSimple = true;
-        }
-      }
+    enter(selector) {
+      if (!validSelectorCompounds(selector)) invalidCompound = true;
     },
   });
-  if (invalidTypeOrder) return;
+  if (invalidCompound) return;
   if (featureQuery) {
     let logicalDepth = 0;
     let invalid = false;
@@ -5066,8 +5085,10 @@ function usesTypedValueGrammar(name: string, text: string): boolean {
   return (
     !name.startsWith("--") &&
     text.includes("(") &&
-    ((name === "transform" && /[0-9](?:grad|rad|turn)\b/i.test(text)) ||
-      /(?:^|[^\w-])(?:image|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
+    (name === "filter" ||
+      name === "backdrop-filter" ||
+      (name === "transform" && /[0-9](?:grad|rad|turn)\b/i.test(text)) ||
+      /(?:^|[^\w-])(?:image|image-set|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
         text,
       ) ||
       ((name === "transform" || /[/*]|\b(?:nan|infinity)\b/i.test(text)) && /calc\(/i.test(text)))

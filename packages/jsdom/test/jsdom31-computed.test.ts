@@ -235,3 +235,17 @@ it("rolls back the winning rule after branch or attribute substitution", () => {
     window.close();
   }
 });
+
+it("computes filter defaults and preserves the specified image and decoration grammars", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor("<p></p>");
+    const node = window.document.querySelector("p")!;
+    node.style.setProperty("filter", "sepia()");
+    expect(window.getComputedStyle(node).getPropertyValue("filter")).toBe("sepia(1)");
+    node.style.setProperty("text-decoration-line", "line-through underline");
+    expect(node.style.getPropertyValue("text-decoration-line")).toBe("underline line-through");
+    node.style.setProperty("background-image", "image-set(url(x))");
+    expect(node.style.getPropertyValue("background-image")).toBe('image-set(url("x"))');
+    window.close();
+  }
+});

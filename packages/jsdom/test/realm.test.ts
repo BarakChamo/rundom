@@ -426,3 +426,19 @@ it("rejects nested DOM nodes and untransferred ports during message serializatio
     window.close();
   }
 });
+
+it("defines legacy exception constants on each realm constructor and prototype", () => {
+  const { window } = new JSDOM();
+  try {
+    for (const target of [window.DOMException, window.DOMException.prototype]) {
+      expect(Object.getOwnPropertyDescriptor(target, "INDEX_SIZE_ERR")).toEqual({
+        value: 1,
+        writable: false,
+        enumerable: true,
+        configurable: false,
+      });
+    }
+  } finally {
+    window.close();
+  }
+});

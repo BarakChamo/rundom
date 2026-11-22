@@ -16,7 +16,7 @@ export function longhandDefinition(name: string): Property | undefined {
 }
 
 /** Returns the specified serialization of a valid CSS declaration in an ordinary style rule. */
-function parseDeclaration(name: string, value: string): unknown {
+function parseDeclaration(name: string, value: string, important = false): unknown {
   if (!name.startsWith("--") && !longhandDefinition(name)) return;
   const {
     createContext,
@@ -39,7 +39,7 @@ function parseDeclaration(name: string, value: string): unknown {
     isFailure(result: unknown): boolean;
   } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
   context ??= createContext({ _globalObject: globalThis });
-  const result = parseDestructuredDeclaration(name, value, false, context);
+  const result = parseDestructuredDeclaration(name, value, important, context);
   if (!isFailure(result)) return result;
 }
 
@@ -68,10 +68,15 @@ function detachedDeclaration(declarations: readonly unknown[]) {
 }
 
 /** Serializes CSS blocks containing overlapping shorthands or pending substitutions. */
-export type PendingShorthand = { shorthand: string; text: string; declaration: object };
+export type ShorthandSource = {
+  shorthand: string;
+  text: string;
+  declaration: object;
+  pending: boolean;
+};
 export function serializeDeclarationBlock(
   text: string,
-  pending?: ReadonlyMap<string, PendingShorthand>,
+  pending?: ReadonlyMap<string, ShorthandSource>,
 ): string {
   const {
     parseDeclarations,
@@ -89,7 +94,7 @@ export function serializeDeclarationBlock(
     pending?.size
       ? declarations.map((declaration) => {
           const source = pending.get(declaration.name);
-          return source ? { ...source.declaration, important: declaration.important } : declaration;
+          return source?.declaration ?? declaration;
         })
       : declarations,
   ).cssText;
@@ -99,6 +104,7 @@ export function serializeDeclarationBlock(
 export function expandedDeclaration(
   name: string,
   value: string,
+  important = false,
 ):
   | {
       text: string;
@@ -106,7 +112,7 @@ export function expandedDeclaration(
       declarations: { name: string; pending?: unknown }[];
     }
   | undefined {
-  const parsed = parseDeclaration(name, value);
+  const parsed = parseDeclaration(name, value, important);
   if (!parsed) return;
   const expand: (declaration: unknown) => {
     name: string;
