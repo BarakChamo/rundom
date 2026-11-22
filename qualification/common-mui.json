@@ -769,10 +769,6 @@
   ],
   [
     "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
-    "<Autocomplete /> prop: getOptionValue provides the raw option when removing a focused mapped value with Delete"
-  ],
-  [
-    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
     "<Autocomplete /> prop: getOptionValue provides the raw option when removing a mapped single value with Delete"
   ],
   [

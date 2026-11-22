@@ -191,7 +191,6 @@
   "<Autocomplete /> > prop: getOptionValue > passes the mapped array to renderValue for multiple selections",
   "<Autocomplete /> > prop: getOptionValue > provides the raw option when deleting a mapped chip",
   "<Autocomplete /> > prop: getOptionValue > provides the raw option when deleting a mapped single-value item",
-  "<Autocomplete /> > prop: getOptionValue > provides the raw option when removing a focused mapped value with Delete",
   "<Autocomplete /> > prop: getOptionValue > provides the raw option when removing a mapped single value with Delete",
   "<Autocomplete /> > prop: getOptionValue > rebuilds the mapped value lookup when typing rerenders the parent with a fresh inline mapper",
   "<Autocomplete /> > prop: getOptionValue > reuses custom chip resolutions while typing with the popup closed",
