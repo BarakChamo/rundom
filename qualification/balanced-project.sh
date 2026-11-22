@@ -2,7 +2,7 @@
 # Use independent process runs and disable test transform caches in both orders.
 jest_env=
 case "$PROJECT" in
-  react|drone)
+  react|drone|scully)
     jest_version=$(node -p 'require("jest-environment-node/package.json").version')
     npm install --prefix "$RUNNER_TEMP/environments" --no-audit --no-fund --legacy-peer-deps \
       "@happy-dom/jest-environment@21.0.4" "jest-environment-node@$jest_version"

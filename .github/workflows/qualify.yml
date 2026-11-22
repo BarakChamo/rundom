@@ -239,7 +239,7 @@ jobs:
             ${{ runner.temp }}/result-*.json
             ${{ runner.temp }}/timing-*.txt
   extended:
-    if: contains(github.event.head_commit.message, 'extended suites only')
+    if: contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'Scully generated fixtures')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -307,6 +307,61 @@ jobs:
         if: always()
         with:
           name: extended-${{ matrix.project }}
+          path: |
+            ${{ runner.temp }}/result-*.json
+            ${{ runner.temp }}/timing-*.txt
+            ${{ runner.temp }}/command-*.log
+            ${{ runner.temp }}/provider-*.txt
+
+  scully:
+    if: contains(github.event.head_commit.message, 'Scully generated fixtures')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 16
+      - name: Generate Scully sample pages with its supported build runtime
+        env:
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+          CYPRESS_INSTALL_BINARY: 0
+          NX_DAEMON: 'false'
+          SCULLY_rnd: ppt
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
+        run: |
+          mkdir "$RUNNER_TEMP/scully"
+          cd "$RUNNER_TEMP/scully"
+          curl -fsSL --retry 2 https://codeload.github.com/scullyio/scully/tar.gz/179650fc26b8951e0eaedf9edc0a0f6b9a49fc8b | tar xz --strip-components=1
+          npm ci --legacy-peer-deps --no-fund --no-audit
+          npm run build:code
+          npm run symlinks
+          npm run build:sample
+          test -s dist/static/sample-blog/basehref/index.html
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - name: Run the three Scully Jest suites in both provider orders
+        env:
+          PROJECT: scully
+        run: |
+          root="$PWD"
+          cd "$RUNNER_TEMP/scully"
+          cmd=(node node_modules/jest/bin/jest.js --config tests/jest/src/jest.config.js --runInBand --json --runTestsByPath)
+          for name in baseHrefRewrite flash-prevention seoOptimize; do cmd+=("tests/jest/src/__tests__/$name.spec.ts"); done
+          source "$root/qualification/balanced-project.sh"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extended-scully
           path: |
             ${{ runner.temp }}/result-*.json
             ${{ runner.temp }}/timing-*.txt
