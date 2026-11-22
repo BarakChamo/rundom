@@ -5,6 +5,8 @@ import {
   createDescriptorRuleParser,
   type PositionTry,
   grammarLonghands,
+  parseContainerConditions,
+  validPseudoSelectorList,
   type FunctionRuleData,
   type BoundRule,
   type FontFaceData,
@@ -1779,6 +1781,15 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         /^(inherit|initial|unset|revert(?:-layer)?)(?:\s+\1)+$/.test(value)
       )
         return value.split(" ")[0] ?? "";
+      if (property === "outline" && this._computed) {
+        return serializeShorthand(
+          "outline",
+          outlineLonghands,
+          (name) => this.getPropertyValue(name),
+          () => "",
+          true,
+        );
+      }
       if (property === "outline" && !value) {
         const [width, style, color] = outlineLonghands.map((name) => super.getPropertyValue(name));
         if (!width || !style || !color) return "";
@@ -1792,10 +1803,6 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           )
         )
           return "";
-        if (this._computed)
-          return ["outline-color", "outline-style", "outline-width"]
-            .map((name) => this.getPropertyValue(name))
-            .join(" ");
         const omitColor = style === "auto" ? color === "auto" : color === "currentcolor";
         const omitStyle = style === "none" && color !== "auto";
         return (
@@ -2240,7 +2247,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         value &&
         !property.startsWith("--") &&
         !propertyDefinitions.get(name)?.longhands &&
-        (/^(?:font-palette$|clip-path$|text-autospace$|text-spacing-|text-transform$|font-variation-settings$|font-synthesis-|font-family$|will-change$|content$|offset-path$|mask-|border-image-|white-space-|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
+        (/^(?:box-shadow$|vertical-align$|transform$|shape-outside$|scale$|object-position$|perspective-origin$|transform-origin$|list-style-image$|text-box-edge$|font-palette$|clip-path$|text-autospace$|text-spacing-|text-transform$|font-variation-settings$|font-synthesis-|font-family$|will-change$|content$|offset-path$|mask-|border-image-|white-space-|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
           name,
         ) ||
           (name.startsWith("grid-template-") && value.includes("calc(")))
@@ -3235,23 +3242,26 @@ function createRuleInterfaces(
   }
 
   class CSSContainerRule extends CSSConditionRule<0> implements ContainerRule {
-    readonly #name: string;
-    readonly #query: string;
-    constructor(token: symbol, name: string, query: string, rules: Rule[]) {
+    readonly #condition: NonNullable<ReturnType<typeof parseContainerConditions>>;
+    constructor(
+      token: symbol,
+      condition: NonNullable<ReturnType<typeof parseContainerConditions>>,
+      rules: Rule[],
+    ) {
       super(token, 0, rules);
-      this.#name = name;
-      this.#query = query;
+      this.#condition = condition;
     }
-    get containerName(): string {
-      return this.#name;
+    get conditions() {
+      return this.#condition.conditions;
     }
-    get containerQuery(): string {
-      return this.#query;
+    get containerName() {
+      return this.conditions.length === 1 ? this.conditions[0]!.name : "";
     }
-    get conditionText(): string {
-      if (!this.#name) return this.#query;
-      const { ident }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      return `${ident.encode(this.#name)} ${this.#query}`;
+    get containerQuery() {
+      return this.conditions.length === 1 ? this.conditions[0]!.query : "";
+    }
+    get conditionText() {
+      return this.#condition.text;
     }
     get matches(): boolean {
       return false;
@@ -4032,6 +4042,12 @@ function parseRuleSelection({
     require("./css-runtime.cjs").cssTree;
   const selectorText = normalizeNestingSelector(text.trim(), nesting);
   if (!selectorText) return;
+  if (
+    !nesting &&
+    /::(?:highlight|selection|grammar-error|spelling-error|target-text)\b/i.test(selectorText) &&
+    !validPseudoSelectorList(selectorText, namespaces)
+  )
+    return;
   // State-independent functional selectors and pseudo-elements can share the
   // same compiled matchers across Windows. Unknown or escaped pseudos stay local.
   if (!nesting && !namespaces?.size) {
@@ -4205,16 +4221,31 @@ function parseRuleSelection({
       pseudoText = `::${trailingPseudo}`;
     }
     let serialized = parts
-      .map((part) => {
-        if (part.type === "TypeSelector" && part.name.startsWith("*|"))
-          return generate({ ...part, name: part.name.slice(2) });
+      .map((part, index) => {
+        if (part.type === "TypeSelector") {
+          const separator = part.name.indexOf("|");
+          const prefix = separator < 0 ? undefined : part.name.slice(0, separator);
+          const local = part.name.slice(separator + 1);
+          const hasDefault = namespaces?.has("") === true;
+          const redundant =
+            prefix === undefined ||
+            (prefix === "*"
+              ? !hasDefault
+              : !!prefix &&
+                namespaces?.has(prefix) &&
+                namespaces.get(prefix) === namespaces.get(""));
+          if (redundant) {
+            const next = parts[index + 1];
+            if (local === "*" && (next ? next.type !== "Combinator" : !!pseudoText)) return "";
+            return generate({ ...part, name: local });
+          }
+        }
         if (part.type === "AttributeSelector" && part.name.name.startsWith("|"))
           return generate({ ...part, name: { ...part.name, name: part.name.name.slice(1) } });
         const text = serializeSelectorPart(part);
         return text;
       })
       .join("");
-    if (pseudoText && parts.at(-1)?.type === "Combinator") serialized += "*";
     serializedSelectors.push((serialized + pseudoText).trim());
     if (!validPseudo) return;
     try {
@@ -4610,26 +4641,14 @@ function parseSheet(
       return;
     }
     if (node.type === "Atrule" && node.name === "container" && node.prelude && node.block) {
-      const { ident }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      const text = generate(node.prelude).trim();
-      let prelude: CssNode;
-      try {
-        prelude = parse(text, { context: "atrulePrelude", atrule: "container" });
-      } catch (error) {
-        if (!(error instanceof SyntaxError)) throw error;
-        return;
-      }
-      if (prelude.type !== "AtrulePrelude") return;
-      const first = prelude.children.first;
-      const rawName = first?.type === "Identifier" ? first.name : "";
-      const query = text.slice(rawName.length).trim();
-      if (!query) return;
+      const condition = parseContainerConditions(generate(node.prelude));
+      if (!condition) return;
       const nested: Rule[] = [];
       readContents(node.block, nested, mode);
       target.push({
         kind: "container",
         rules: nested,
-        view: new interfaces.CSSContainerRule(interfaces.key, ident.decode(rawName), query, nested),
+        view: new interfaces.CSSContainerRule(interfaces.key, condition, nested),
       });
       return;
     }
@@ -5138,11 +5157,15 @@ function simplifyCSSCalculation(value: string): string {
 }
 
 // These dimensions need font metrics or a writing mode from the element's cascade.
+// These longhands normalize lists, coordinates or ratios using the element's style context.
+const contextualLonghand =
+  /^(?:(?:column|row)-rule-(?:style|color|width)|zoom|scale|shape-outside|object-position|perspective-origin|transform-origin|offset-(?:anchor|path|position|rotate)|list-style-image|overflow-clip-margin(?:-|$)|text-box-edge|background-position-[xy])$/;
 function usesTypedValueGrammar(name: string, text: string): boolean {
   return (
     !name.startsWith("--") &&
     text.includes("(") &&
-    (name === "clip-path" ||
+    (/(?:linear|radial|conic)-gradient\(/i.test(text) ||
+      name === "clip-path" ||
       name === "opacity" ||
       (name === "color" && /\bcalc\(/i.test(text)) ||
       name === "mask-image" ||
@@ -6797,6 +6820,7 @@ export function createStyles(input: {
     winners: ReadonlyMap<string, ComputedWinner>;
     inputs: readonly CascadeInput[] | undefined;
     userAgentDirection: string | undefined;
+    userAgentFocus?: true;
     userAgentHiddenInput: boolean;
     parent: WeakRef<ComputedFrame> | undefined;
     documentChild: boolean;
@@ -6977,7 +7001,8 @@ export function createStyles(input: {
     node: Raw.Element,
     revision: number | undefined,
   ): PublicDeclaration | undefined {
-    if (adopted.get(input.document)?.values.length) return;
+    if (adopted.get(input.document)?.values.length || input.statePseudos["focus-visible"]?.(node))
+      return;
     if (userAgentRevision !== revision || userAgentSnapshotCount >= 128) {
       userAgentSnapshots = undefined;
       userAgentRevision = revision;
@@ -7335,7 +7360,9 @@ export function createStyles(input: {
       if (context === -1 || context === Infinity) {
         result._setProperty(
           name,
-          !isCustomProperty && name.endsWith("-color")
+          !isCustomProperty &&
+            name.endsWith("-color") &&
+            !(name === "outline-color" && specified === "auto")
             ? resolveColor(specified, { currentColor: color, colorScheme })
             : specified,
           "",
@@ -7350,6 +7377,7 @@ export function createStyles(input: {
         resolver.substitution &&
         !shorthand &&
         (substitutionFunction.test(specified) ||
+          contextualLonghand.test(name) ||
           usesTypedValueGrammar(name, specified) ||
           variableSyntax.test(specified) ||
           (!isCustomProperty && elementDimension.test(specified)))
@@ -7754,7 +7782,7 @@ export function createStyles(input: {
     pseudo?: string,
   ): PublicDeclaration {
     let reusableEligible = proof !== undefined;
-    let focusRevision: number | undefined;
+    let focusRevision: number | undefined = input.focusRevision();
     function certify(frame: ComputedFrame): void {
       if (
         reusableEligible &&
@@ -8016,6 +8044,8 @@ export function createStyles(input: {
             needsDirection: false,
           }
         : userAgentStyle(element);
+      const userAgentFocus =
+        !activePseudo && input.statePseudos["focus-visible"]?.(element) === true;
       const userAgentDirection = needsDirection ? input.directionality(element) : undefined;
       function sameEnvironment(cached: ComputedFrame): boolean {
         if (cached.substitution || cached.siblingColor || cached.registered || scriptRegistrations)
@@ -8040,6 +8070,7 @@ export function createStyles(input: {
         previous.userAgentColor === userAgentColor &&
         previous.userAgentDisplay === userAgentDisplay &&
         previous.userAgentContentVisibility === userAgentContentVisibility &&
+        !!previous.userAgentFocus === userAgentFocus &&
         previous.userAgentDirection === userAgentDirection &&
         previous.userAgentHiddenInput === hiddenInput;
       // Inline declaration provenance, automatic direction and shadow styling retain
@@ -8425,6 +8456,8 @@ export function createStyles(input: {
               hasRollback = true;
 
             usesSubstitution ||=
+              contextualLonghand.test(name) ||
+              (name.startsWith("--") && /\)var\(/i.test(value)) ||
               ((name === "container-type" || name === "container") &&
                 /(?:^|[ /])(?:inline-)?size(?:$| )/.test(value)) ||
               (value.includes("(") &&
@@ -8484,6 +8517,10 @@ export function createStyles(input: {
             consider(name, winner);
           }
         };
+        if (userAgentFocus) {
+          winners.set("outline-style", { context: -1, weight: 0, value: "auto" });
+          winners.set("outline-color", { context: -1, weight: 0, value: "auto" });
+        }
         if (isHTML && uaIsolates.has(tag))
           winners.set("unicode-bidi", { context: -1, weight: 0, value: "isolate" });
         if (isHTML && uaBlockMargins.has(tag)) {
@@ -8943,6 +8980,7 @@ export function createStyles(input: {
           ...(registrations ? { registered: true } : {}),
           inputs: retainInputs ? inputs : undefined,
           userAgentDirection,
+          ...(userAgentFocus ? { userAgentFocus: true as const } : {}),
           userAgentHiddenInput: hiddenInput,
           winners: computedWinners,
           parent: parentFrame && new WeakRef(parentFrame),

@@ -284,3 +284,16 @@ it("retains the descriptor grammar and parent rule of parsed font faces and CSS 
     window.close();
   }
 });
+
+it("updates the browser focus ring on a retained computed declaration", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor("<button>Focus</button>");
+    const button = window.document.querySelector("button")!;
+    const style = window.getComputedStyle(button);
+    button.focus();
+    expect(style.getPropertyValue("outline")).toBe("3px auto");
+    button.blur();
+    expect(style.getPropertyValue("outline-style")).toBe("none");
+    window.close();
+  }
+});

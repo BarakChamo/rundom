@@ -221,6 +221,47 @@ export function specifiedMediaQuery(value: string): string {
   return isFailure(result) ? "not all" : serializeComponentValue(result);
 }
 
+interface ConditionSyntax {
+  name: string;
+  query: string;
+}
+export function parseContainerConditions(
+  text: string,
+): { text: string; conditions: readonly ConditionSyntax[] } | undefined {
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const ast = parseGrammar(text, "<container-condition>#");
+  if (!Array.isArray(ast)) return;
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue(node: unknown): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const conditions = ast.map(([name, query]) =>
+    Object.freeze({ name: serializeComponentValue(name), query: serializeComponentValue(query) }),
+  );
+  return { text: serializeComponentValue(ast), conditions: Object.freeze(conditions) };
+}
+
+export function validPseudoSelectorList(text: string, namespaces?: ReadonlyMap<string, string>) {
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string, context: object): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    createVirtualContext,
+  }: {
+    createVirtualContext(global: object, name: string): { namespaces: Map<string, string> };
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/context.js");
+  const context = createVirtualContext(globalThis, "@style");
+  if (namespaces) for (const [prefix, uri] of namespaces) context.namespaces.set(prefix, uri);
+  return Array.isArray(parseGrammar(text, "<selector-list>", context));
+}
+
 /** Parses one query and precomputes its result for the default headless device. */
 export function defaultMediaQuery(text: string): { media: string; matches?: boolean } {
   const {
@@ -269,7 +310,7 @@ export function grammarLonghands(name: string): readonly string[] | undefined {
   if (
     name !== "all" &&
     name !== "font" &&
-    !/^(?:(?:(?:row|column)-)?rule|grid|corner|animation|font-variant|white-space|text-wrap|text-spacing|font-synthesis|mask|columns|column-rule|position-try|offset)(?:-|$)/.test(
+    !/^(?:(?:(?:row|column)-)?rule|grid|corner|animation|font-variant|white-space|text-wrap|text-spacing|font-synthesis|margin-block|margin-inline|padding-block|padding-inline|vertical-align|transition|gap|grid-gap|inset|scroll-padding|scroll-margin|place|list-style|text-box|overflow-clip-margin|mask|columns|column-rule|position-try|offset)(?:-|$)/.test(
       name,
     )
   )
