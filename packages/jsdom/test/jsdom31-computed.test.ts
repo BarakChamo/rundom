@@ -135,3 +135,19 @@ it("retains the pending shorthand and each leaf's importance through partial ove
     window.close();
   }
 });
+
+it("reconstructs grid components and suppresses a font shorthand with nondefault reset properties", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor("<p></p>");
+    const node = window.document.querySelector("p")!;
+    node.style.setProperty("grid", "auto-flow auto / 100px 100px");
+    expect(node.style.getPropertyValue("grid-template-columns")).toBe("100px 100px");
+    node.style.setProperty("grid-template-areas", '"one two" "three four"');
+    expect(node.style.getPropertyValue("grid")).toBe("");
+    node.style.setProperty("font", "16px serif");
+    node.style.setProperty("font-variant-caps", "all-small-caps");
+    expect(node.style.getPropertyValue("font")).toBe("");
+    expect(window.getComputedStyle(node).getPropertyValue("font")).toBe("");
+    window.close();
+  }
+});

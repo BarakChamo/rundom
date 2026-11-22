@@ -5,6 +5,18 @@ on:
 permissions:
   contents: read
 jobs:
+  repository-check:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only')"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run check
   performance:
     if: "!contains(github.event.head_commit.message, 'extended suites only')"
     runs-on: ubuntu-24.04

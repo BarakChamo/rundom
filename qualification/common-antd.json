@@ -11,38 +11,20 @@
     "components/alert/__tests__/index.test.tsx",
     "Alert close button should be support custom icon by closable"
   ],
-  [
-    "components/alert/__tests__/index.test.tsx",
-    "Alert could accept none react element icon"
-  ],
-  [
-    "components/alert/__tests__/index.test.tsx",
-    "Alert could be used with Popconfirm"
-  ],
-  [
-    "components/alert/__tests__/index.test.tsx",
-    "Alert could be used with Tooltip"
-  ],
+  ["components/alert/__tests__/index.test.tsx", "Alert could accept none react element icon"],
+  ["components/alert/__tests__/index.test.tsx", "Alert could be used with Popconfirm"],
+  ["components/alert/__tests__/index.test.tsx", "Alert could be used with Tooltip"],
   [
     "components/alert/__tests__/index.test.tsx",
     "Alert mount and unmount component could be updated and unmounted without errors"
   ],
-  [
-    "components/alert/__tests__/index.test.tsx",
-    "Alert sets role attribute on input"
-  ],
+  ["components/alert/__tests__/index.test.tsx", "Alert sets role attribute on input"],
   [
     "components/alert/__tests__/index.test.tsx",
     "Alert should add outlined variant class by default and support variant prop"
   ],
-  [
-    "components/alert/__tests__/index.test.tsx",
-    "Alert should apply custom styles to Alert"
-  ],
-  [
-    "components/alert/__tests__/index.test.tsx",
-    "Alert should not render title div when no title"
-  ],
+  ["components/alert/__tests__/index.test.tsx", "Alert should apply custom styles to Alert"],
+  ["components/alert/__tests__/index.test.tsx", "Alert should not render title div when no title"],
   [
     "components/alert/__tests__/index.test.tsx",
     "Alert should render numeric 0 for title, description and action"
@@ -59,26 +41,14 @@
     "components/alert/__tests__/index.test.tsx",
     "Alert should show error as ErrorBoundary when children have error"
   ],
-  [
-    "components/alert/__tests__/index.test.tsx",
-    "Alert should support custom success icon"
-  ],
-  [
-    "components/alert/__tests__/index.test.tsx",
-    "Alert should support id and ref"
-  ],
-  [
-    "components/alert/__tests__/index.test.tsx",
-    "Alert should support variant from ConfigProvider"
-  ],
+  ["components/alert/__tests__/index.test.tsx", "Alert should support custom success icon"],
+  ["components/alert/__tests__/index.test.tsx", "Alert should support id and ref"],
+  ["components/alert/__tests__/index.test.tsx", "Alert should support variant from ConfigProvider"],
   [
     "components/alert/__tests__/index.test.tsx",
     "Alert should use closable.onClose without requiring closeIcon"
   ],
-  [
-    "components/alert/__tests__/index.test.tsx",
-    "Alert should warning when using closeText"
-  ],
+  ["components/alert/__tests__/index.test.tsx", "Alert should warning when using closeText"],
   [
     "components/alert/__tests__/semantic.test.tsx",
     "Alert.Semantic should follow root style priority"
@@ -87,10 +57,7 @@
     "components/alert/__tests__/semantic.test.tsx",
     "Alert.Semantic should merge context and component classNames and styles"
   ],
-  [
-    "components/checkbox/__tests__/checkbox.test.tsx",
-    "Checkbox focus and blur Ref: autoFocus"
-  ],
+  ["components/checkbox/__tests__/checkbox.test.tsx", "Checkbox focus and blur Ref: autoFocus"],
   [
     "components/checkbox/__tests__/checkbox.test.tsx",
     "Checkbox focus and blur Ref: blur() and onBlur"
@@ -103,14 +70,8 @@
     "components/checkbox/__tests__/checkbox.test.tsx",
     "Checkbox mount and unmount component could be updated and unmounted without errors"
   ],
-  [
-    "components/checkbox/__tests__/checkbox.test.tsx",
-    "Checkbox onFocus / onBlur"
-  ],
-  [
-    "components/checkbox/__tests__/checkbox.test.tsx",
-    "Checkbox responses hover events"
-  ],
+  ["components/checkbox/__tests__/checkbox.test.tsx", "Checkbox onFocus / onBlur"],
+  ["components/checkbox/__tests__/checkbox.test.tsx", "Checkbox responses hover events"],
   [
     "components/checkbox/__tests__/checkbox.test.tsx",
     "Checkbox should keep Tooltip open when moving from the checkbox to its label"
@@ -119,14 +80,8 @@
     "components/checkbox/__tests__/checkbox.test.tsx",
     "Checkbox should reflect indeterminate state correctly"
   ],
-  [
-    "components/checkbox/__tests__/checkbox.test.tsx",
-    "Checkbox warning if set `value`"
-  ],
-  [
-    "components/checkbox/__tests__/group.test.tsx",
-    "CheckboxGroup Table rowSelection"
-  ],
+  ["components/checkbox/__tests__/checkbox.test.tsx", "Checkbox warning if set `value`"],
+  ["components/checkbox/__tests__/group.test.tsx", "CheckboxGroup Table rowSelection"],
   [
     "components/checkbox/__tests__/group.test.tsx",
     "CheckboxGroup all children should have a name property"
@@ -155,10 +110,7 @@
     "components/checkbox/__tests__/group.test.tsx",
     "CheckboxGroup onChange should keep the order of the original values"
   ],
-  [
-    "components/checkbox/__tests__/group.test.tsx",
-    "CheckboxGroup options support id"
-  ],
+  ["components/checkbox/__tests__/group.test.tsx", "CheckboxGroup options support id"],
   [
     "components/checkbox/__tests__/group.test.tsx",
     "CheckboxGroup role prop should set default role"
@@ -167,14 +119,8 @@
     "components/checkbox/__tests__/group.test.tsx",
     "CheckboxGroup role prop should set passed role"
   ],
-  [
-    "components/checkbox/__tests__/group.test.tsx",
-    "CheckboxGroup should be controlled by value"
-  ],
-  [
-    "components/checkbox/__tests__/group.test.tsx",
-    "CheckboxGroup should get div ref"
-  ],
+  ["components/checkbox/__tests__/group.test.tsx", "CheckboxGroup should be controlled by value"],
+  ["components/checkbox/__tests__/group.test.tsx", "CheckboxGroup should get div ref"],
   [
     "components/checkbox/__tests__/group.test.tsx",
     "CheckboxGroup should ignore options with nullish values"
@@ -187,26 +133,17 @@
     "components/checkbox/__tests__/group.test.tsx",
     "CheckboxGroup should store latest checkbox value if changed"
   ],
-  [
-    "components/checkbox/__tests__/group.test.tsx",
-    "CheckboxGroup should support number option"
-  ],
+  ["components/checkbox/__tests__/group.test.tsx", "CheckboxGroup should support number option"],
   [
     "components/checkbox/__tests__/group.test.tsx",
     "CheckboxGroup should trigger onChange in sub Checkbox"
   ],
-  [
-    "components/checkbox/__tests__/group.test.tsx",
-    "CheckboxGroup should work basically"
-  ],
+  ["components/checkbox/__tests__/group.test.tsx", "CheckboxGroup should work basically"],
   [
     "components/checkbox/__tests__/group.test.tsx",
     "CheckboxGroup should work when checkbox is wrapped by other components"
   ],
-  [
-    "components/checkbox/__tests__/group.test.tsx",
-    "CheckboxGroup skipGroup"
-  ],
+  ["components/checkbox/__tests__/group.test.tsx", "CheckboxGroup skipGroup"],
   [
     "components/checkbox/__tests__/group.test.tsx",
     "CheckboxGroup value is undefined should update value when `value` is undefined"
@@ -227,10 +164,7 @@
     "components/radio/__tests__/group.test.tsx",
     "Radio Group FormItem complex NamePath conversion should work with Form.List dynamic fields"
   ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group Radio type should not be override"
-  ],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group Radio type should not be override"],
   [
     "components/radio/__tests__/group.test.tsx",
     "Radio Group Trigger onChange when both of radioButton and radioGroup exists"
@@ -247,26 +181,11 @@
     "components/radio/__tests__/group.test.tsx",
     "Radio Group fire change events when value changes"
   ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group onBlur & onFocus should work"
-  ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group optional should correct render"
-  ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group options support id"
-  ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group options support onChange"
-  ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group options support title"
-  ],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group onBlur & onFocus should work"],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group optional should correct render"],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group options support id"],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group options support onChange"],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group options support title"],
   [
     "components/radio/__tests__/group.test.tsx",
     "Radio Group orientation attribute and vertical vertical=true orientation=horizontal, result orientation=horizontal"
@@ -275,22 +194,10 @@
     "components/radio/__tests__/group.test.tsx",
     "Radio Group orientation attribute and vertical vertical=true, result orientation=vertical"
   ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group responses hover events"
-  ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group role prop should set default role"
-  ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group role prop should set passed role"
-  ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group should forward ref"
-  ],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group responses hover events"],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group role prop should set default role"],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group role prop should set passed role"],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group should forward ref"],
   [
     "components/radio/__tests__/group.test.tsx",
     "Radio Group should only trigger once when in group with options"
@@ -303,10 +210,7 @@
     "components/radio/__tests__/group.test.tsx",
     "Radio Group should support data-* or aria-* props"
   ],
-  [
-    "components/radio/__tests__/group.test.tsx",
-    "Radio Group should use FormItem name"
-  ],
+  ["components/radio/__tests__/group.test.tsx", "Radio Group should use FormItem name"],
   [
     "components/radio/__tests__/group.test.tsx",
     "Radio Group value is null or undefined should remain controlled when `value` is null"
@@ -331,22 +235,10 @@
     "components/radio/__tests__/group.test.tsx",
     "Radio Group won't fire change events when value not changes"
   ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio focus and blur Ref: autoFocus"
-  ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio focus and blur Ref: blur() and onBlur"
-  ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio focus and blur Ref: focus() and onFocus"
-  ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio have static property for type detecting"
-  ],
+  ["components/radio/__tests__/radio.test.tsx", "Radio focus and blur Ref: autoFocus"],
+  ["components/radio/__tests__/radio.test.tsx", "Radio focus and blur Ref: blur() and onBlur"],
+  ["components/radio/__tests__/radio.test.tsx", "Radio focus and blur Ref: focus() and onFocus"],
+  ["components/radio/__tests__/radio.test.tsx", "Radio have static property for type detecting"],
   [
     "components/radio/__tests__/radio.test.tsx",
     "Radio mount and unmount component could be updated and unmounted without errors"
@@ -359,10 +251,7 @@
     "components/radio/__tests__/radio.test.tsx",
     "Radio mount and unmount component could be updated and unmounted without errors"
   ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio responses hover events"
-  ],
+  ["components/radio/__tests__/radio.test.tsx", "Radio responses hover events"],
   [
     "components/radio/__tests__/radio.test.tsx",
     "Radio should keep Tooltip open when moving from the radio to its label"
@@ -371,30 +260,12 @@
     "components/radio/__tests__/radio.test.tsx",
     "Radio should not trigger hover events when moving from the radio to its label"
   ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio should obtained correctly disabled status"
-  ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio should support both classNames and styles"
-  ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio should support custom classNames"
-  ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio should support custom styles"
-  ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio should support uncontrolled checked state"
-  ],
-  [
-    "components/radio/__tests__/radio.test.tsx",
-    "Radio should use own disabled status first"
-  ],
+  ["components/radio/__tests__/radio.test.tsx", "Radio should obtained correctly disabled status"],
+  ["components/radio/__tests__/radio.test.tsx", "Radio should support both classNames and styles"],
+  ["components/radio/__tests__/radio.test.tsx", "Radio should support custom classNames"],
+  ["components/radio/__tests__/radio.test.tsx", "Radio should support custom styles"],
+  ["components/radio/__tests__/radio.test.tsx", "Radio should support uncontrolled checked state"],
+  ["components/radio/__tests__/radio.test.tsx", "Radio should use own disabled status first"],
   [
     "components/tag/__tests__/semantic.test.tsx",
     "Tag.Semantic checkableTag should prioritize local style over context style"
@@ -415,10 +286,7 @@
     "components/tag/__tests__/semantic.test.tsx",
     "Tag.Semantic checkableTagGroup support classNames and styles as objects"
   ],
-  [
-    "components/tag/__tests__/semantic.test.tsx",
-    "Tag.Semantic should follow root style priority"
-  ],
+  ["components/tag/__tests__/semantic.test.tsx", "Tag.Semantic should follow root style priority"],
   [
     "components/tag/__tests__/variant.test.tsx",
     "Tag global variant keeps component variant filled above the global variant"

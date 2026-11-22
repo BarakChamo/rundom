@@ -1,5 +1,6 @@
 // Evaluates CSS feature queries using the same syntax and selector parsers as stylesheets.
 import { acceptsAnchors, anchorComponents } from "./css-anchor.js";
+import { specifiedDeclaration } from "./css-reference.js";
 import { ownedString } from "./owned-string.js";
 import { createRequire } from "node:module";
 import { parseSizeDeclaration } from "./css-sizing.js";
@@ -43,7 +44,7 @@ function supportedDeclaration(property: string, value: CssNode | string): boolea
   const { parsePropertyValue }: { parsePropertyValue: (name: string, value: string) => unknown } =
     require("./css-runtime.cjs").cssValueParser;
   const result = parsePropertyValue(name, text.toLowerCase() === "revert-rule" ? "initial" : text);
-  return result !== undefined && result !== "";
+  return (result !== undefined && result !== "") || specifiedDeclaration(name, text) !== undefined;
 }
 
 // Keep this aligned with the at-rules that the stylesheet reader exposes through CSSOM.

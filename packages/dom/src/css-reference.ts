@@ -67,9 +67,12 @@ function detachedDeclaration(declarations: readonly unknown[]) {
   return new Declaration(globalThis, [], { baseURL: "about:blank", declarations });
 }
 
-/** Serializes CSS blocks containing overlapping gap decoration shorthands. */
-export type PendingGap = { shorthand: string; text: string; declaration: object };
-export function serializeGapBlock(text: string, pending?: ReadonlyMap<string, PendingGap>): string {
+/** Serializes CSS blocks containing overlapping shorthands or pending substitutions. */
+export type PendingShorthand = { shorthand: string; text: string; declaration: object };
+export function serializeDeclarationBlock(
+  text: string,
+  pending?: ReadonlyMap<string, PendingShorthand>,
+): string {
   const {
     parseDeclarations,
   }: {
@@ -255,21 +258,27 @@ export function computedPositionArea(value: string): string {
   });
 }
 
-/** Gap decoration shorthands share components across both axes. */
-export function gapLonghands(name: string): readonly string[] | undefined {
-  if (!/^(?:(?:row|column)-)?rule(?:-|$)/.test(name)) return;
+/** The grammar supplies the component list for overlapping CSS shorthands. */
+export function grammarLonghands(name: string): readonly string[] | undefined {
+  if (
+    name !== "font" &&
+    !/^(?:(?:(?:row|column)-)?rule|grid|corner|animation-range|font-variant)(?:-|$)/.test(name)
+  )
+    return;
   const shorthands: ReadonlyMap<
     string,
     readonly [readonly string[]]
   > = require("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js");
-  return shorthands.get(name)?.[0];
+  const groups = shorthands.get(name);
+  return groups && (groups.length === 1 ? groups[0] : groups.flat());
 }
 
-export function serializeGapShorthand(
+export function serializeShorthand(
   name: string,
   children: readonly string[],
   read: (name: string) => string,
   priority: (name: string) => string,
+  computed = false,
 ): string {
   const declarations = [];
   const importance = priority(children[0]!);
@@ -285,7 +294,7 @@ export function serializeGapShorthand(
   }: {
     serializeDeclarationValue(declaration: object): string;
   } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
-  return serializeDeclarationValue({ name, shorthand: true, value: declarations });
+  return serializeDeclarationValue({ name, computed, shorthand: true, value: declarations });
 }
 
 /** Keeps the nested, ordered OpenType feature maps local to their CSS rule. */
