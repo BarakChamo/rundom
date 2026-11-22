@@ -2002,7 +2002,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const name = property.toLowerCase();
       if (
         value.includes("(") &&
-        substitutionFunction.test(value) &&
+        (substitutionFunction.test(value) || usesCalculationGrammar(name, value)) &&
         !propertyDefinitions.get(name)?.longhands
       ) {
         const serialized = specifiedDeclaration(property.startsWith("--") ? property : name, value);
@@ -5027,6 +5027,18 @@ function simplifyCSSCalculation(value: string): string {
 }
 
 // These dimensions need font metrics or a writing mode from the element's cascade.
+function usesCalculationGrammar(name: string, text: string): boolean {
+  return (
+    !name.startsWith("--") &&
+    text.includes("(") &&
+    ((name === "transform" && /[0-9](?:grad|rad|turn)\b/i.test(text)) ||
+      /(?:^|[^\w-])(?:min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
+        text,
+      ) ||
+      ((name === "transform" || /[/*]|\b(?:nan|infinity)\b/i.test(text)) && /calc\(/i.test(text)))
+  );
+}
+
 const elementDimension = /^[+-]?(?:\d*\.)?\d+(?:e[+-]?\d+)?(?:r?(?:ex|cap|ch|ic|lh)|[sld]?v[ib])$/i;
 
 function computeNumericValue(value: string, readViewport: () => Viewport): string {
@@ -7212,6 +7224,7 @@ export function createStyles(input: {
         resolver.substitution &&
         !shorthand &&
         (substitutionFunction.test(specified) ||
+          usesCalculationGrammar(name, specified) ||
           variableSyntax.test(specified) ||
           (!isCustomProperty && elementDimension.test(specified)))
       ) {
@@ -8203,7 +8216,8 @@ export function createStyles(input: {
               hasRollback = true;
 
             usesSubstitution ||=
-              (value.includes("(") && substitutionFunction.test(value)) ||
+              (value.includes("(") &&
+                (substitutionFunction.test(value) || usesCalculationGrammar(name, value))) ||
               (!name.startsWith("--") && elementDimension.test(value));
             const winner: Winner = { context, weight, proximity, value, base };
             const layer = important ? importantLayer : layerIndex;
@@ -8511,9 +8525,22 @@ export function createStyles(input: {
             inheritedValues.set("color", color);
             for (const [name, value] of projected?.block.values ?? [])
               inheritedValues.set(name, value);
+            let root = element.parentNode;
+            while (root.parentNode && tree.isElementNode(root.parentNode)) root = root.parentNode;
+            const rootFrame =
+              root === element.parentNode
+                ? undefined
+                : substitutionFrame(
+                    root,
+                    undefined,
+                    new Map([["font-size", rootFontSize + "px"]]),
+                    !!input.isXML,
+                    baseURL,
+                    registrations,
+                  );
             inheritedFrame = substitutionFrame(
               element.parentNode,
-              undefined,
+              rootFrame,
               inheritedValues,
               !!input.isXML,
               baseURL,

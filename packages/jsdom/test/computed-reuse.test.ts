@@ -474,7 +474,7 @@ it("uses one color/math backend for specified and computed comparison expression
     expect(window.getComputedStyle(node).getPropertyValue("letter-spacing")).toBe("30px");
     // When/Then: integer properties resolve the same nested functions through their font context.
     node.style.setProperty("orphans", "calc(pow(2, sign(1em - 18px)))");
-    expect(node.style.getPropertyValue("orphans")).toBe("calc(pow(2, sign(1em - 18px)))");
+    expect(node.style.getPropertyValue("orphans")).toBe("pow(2, sign(1em - 18px))");
     expect(window.getComputedStyle(node).getPropertyValue("orphans")).toBe("2");
   } finally {
     window.close();

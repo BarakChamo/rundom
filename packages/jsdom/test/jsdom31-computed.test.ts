@@ -175,3 +175,16 @@ it("resolves attribute values, conditional branches, cycles and inherited attrib
     window.close();
   }
 });
+
+it("validates nested calculation dimensions before committing a transform", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor("<p></p>");
+    const node = window.document.querySelector("p")!;
+    node.style.setProperty("transform", "rotate(acos(1))", "important");
+    expect(node.style.getPropertyValue("transform")).toBe("rotate(calc(0deg))");
+    node.style.setProperty("transform", "rotate(min(1px, 2deg))");
+    expect(node.style.getPropertyPriority("transform")).toBe("important");
+    expect(window.getComputedStyle(node).getPropertyValue("transform")).toBe("rotate(0deg)");
+    window.close();
+  }
+});
