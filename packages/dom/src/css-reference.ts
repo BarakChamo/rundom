@@ -310,7 +310,7 @@ export function grammarLonghands(name: string): readonly string[] | undefined {
   if (
     name !== "all" &&
     name !== "font" &&
-    !/^(?:(?:(?:row|column)-)?rule|grid|corner|animation|font-variant|white-space|text-wrap|text-spacing|font-synthesis|size|container|flex-flow|caret|margin-block|margin-inline|padding-block|padding-inline|vertical-align|transition|gap|grid-gap|inset|scroll-padding|scroll-margin|place|list-style|text-box|overflow-clip-margin|mask|columns|column-rule|position-try|offset)(?:-|$)/.test(
+    !/^(?:(?:(?:row|column)-)?rule|grid|corner|animation|font-variant|white-space|text-wrap|text-spacing|font-synthesis|size|border-radius|border-image|contain-intrinsic-size|flex|text-emphasis|text-decoration-inset|container|flex-flow|caret|margin-block|margin-inline|padding-block|padding-inline|vertical-align|transition|gap|grid-gap|inset|scroll-padding|scroll-margin|place|list-style|text-box|overflow-clip-margin|mask|columns|column-rule|position-try|offset)(?:-|$)/.test(
       name,
     )
   )
@@ -447,6 +447,19 @@ export function createDescriptorRuleParser(baseURL: () => string, changed: () =>
     idl.install(globals, ["Window"]);
   }
   return {
+    descriptor<T extends object>(
+      binding: "CSSCounterStyleRule" | "CSSViewTransitionRule",
+      text: string,
+    ): BoundRule<T> | undefined {
+      if (!Object.hasOwn(globals, binding)) {
+        const idl: { install(global: object, names: string[]): void } = require(
+          "rundom-css-reference/lib/generated/idl/" + binding + ".js",
+        );
+        idl.install(globals, ["Window"]);
+      }
+      const impl = parseRule(text, globals);
+      return "message" in impl ? undefined : bindRule<T>(impl);
+    },
     fontFaceDescriptors() {
       if (!Object.hasOwn(globals, "CSSFontFaceRule")) {
         for (const name of ["CSSFontFaceDescriptors", "CSSFontFaceRule"]) {

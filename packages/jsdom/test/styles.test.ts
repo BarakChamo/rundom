@@ -1929,9 +1929,10 @@ it("preserves mutable CSS counter-style descriptors and serializes their updates
     rule.speakAs = "bullets";
     rule.suffix = "";
 
-    // Then the live rule serializes only its remaining descriptors.
+    // An invalid empty suffix preserves its previous value, as in jsdom 31.0.1.
+    expect(rule.suffix).toBe('" "');
     expect(rule.cssText).toBe(
-      '@counter-style markers { system: cyclic; symbols: "*"; speak-as: bullets; }',
+      '@counter-style markers { speak-as: bullets; suffix: " "; symbols: "*"; system: cyclic; }',
     );
     expect(sheet?.cssRules[1]).toBeInstanceOf(window.CSSStyleRule);
   } finally {

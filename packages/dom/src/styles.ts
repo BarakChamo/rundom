@@ -192,6 +192,11 @@ const counterDescriptors = [
   ["fallback", "fallback"],
 ] as const;
 type CounterDescriptor = (typeof counterDescriptors)[number][0];
+type ViewTransitionData = {
+  readonly navigation: string;
+  readonly types: readonly string[];
+  readonly cssText: string;
+};
 type CounterStyleRule = Record<CounterDescriptor, string> & {
   readonly type: 11;
   name: string;
@@ -249,6 +254,7 @@ type StyleRule = (
   | QualifiedRule
   | PropertyRule
   | FontFeatureValuesRule
+  | (ViewTransitionData & { readonly type: 0 })
   | (FontFaceData & { readonly type: 5 })
   | (FunctionRuleData<RuleList> & { readonly type: 0 })
   | PositionTryRule
@@ -292,6 +298,7 @@ type Rule =
   | { kind: "function"; view: FunctionRuleData<RuleList> & { readonly type: 0 } & RuleParents }
   | { kind: "font-face"; view: FontFaceData & { readonly type: 5 } & RuleParents }
   | { kind: "position-try"; view: PositionTryRule & RuleParents }
+  | { kind: "view-transition"; view: ViewTransitionData & { readonly type: 0 } & RuleParents }
   | { kind: "counter-style"; view: CounterStyleRule & RuleParents }
   | {
       kind: "font-feature-values";
@@ -1732,6 +1739,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (shorthandSources?.get(this)?.get(property)?.pending) return "";
       if (property === "font" && !this._computed && this._values.has("font"))
         return this._values.get("font")!;
+      if (property === "border-image" && this._values.has(property))
+        return super.getPropertyValue(property);
       const children =
         (property === "font" && this._computed) ||
         (property === "size" && !(this instanceof CSSStyleProperties))
@@ -2107,6 +2116,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       if (
         name !== "font" &&
+        !(name === "border-image" && value.toLowerCase() === "none") &&
         (name !== "size" || this instanceof CSSStyleProperties) &&
         grammarLonghands(name)
       ) {
@@ -2283,7 +2293,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         value &&
         !property.startsWith("--") &&
         !propertyDefinitions.get(name)?.longhands &&
-        (/^(?:paint-order$|color-scheme$|container-name$|grid-template-areas$|box-shadow$|vertical-align$|transform$|shape-outside$|scale$|object-position$|perspective-origin$|transform-origin$|list-style-image$|text-box-edge$|font-palette$|clip-path$|text-autospace$|text-spacing-|text-transform$|font-variation-settings$|font-synthesis-|font-family$|will-change$|content$|offset-path$|mask-|border-image-|white-space-|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
+        (/^(?:counter-reset$|counter-increment$|counter-set$|transition-timing-function$|grid-auto-flow$|paint-order$|color-scheme$|container-name$|grid-template-areas$|box-shadow$|vertical-align$|transform$|shape-outside$|scale$|object-position$|perspective-origin$|transform-origin$|list-style-image$|text-box-edge$|font-palette$|clip-path$|text-autospace$|text-spacing-|text-transform$|font-variation-settings$|font-synthesis-|font-family$|will-change$|content$|offset-path$|mask-|border-image-|white-space-|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
           name,
         ) ||
           (name.startsWith("grid-template-") && value.includes("calc(")))
@@ -2498,6 +2508,7 @@ function createRuleInterfaces(
   ) => RuleSelection | undefined,
   namespacesForSheet: (sheet: Sheet | null) => Map<string, string> | undefined,
   exposeDeclaration: (style: Declaration) => PublicDeclaration,
+  descriptor: ReturnType<typeof createDescriptorRuleParser>["descriptor"],
   parseFontFace: (text: string) => BoundRule<FontFaceData> | undefined,
   parseFunction: (
     text: string,
@@ -2840,46 +2851,61 @@ function createRuleInterfaces(
   }
 
   class CSSCounterStyleRule extends CSSRule<11> implements CounterStyleRule {
-    #name: string;
-    readonly #values: Partial<Record<CounterDescriptor, string>> = {};
+    #rule: CounterStyleRule;
     static {
       for (const [name] of counterDescriptors) {
         Object.defineProperty(this.prototype, name, {
           configurable: true,
           enumerable: true,
           get(this: CSSCounterStyleRule) {
-            return this.#values[name] ?? "";
+            return this.#rule[name];
           },
           set(this: CSSCounterStyleRule, value: string) {
-            this.#values[name] = `${value}`;
+            this.#rule[name] = value;
           },
         });
       }
     }
-    constructor(token: symbol, name: string) {
+    constructor(token: symbol, parsed: BoundRule<CounterStyleRule>) {
       super(token, 11);
-      this.#name = name;
+      this.#rule = parsed.data;
+      parsed.bind(this);
     }
-    get name(): string {
-      return this.#name;
+    get name() {
+      return this.#rule.name;
     }
     set name(value: string) {
-      this.#name = `${value}`;
+      this.#rule.name = value;
     }
-    get cssText(): string {
-      const { ident }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      const parts: string[] = [];
-      for (const [name, property] of counterDescriptors) {
-        const value = this.#values[name];
-        if (value) parts.push(`${property}: ${value};`);
-      }
-      return `@counter-style ${ident.encode(this.#name)} { ${parts.join(" ")} }`;
+    get cssText() {
+      return this.#rule.cssText;
     }
+
     get [Symbol.toStringTag](): string {
       return "CSSCounterStyleRule";
     }
   }
 
+  class CSSViewTransitionRule extends CSSRule<0> {
+    #rule: ViewTransitionData;
+    constructor(token: symbol, parsed: BoundRule<ViewTransitionData>) {
+      super(token, 0);
+      this.#rule = parsed.data;
+      parsed.bind(this);
+    }
+    get navigation() {
+      return this.#rule.navigation;
+    }
+    get types() {
+      return this.#rule.types;
+    }
+    get cssText() {
+      return this.#rule.cssText;
+    }
+    get [Symbol.toStringTag]() {
+      return "CSSViewTransitionRule";
+    }
+  }
   class CSSNamespaceRule extends CSSRule<10> implements NamespaceRule {
     readonly #prefix: string;
     readonly #namespaceURI: string;
@@ -3426,7 +3452,7 @@ function createRuleInterfaces(
     list: (rules) => new CSSRuleList(key, rules),
     selector: parseSelectorChange,
   };
-  return {
+  const interfaces = {
     key,
     PrivateStyleRule,
     CSSRule,
@@ -3435,6 +3461,8 @@ function createRuleInterfaces(
     CSSFontFaceRule,
     CSSFontFeatureValuesRule,
     CSSPositionTryRule,
+    descriptor,
+    CSSViewTransitionRule,
     parseFontFace,
     parseFunction,
     CSSFunctionRule,
@@ -3462,6 +3490,19 @@ function createRuleInterfaces(
     attach,
     detach,
   };
+  // CSSOM's legacy setter converts its argument even for rules whose text is read-only.
+  for (const binding of Object.values(interfaces)) {
+    if (typeof binding !== "function" || !(binding.prototype instanceof CSSRule)) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(binding.prototype, "cssText");
+    if (descriptor?.get && !descriptor.set)
+      Object.defineProperty(binding.prototype, "cssText", {
+        ...descriptor,
+        set(value: unknown) {
+          cssInput(value);
+        },
+      });
+  }
+  return interfaces;
 }
 
 const stylesheetSourceVersion = Symbol();
@@ -4736,17 +4777,25 @@ function parseSheet(
       });
       return;
     }
-    if (node.type === "Atrule" && node.name === "counter-style" && node.prelude && node.block) {
-      const view = new interfaces.CSSCounterStyleRule(
-        interfaces.key,
-        generate(node.prelude).trim(),
+    if (node.type === "Atrule" && node.name === "counter-style" && node.block) {
+      const rule = interfaces.descriptor<CounterStyleRule>("CSSCounterStyleRule", generate(node));
+      if (rule)
+        target.push({
+          kind: "counter-style",
+          view: new interfaces.CSSCounterStyleRule(interfaces.key, rule),
+        });
+      return;
+    }
+    if (node.type === "Atrule" && node.name === "view-transition" && node.block) {
+      const rule = interfaces.descriptor<ViewTransitionData>(
+        "CSSViewTransitionRule",
+        generate(node),
       );
-      for (const child of node.block.children) {
-        if (child.type !== "Declaration") continue;
-        const descriptor = counterDescriptors.find(([, property]) => child.property === property);
-        if (descriptor) view[descriptor[0]] = generate(child.value).trim();
-      }
-      target.push({ kind: "counter-style", view });
+      if (rule)
+        target.push({
+          kind: "view-transition",
+          view: new interfaces.CSSViewTransitionRule(interfaces.key, rule),
+        });
       return;
     }
     if (node.type === "Atrule" && node.name === "namespace" && node.prelude && !node.block) {
@@ -5199,12 +5248,13 @@ function simplifyCSSCalculation(value: string): string {
 // These dimensions need font metrics or a writing mode from the element's cascade.
 // These longhands normalize lists, coordinates or ratios using the element's style context.
 const contextualLonghand =
-  /^(?:(?:column|row)-rule-(?:style|color|width)|font-style|rotate|background-size|grid-auto-rows|grid-auto-columns|zoom|scale|shape-outside|object-position|perspective-origin|transform-origin|offset-(?:anchor|path|position|rotate)|list-style-image|overflow-clip-margin(?:-|$)|text-box-edge|background-position-[xy])$/;
+  /^(?:(?:column|row)-rule-(?:style|color|width)|aspect-ratio|translate|transition-timing-function|counter-reset|counter-increment|counter-set|border-spacing|grid-auto-flow|font-style|rotate|background-size|grid-auto-rows|grid-auto-columns|zoom|scale|shape-outside|object-position|perspective-origin|transform-origin|offset-(?:anchor|path|position|rotate)|list-style-image|overflow-clip-margin(?:-|$)|text-box-edge|background-position-[xy])$/;
 function usesTypedValueGrammar(name: string, text: string): boolean {
   return (
     !name.startsWith("--") &&
     text.includes("(") &&
-    (/(?:linear|radial|conic)-gradient\(/i.test(text) ||
+    (/url\(\s*["'][^"']*["']\s+[-_a-z]/i.test(text) ||
+      /(?:linear|radial|conic)-gradient\(/i.test(text) ||
       name === "clip-path" ||
       name === "opacity" ||
       (name === "color" && /\bcalc\(/i.test(text)) ||
@@ -5770,6 +5820,7 @@ export function createStyles(input: {
       }),
     namespacesForSheet,
     (style) => views().expose(style),
+    (binding, text) => descriptorRules().descriptor(binding, text),
     (text) => descriptorRules().fontFace(text),
     (text) => descriptorRules().functionRule<RuleList>(text),
     (text) => descriptorRules().position(text),
@@ -8330,6 +8381,7 @@ export function createStyles(input: {
           if (
             rule.kind === "layer-statement" ||
             rule.kind === "namespace" ||
+            rule.kind === "view-transition" ||
             rule.kind === "counter-style" ||
             rule.kind === "font-face" ||
             rule.kind === "function" ||
@@ -9088,6 +9140,7 @@ export function createStyles(input: {
     get CSSFontFaceDescriptors() {
       return descriptorRules().fontFaceDescriptors();
     },
+    CSSViewTransitionRule: ruleInterfaces.CSSViewTransitionRule,
     CSSFunctionRule: ruleInterfaces.CSSFunctionRule,
     get CSSFunctionDeclarations() {
       return descriptorRules().functionInterfaces().CSSFunctionDeclarations;

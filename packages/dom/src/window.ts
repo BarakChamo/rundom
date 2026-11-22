@@ -19119,6 +19119,9 @@ function buildWindow(
     get CSSPositionTryRule() {
       return styles().CSSPositionTryRule;
     }
+    get CSSViewTransitionRule() {
+      return styles().CSSViewTransitionRule;
+    }
     get CSSFunctionRule() {
       return styles().CSSFunctionRule;
     }
