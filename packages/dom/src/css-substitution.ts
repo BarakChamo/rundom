@@ -93,6 +93,7 @@ export function substitutionFrame(
   baseURL: () => string,
   registrations: ReadonlyMap<string, RegisteredProperty> | undefined,
   sources?: readonly CascadeBlock[],
+  shorthands?: ReadonlyMap<string, string>,
 ): SubstitutionFrame {
   let frame: SubstitutionFrame | undefined;
   function materialize(): SubstitutionFrame {
@@ -104,6 +105,7 @@ export function substitutionFrame(
       baseURL,
       registrations,
       sources,
+      shorthands,
     ));
   }
   return {
@@ -125,6 +127,7 @@ function buildSubstitutionFrame(
   baseURL: () => string,
   registrations: ReadonlyMap<string, RegisteredProperty> | undefined,
   sources?: readonly CascadeBlock[],
+  shorthands?: ReadonlyMap<string, string>,
 ): SubstitutionFrame {
   const resolver: {
     hasResolvedStyle(element: object): boolean;
@@ -225,7 +228,28 @@ function buildSubstitutionFrame(
   };
   document.documentElement ??= element;
   const declarations = new Map<string, unknown>();
+  const expanded = new Map<string, ReadonlyMap<string, unknown>>();
+  function expandShorthand(name: string, text: string, important: boolean) {
+    const key = name + (important ? "!" : "\0") + text;
+    let components = expanded.get(key);
+    if (!components) {
+      const parsed = parser.parseDestructuredDeclaration(name, text, important, element);
+      if (isFailure(parsed)) return;
+      const expand: (declaration: unknown) => {
+        name: string;
+      }[] = require("rundom-css-reference/lib/jsdom/living/css/parse/shorthand.js");
+      components = new Map(expand(parsed).map((component) => [component.name, component]));
+      expanded.set(key, components);
+    }
+    return components;
+  }
   for (const [name, text] of values) {
+    const shorthand = shorthands?.get(name);
+    if (shorthand) {
+      const component = expandShorthand(shorthand, text, false)?.get(name);
+      if (component) declarations.set(name, component);
+      continue;
+    }
     const parsed = parser.parseDestructuredDeclaration(name, text, false, element);
     if (!isFailure(parsed)) declarations.set(name, parsed);
   }
@@ -249,12 +273,21 @@ function buildSubstitutionFrame(
   ];
   // Deferred rollback needs the identity of each matching rule, including losing declarations.
   if (sources && sources.length > 1) {
+    const shorthandNames = shorthands && new Set(shorthands.values());
     const deferred = new Set<string>();
     for (const [name, text] of values)
       if (substitutionFunction.test(text) || /var\(/i.test(text)) deferred.add(name);
     for (const source of sources) {
       const block = new Map<string, unknown>();
       for (const { name, value, important } of source.entries) {
+        if (shorthandNames?.has(name)) {
+          for (const [child, component] of expandShorthand(name, value, important) ?? []) {
+            if (!deferred.has(child)) continue;
+            block.set(child, component);
+            declarations.delete(child);
+          }
+          continue;
+        }
         if (!deferred.has(name)) continue;
         const declaration = parser.parseDestructuredDeclaration(name, value, important, element);
         if (!isFailure(declaration)) {

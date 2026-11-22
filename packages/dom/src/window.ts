@@ -2458,6 +2458,33 @@ function buildWindow(
     root: (node: Raw.Element) => Boolean(node.parentNode && isDocumentRecord(node.parentNode)),
     link: matchesHyperlink,
     "any-link": matchesHyperlink,
+    "local-link": (node: Raw.Element, level?: number) => {
+      const svgAnchor = node.namespaceURI === html.NS.SVG && elementLocalName(node) === "a";
+      if (!svgAnchor && !matchesHyperlink(node)) return false;
+      const href =
+        attribute(node, "href") ??
+        (svgAnchor
+          ? node.attrs.find(
+              (a) => a.namespace === "http://www.w3.org/1999/xlink" && a.name === "href",
+            )?.value
+          : undefined);
+      if (href === undefined || href === null) return false;
+      const link = parseElementURL(node, href);
+      if (!link) return false;
+      const current = new URL(detachedSettings?.get(ownerRecord(node))?.url ?? url.href);
+      if (level === undefined) {
+        link.hash = current.hash = "";
+        return current.href === link.href;
+      }
+      if (current.origin === "null" || current.origin !== link.origin) return false;
+      const path = current.pathname.slice(1).split("/");
+      const target = link.pathname.slice(1).split("/");
+      return (
+        path.length >= level &&
+        target.length >= level &&
+        path.slice(0, level).every((segment, index) => target[index] === segment)
+      );
+    },
     visited: () => false,
     target: (node: Raw.Element) => {
       const fragment = ownerRecord(node) === source ? url.hash.slice(1) : "";

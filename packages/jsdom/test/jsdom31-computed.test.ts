@@ -290,10 +290,24 @@ it("updates the browser focus ring on a retained computed declaration", () => {
     const { window } = new Constructor("<button>Focus</button>");
     const button = window.document.querySelector("button")!;
     const style = window.getComputedStyle(button);
-    button.focus();
+    Reflect.apply(Reflect.get(button, "focus"), button, []);
     expect(style.getPropertyValue("outline")).toBe("3px auto");
-    button.blur();
+    Reflect.apply(Reflect.get(button, "blur"), button, []);
     expect(style.getPropertyValue("outline-style")).toBe("none");
+    window.close();
+  }
+});
+
+it("resolves a pending background shorthand with registered and CSS-wide custom properties", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor(
+      '<style>@property --accent {syntax:"<color>"; inherits:false; initial-value:orange}</style><p style="background:var(--missing,lightgreen);--missing:initial"></p>',
+    );
+    const node = window.document.querySelector("p")!;
+    const style = window.getComputedStyle(node);
+    expect(style.getPropertyValue("background-color")).toBe("rgb(144, 238, 144)");
+    node.style.setProperty("background", "var(--accent)");
+    expect(style.getPropertyValue("background-color")).toBe("rgb(255, 165, 0)");
     window.close();
   }
 });

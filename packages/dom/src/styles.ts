@@ -639,6 +639,22 @@ const deferredShorthandLonghands = new Map<string, readonly string[]>([
   ["margin", borderSides.map((side) => `margin-${side}`)],
   ["padding", borderSides.map((side) => `padding-${side}`)],
   ["flex", flexLonghands],
+  [
+    "background",
+    [
+      "background-image",
+      "background-position-x",
+      "background-position-y",
+      "background-size",
+      "background-repeat-x",
+      "background-repeat-y",
+      "background-attachment",
+      "background-origin",
+      "background-clip",
+      "background-color",
+      "background-blend-mode",
+    ],
+  ],
   ["background-position", backgroundPositionAxes],
   ["outline", outlineLonghands],
   [
@@ -1046,20 +1062,22 @@ function writePublicStyleProperty(
   ) {
     writeStyleProperty(style, property, value === null ? "" : `${value}`);
   } else {
-    writeStyleProperty(style, property, cssInput(value));
+    writeStyleProperty(style, property, cssInput(value, false));
   }
 }
 
 const requestedStyleWrites = new WeakMap<object, { property: string; priority: string }>();
 
-function cssInput(value: unknown): string {
+function cssInput(value: unknown, replaceEscapedEOF = true): string {
   if (value === null) return "";
   if (typeof value === "symbol") throw new TypeError("Cannot convert a Symbol to a string");
   const text = String(value).toWellFormed();
   const normalized = /[\0\r\f]/.test(text)
     ? text.replace(/\r\n?|\f/g, "\n").replace(/\0/g, "\uFFFD")
     : text;
-  return normalized.endsWith("\\") ? normalized.slice(0, -1) + "\uFFFD" : normalized;
+  return replaceEscapedEOF && normalized.endsWith("\\")
+    ? normalized.slice(0, -1) + "\uFFFD"
+    : normalized;
 }
 
 const cssNumericToken = /^[+-]?(?:\d*\.\d+|\d+)(?:e[+-]?\d+)?$/i;
@@ -1715,7 +1733,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (property === "font" && !this._computed && this._values.has("font"))
         return this._values.get("font")!;
       const children =
-        property === "font" && this._computed ? undefined : grammarLonghands(property);
+        (property === "font" && this._computed) ||
+        (property === "size" && !(this instanceof CSSStyleProperties))
+          ? undefined
+          : grammarLonghands(property);
       if (children && shorthandSources?.get(this)?.size) {
         const source = shorthandSources?.get(this)?.get(children[0]!);
         if (
@@ -2008,7 +2029,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const name = inputName.startsWith("--")
         ? inputName
         : canonicalProperty(inputName.toLowerCase());
-      const text = cssInput(value);
+      const text = cssInput(value, false);
       const importance = cssInput(priority).toLowerCase();
       if (this._readonly)
         throw new this._global.DOMException(
@@ -2028,6 +2049,17 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       });
     }
     #setPropertyValue(property: string, value: string, priority: string): void {
+      if (
+        value.endsWith("\\") ||
+        (property.startsWith("--") &&
+          (value.includes("/*") ||
+            /['"]/u.test(value) ||
+            (/[([{]/u.test(value) && !/[)\]}]$/u.test(value))))
+      ) {
+        const serialized = specifiedDeclaration(property, value);
+        if (serialized !== undefined) this._setProperty(property, serialized, priority);
+        return;
+      }
       if (!property.startsWith("--")) value = canonicalWideKeyword(value);
       const name = property.toLowerCase();
       if (
@@ -2073,7 +2105,11 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         } else this._setProperty(name, components.join(" "), priority);
         return;
       }
-      if (name !== "font" && grammarLonghands(name)) {
+      if (
+        name !== "font" &&
+        (name !== "size" || this instanceof CSSStyleProperties) &&
+        grammarLonghands(name)
+      ) {
         const shorthand = expandedDeclaration(name, value, priority === "important");
         if (!shorthand) return;
         for (const [i, [child, component]] of shorthand.entries.entries()) {
@@ -2247,7 +2283,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         value &&
         !property.startsWith("--") &&
         !propertyDefinitions.get(name)?.longhands &&
-        (/^(?:box-shadow$|vertical-align$|transform$|shape-outside$|scale$|object-position$|perspective-origin$|transform-origin$|list-style-image$|text-box-edge$|font-palette$|clip-path$|text-autospace$|text-spacing-|text-transform$|font-variation-settings$|font-synthesis-|font-family$|will-change$|content$|offset-path$|mask-|border-image-|white-space-|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
+        (/^(?:paint-order$|color-scheme$|container-name$|grid-template-areas$|box-shadow$|vertical-align$|transform$|shape-outside$|scale$|object-position$|perspective-origin$|transform-origin$|list-style-image$|text-box-edge$|font-palette$|clip-path$|text-autospace$|text-spacing-|text-transform$|font-variation-settings$|font-synthesis-|font-family$|will-change$|content$|offset-path$|mask-|border-image-|white-space-|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
           name,
         ) ||
           (name.startsWith("grid-template-") && value.includes("calc(")))
@@ -3918,6 +3954,10 @@ const simplePseudoElements = new Set([
   "marker",
   "placeholder",
   "selection",
+  "target-text",
+  "grammar-error",
+  "spelling-error",
+  "highlight",
 ]);
 const detailsContentStates = new Set(["active", "dir", "focus", "focus-within", "hover", "lang"]);
 
@@ -5159,7 +5199,7 @@ function simplifyCSSCalculation(value: string): string {
 // These dimensions need font metrics or a writing mode from the element's cascade.
 // These longhands normalize lists, coordinates or ratios using the element's style context.
 const contextualLonghand =
-  /^(?:(?:column|row)-rule-(?:style|color|width)|zoom|scale|shape-outside|object-position|perspective-origin|transform-origin|offset-(?:anchor|path|position|rotate)|list-style-image|overflow-clip-margin(?:-|$)|text-box-edge|background-position-[xy])$/;
+  /^(?:(?:column|row)-rule-(?:style|color|width)|font-style|rotate|background-size|grid-auto-rows|grid-auto-columns|zoom|scale|shape-outside|object-position|perspective-origin|transform-origin|offset-(?:anchor|path|position|rotate)|list-style-image|overflow-clip-margin(?:-|$)|text-box-edge|background-position-[xy])$/;
 function usesTypedValueGrammar(name: string, text: string): boolean {
   return (
     !name.startsWith("--") &&
@@ -7375,7 +7415,7 @@ export function createStyles(input: {
       }
       if (
         resolver.substitution &&
-        !shorthand &&
+        (!shorthand || variableSyntax.test(specified)) &&
         (substitutionFunction.test(specified) ||
           contextualLonghand.test(name) ||
           usesTypedValueGrammar(name, specified) ||
@@ -8635,7 +8675,10 @@ export function createStyles(input: {
             }
           }
         const substitutionValues =
-          usesSubstitution || parentFrame?.substitution || registrations?.size
+          usesSubstitution ||
+          hasVariableShorthand ||
+          parentFrame?.substitution ||
+          registrations?.size
             ? new Map([...winners].map(([name, winner]) => [name, winner.value]))
             : undefined;
         const computedWinners: Map<string, ComputedWinner> = winners;
@@ -8807,6 +8850,13 @@ export function createStyles(input: {
             baseURL,
             registrations,
             inputs,
+            hasVariableShorthand
+              ? new Map(
+                  [...winners].flatMap(([name, winner]) =>
+                    winner.shorthand ? [[name, winner.shorthand] as const] : [],
+                  ),
+                )
+              : undefined,
           );
         }
         const resolver = winningValueResolver(

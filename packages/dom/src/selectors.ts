@@ -8,6 +8,7 @@ import {
   validSelectorCompounds,
   purePseudoSelector,
 } from "./selector-syntax.js";
+import { validPseudoSelectorList } from "./css-reference.js";
 import { checkedness, inputType, isInput } from "./input-state.js";
 import { hasCustomState } from "./custom-state.js";
 import { elementLocalName, xmlSpecial } from "./xml.js";
@@ -21,6 +22,10 @@ const legacyPseudoElements = new Set(["before", "after", "first-line", "first-le
 const elementlessPseudos = new Set([
   ...legacyPseudoElements,
   "selection",
+  "target-text",
+  "grammar-error",
+  "spelling-error",
+  "highlight",
   "marker",
   "placeholder",
   "backdrop",
@@ -299,8 +304,13 @@ function adaptSelector(
     namespaces?: ReadonlyMap<string, string> | undefined;
     scope?: Raw.Node;
   },
-  pseudos: Record<string, (element: Raw.Element) => boolean>,
+  pseudos: Record<string, (element: Raw.Element, level?: number) => boolean>,
 ): string {
+  if (
+    /::(?:highlight|selection|grammar-error|spelling-error|target-text)\b/i.test(source) &&
+    !validPseudoSelectorList(source, namespaces)
+  )
+    throw new SyntaxError("Invalid pseudo-element selector");
   const hasNamespaceSyntax = source.includes("|");
   const defaultNamespace = namespaces?.get("");
   const { parse, walk, generate, ident }: typeof import("css-tree") =
@@ -479,6 +489,18 @@ function adaptSelector(
     }
     if (node.type === "PseudoClassSelector") {
       const name = ident.decode(node.name).toLowerCase();
+      if (name === "local-link") {
+        const text = node.children
+          ? generate(node)
+              .slice(generate(node).indexOf("(") + 1, -1)
+              .trim()
+          : undefined;
+        if (text !== undefined && !/^\+?\d+$/.test(text))
+          throw new SyntaxError("Invalid local link depth");
+        const level = text === undefined ? undefined : Number(text);
+        item.data = register((element) => pseudos["local-link"]?.(element, level) === true);
+        return;
+      }
       if (name === "has") {
         const list = node.children?.first;
         if (list?.type !== "SelectorList" || list.children.isEmpty)
@@ -985,7 +1007,7 @@ export function compileSelector(input: {
   strictSyntax?: boolean;
   namespaces?: ReadonlyMap<string, string> | undefined;
   DOMException?: typeof globalThis.DOMException;
-  statePseudos: Record<string, (element: Raw.Element) => boolean>;
+  statePseudos: Record<string, (element: Raw.Element, level?: number) => boolean>;
 }): (element: Raw.Element) => boolean {
   // ASCII compound-free class and ID selectors need no grammar or state adapter.
   // A default namespace still constrains these selectors in author stylesheets.

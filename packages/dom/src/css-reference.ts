@@ -310,7 +310,7 @@ export function grammarLonghands(name: string): readonly string[] | undefined {
   if (
     name !== "all" &&
     name !== "font" &&
-    !/^(?:(?:(?:row|column)-)?rule|grid|corner|animation|font-variant|white-space|text-wrap|text-spacing|font-synthesis|margin-block|margin-inline|padding-block|padding-inline|vertical-align|transition|gap|grid-gap|inset|scroll-padding|scroll-margin|place|list-style|text-box|overflow-clip-margin|mask|columns|column-rule|position-try|offset)(?:-|$)/.test(
+    !/^(?:(?:(?:row|column)-)?rule|grid|corner|animation|font-variant|white-space|text-wrap|text-spacing|font-synthesis|size|container|flex-flow|caret|margin-block|margin-inline|padding-block|padding-inline|vertical-align|transition|gap|grid-gap|inset|scroll-padding|scroll-margin|place|list-style|text-box|overflow-clip-margin|mask|columns|column-rule|position-try|offset)(?:-|$)/.test(
       name,
     )
   )
