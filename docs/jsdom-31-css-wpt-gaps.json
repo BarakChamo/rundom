@@ -1,0 +1,3515 @@
+{
+  "reference": "jsdom@31.0.1",
+  "candidate": "2af947b",
+  "source": "https://github.com/BarakChamo/rundom/actions/runs/45029425185",
+  "filesWithDifferences": {
+    "Upstream WPT": {
+      "css/css-values/if-conditionals.html": {
+        "failing": 192
+      },
+      "css/css-values/attr-all-types.html": {
+        "failing": 161
+      },
+      "css/filter-effects/parsing/filter-computed.html": {
+        "failing": 72
+      },
+      "css/selectors/attribute-selectors/attribute-case/syntax.html": {
+        "failing": 72
+      },
+      "css/css-values/acos-asin-atan-atan2-serialize.html": {
+        "failing": 62
+      },
+      "css/css-pseudo/parsing/marker-supported-properties.html": {
+        "failing": 61
+      },
+      "css/css-values/acos-asin-atan-atan2-invalid.html": {
+        "failing": 61
+      },
+      "css/css-properties-values-api/registered-property-computation.html": {
+        "failing": 58
+      },
+      "css/css-mixins/functions/at-function-parsing.html": {
+        "failing": 54
+      },
+      "webidl/ecmascript-binding/es-exceptions/DOMException-constants.any.html": {
+        "failing": 50
+      },
+      "css/css-text-decor/parsing/text-decoration-line-valid.html": {
+        "failing": 49
+      },
+      "css/css-values/minmax-angle-invalid.html": {
+        "failing": 48
+      },
+      "css/css-values/minmax-time-invalid.html": {
+        "failing": 48
+      },
+      "css/css-gaps/parsing/gap-decorations-rule-shorthand-valid.html": {
+        "failing": 45
+      },
+      "css/css-cascade/all-prop-revert-layer.html": {
+        "missing": 43
+      },
+      "css/css-images/image-set/image-set-parsing.html": {
+        "failing": 42
+      },
+      "css/css-values/tree-counting/calc-sibling-function-parsing.html": {
+        "failing": 41
+      },
+      "css/css-values/calc-size/calc-size-parsing.html": {
+        "failing": 40
+      },
+      "css/css-text/parsing/white-space-shorthand.html": {
+        "failing": 39
+      },
+      "css/css-values/calc-infinity-nan-computed.html": {
+        "failing": 39
+      },
+      "css/css-values/if-cycle.html": {
+        "failing": 39
+      },
+      "css/css-values/minmax-angle-serialize.html": {
+        "failing": 38
+      },
+      "css/css-mixins/functions/at-function-cssom.html": {
+        "failing": 37
+      },
+      "css/css-overflow/parsing/scroll-buttons-valid.html": {
+        "failing": 37
+      },
+      "css/selectors/focus-visible-017-2.html": {
+        "failing": 37
+      },
+      "css/css-values/sin-cos-tan-serialize.html": {
+        "failing": 36
+      },
+      "css/css-masking/parsing/mask-valid.sub.html": {
+        "failing": 34
+      },
+      "css/css-values/calc-infinity-nan-serialize-length.html": {
+        "failing": 34
+      },
+      "css/css-gaps/parsing/gap-decorations-rule-shorthand-computed.html": {
+        "failing": 33
+      },
+      "css/css-masking/parsing/mask-image-computed.html": {
+        "failing": 33
+      },
+      "css/css-pseudo/parsing/highlight-pseudos.html": {
+        "failing": 33
+      },
+      "css/css-values/attr-cycle.html": {
+        "failing": 32
+      },
+      "css/css-backgrounds/parsing/border-image-shorthand.sub.html": {
+        "failing": 30
+      },
+      "css/css-values/calc-infinity-nan-serialize-angle.html": {
+        "failing": 30
+      },
+      "css/css-values/minmax-length-percent-computed.html": {
+        "failing": 30
+      },
+      "css/css-pseudo/parsing/marker-supported-properties-in-animation.html": {
+        "failing": 29
+      },
+      "css/css-syntax/serialize-consecutive-tokens.html": {
+        "failing": 29
+      },
+      "css/css-values/calc-infinity-nan-serialize-resolution.html": {
+        "failing": 29
+      },
+      "css/css-will-change/parsing/will-change-invalid.html": {
+        "failing": 29
+      },
+      "css/cssom/serialize-namespaced-type-selectors.html": {
+        "failing": 29
+      },
+      "css/css-animations/parsing/animation-shorthand.html": {
+        "failing": 28
+      },
+      "css/css-properties-values-api/at-property.html": {
+        "failing": 27
+      },
+      "css/css-fonts/variations/at-font-face-descriptors.html": {
+        "failing": 26
+      },
+      "css/css-images/gradient/color-stops-parsing.html": {
+        "failing": 26
+      },
+      "css/css-syntax/urange-parsing.html": {
+        "failing": 26
+      },
+      "css/css-transforms/parsing/scale-parsing-computed.html": {
+        "failing": 26
+      },
+      "css/css-values/attr-security.html": {
+        "failing": 26
+      },
+      "css/css-conditional/container-queries/at-container-parsing.html": {
+        "failing": 24
+      },
+      "css/css-content/parsing/content-valid.html": {
+        "failing": 24
+      },
+      "css/css-pseudo/parsing/tree-abiding-pseudo-elements.html": {
+        "failing": 24
+      },
+      "css/css-variables/variable-css-wide-keywords.html": {
+        "failing": 24
+      },
+      "css/cssom/cssstyledeclaration-all-shorthand.html": {
+        "failing": 24
+      },
+      "css/css-anchor-position/parsing/position-try-parsing.html": {
+        "failing": 23
+      },
+      "css/css-color/light-dark-image.html": {
+        "failing": 23
+      },
+      "css/css-multicol/parsing/columns-computed.html": {
+        "failing": 23
+      },
+      "css/css-properties-values-api/unit-cycles.html": {
+        "failing": 23
+      },
+      "css/css-values/clamp-length-invalid.html": {
+        "failing": 23
+      },
+      "css/motion/parsing/offset-path-parsing-valid.html": {
+        "failing": 23
+      },
+      "css/css-color/parsing/alpha-color-computed.html": {
+        "failing": 22
+      },
+      "css/css-color/parsing/color-computed-color-function.html": {
+        "failing": 22
+      },
+      "css/css-properties-values-api/registered-property-initial.html": {
+        "failing": 22
+      },
+      "css/css-values/calc-infinity-nan-serialize-time.html": {
+        "failing": 22
+      },
+      "css/css-values/typed_arithmetic.html": {
+        "failing": 22
+      },
+      "css/cssom/getComputedStyle-pseudo-with-argument.html": {
+        "failing": 22
+      },
+      "css/cssom/getComputedStyle-pseudo.html": {
+        "failing": 22
+      },
+      "css/css-content/parsing/content-computed.html": {
+        "failing": 21
+      },
+      "css/css-fonts/parsing/font-face-src-format.html": {
+        "failing": 21
+      },
+      "css/css-values/attr-css-wide-keywords.html": {
+        "failing": 21
+      },
+      "css/motion/parsing/offset-path-computed.html": {
+        "failing": 21
+      },
+      "css/css-color/parsing/color-computed-rgb.html": {
+        "failing": 20
+      },
+      "css/css-logical/parsing/inset-shorthand.html": {
+        "failing": 20
+      },
+      "css/css-scroll-snap/parsing/scroll-margin-shorthand.html": {
+        "failing": 20
+      },
+      "css/css-scroll-snap/parsing/scroll-padding-shorthand.html": {
+        "failing": 20
+      },
+      "css/css-shadow/slotted-parsing.html": {
+        "failing": 20
+      },
+      "css/css-transitions/parsing/transition-behavior.html": {
+        "failing": 20
+      },
+      "css/css-values/round-mod-rem-computed.html": {
+        "failing": 20
+      },
+      "css/css-variables/variable-reference-name-substitution.html": {
+        "failing": 20
+      },
+      "css/css-color/parsing/alpha-color-parsing-valid.html": {
+        "failing": 19
+      },
+      "css/css-color/parsing/opacity-computed.html": {
+        "failing": 19
+      },
+      "css/css-fonts/parsing/palette-mix-computed.html": {
+        "failing": 19
+      },
+      "css/css-shapes/parsing/shape-outside-computed.html": {
+        "failing": 19
+      },
+      "css/css-color/parsing/color-computed-hsl.html": {
+        "failing": 18
+      },
+      "css/css-conditional/container-queries/at-container-style-serialization.html": {
+        "missing": 17,
+        "harnessLoss": 1
+      },
+      "css/css-fonts/parsing/font-face-src-tech.html": {
+        "failing": 18
+      },
+      "css/css-gaps/parsing/gap-decorations-color-computed.html": {
+        "failing": 18
+      },
+      "css/css-masking/parsing/mask-computed.html": {
+        "failing": 18
+      },
+      "css/css-shadow/shadow-cascade-order-001.html": {
+        "failing": 18
+      },
+      "css/css-shapes/parsing/shape-outside-valid-position.html": {
+        "failing": 18
+      },
+      "css/css-transitions/parsing/transition-shorthand.html": {
+        "failing": 18
+      },
+      "css/css-values/calc-catch-divide-by-0.html": {
+        "failing": 18
+      },
+      "css/motion/parsing/offset-shorthand.html": {
+        "failing": 18
+      },
+      "css/css-backgrounds/parsing/background-image-computed.sub.html": {
+        "failing": 17
+      },
+      "css/css-fonts/parsing/palette-mix-valid.html": {
+        "failing": 17
+      },
+      "css/css-lists/parsing/list-style-valid.html": {
+        "failing": 17
+      },
+      "css/css-text/parsing/text-autospace-computed.html": {
+        "failing": 17
+      },
+      "css/css-transforms/parsing/scale-parsing-valid.html": {
+        "failing": 17
+      },
+      "css/filter-effects/parsing/backdrop-filter-computed.html": {
+        "failing": 17
+      },
+      "css/motion/parsing/offset-parsing-valid.html": {
+        "failing": 17
+      },
+      "css/selectors/parsing/parse-heading.html": {
+        "failing": 17
+      },
+      "css/css-color/parsing/color-computed-lab.html": {
+        "failing": 16
+      },
+      "css/css-fonts/parsing/font-face-src-local.html": {
+        "failing": 16
+      },
+      "css/css-forms/parsing/checkmark-pseudo-element.html": {
+        "failing": 16
+      },
+      "css/css-forms/parsing/picker-icon-pseudo-element.html": {
+        "failing": 16
+      },
+      "css/css-masking/parsing/clip-path-valid.html": {
+        "failing": 16
+      },
+      "css/css-page/parsing/margin-rules-001.html": {
+        "failing": 16
+      },
+      "css/css-properties-values-api/url-resolution.html": {
+        "failing": 16
+      },
+      "css/css-shadow/part/pseudo-classes-after-part.html": {
+        "failing": 16
+      },
+      "css/css-text/parsing/text-autospace-valid.html": {
+        "failing": 16
+      },
+      "css/css-values/calc-infinity-nan-serialize-number.html": {
+        "failing": 16
+      },
+      "css/css-values/minmax-angle-computed.html": {
+        "failing": 16
+      },
+      "css/css-values/round-mod-rem-invalid.html": {
+        "failing": 16
+      },
+      "css/css-values/signs-abs-serialize.html": {
+        "failing": 16
+      },
+      "css/css-values/urls/url-request-modifiers-computed.sub.html": {
+        "failing": 16
+      },
+      "css/css-view-transitions/navigation/with-types/at-rule-with-types-parsing.html": {
+        "failing": 16
+      },
+      "css/css-align/parsing/place-content-shorthand.html": {
+        "failing": 15
+      },
+      "css/css-fonts/parsing/font-face-metric-overrides.html": {
+        "failing": 15
+      },
+      "css/css-forms/parsing/picker-select-pseudo-element.html": {
+        "failing": 15
+      },
+      "css/css-images/parsing/object-position-computed.html": {
+        "failing": 15
+      },
+      "css/css-values/progress-computed.html": {
+        "failing": 15
+      },
+      "css/css-variables/variable-definition.html": {
+        "failing": 15
+      },
+      "css/css-masking/mask-shorthand-subproperties-reset.html": {
+        "failing": 14
+      },
+      "css/css-multicol/parsing/columns-valid.html": {
+        "failing": 14
+      },
+      "css/css-values/clamp-integer-invalid.html": {
+        "failing": 14
+      },
+      "css/css-values/ident-function-computed.html": {
+        "failing": 14
+      },
+      "css/css-images/parsing/image-function-valid.html": {
+        "failing": 13
+      },
+      "css/selectors/parsing/parse-not.html": {
+        "failing": 13
+      },
+      "css/selectors/parsing/parse-state.html": {
+        "failing": 13
+      },
+      "css/css-align/parsing/gap-shorthand.html": {
+        "failing": 12
+      },
+      "css/css-align/parsing/grid-gap-shorthand.html": {
+        "failing": 12
+      },
+      "css/css-align/parsing/place-items-shorthand.html": {
+        "failing": 12
+      },
+      "css/css-align/parsing/place-self-shorthand.html": {
+        "failing": 12
+      },
+      "css/css-fonts/parsing/font-face-src-list.html": {
+        "failing": 12
+      },
+      "css/css-gaps/parsing/gap-decorations-width-computed.html": {
+        "failing": 12
+      },
+      "css/css-images/parsing/gradient-position-computed.html": {
+        "failing": 12
+      },
+      "css/css-inline/text-box-trim/parsing/text-box-computed.html": {
+        "failing": 12
+      },
+      "css/css-inline/text-box-trim/parsing/text-box-valid.html": {
+        "failing": 12
+      },
+      "css/css-logical/parsing/inset-block-inline-shorthand.html": {
+        "failing": 12
+      },
+      "css/css-logical/parsing/margin-block-inline-shorthand.html": {
+        "failing": 12
+      },
+      "css/css-logical/parsing/padding-block-inline-shorthand.html": {
+        "failing": 12
+      },
+      "css/css-scroll-snap/parsing/scroll-margin-block-inline-shorthand.html": {
+        "failing": 12
+      },
+      "css/css-scroll-snap/parsing/scroll-padding-block-inline-shorthand.html": {
+        "failing": 12
+      },
+      "css/css-shapes/parsing/shape-outside-shape-valid.html": {
+        "failing": 12
+      },
+      "css/css-transforms/parsing/transform-valid.html": {
+        "failing": 12
+      },
+      "css/css-values/attr-security-if.html": {
+        "failing": 12
+      },
+      "css/css-values/calc-serialization-002.html": {
+        "failing": 12
+      },
+      "css/css-values/hypot-pow-sqrt-invalid.html": {
+        "failing": 12
+      },
+      "css/css-values/minmax-length-invalid.html": {
+        "failing": 12
+      },
+      "css/css-values/minmax-length-percent-serialize.html": {
+        "failing": 12
+      },
+      "css/css-values/minmax-number-invalid.html": {
+        "failing": 12
+      },
+      "css/css-values/minmax-percentage-serialize.html": {
+        "failing": 12
+      },
+      "css/css-values/progress-serialize.html": {
+        "failing": 12
+      },
+      "css/css-values/round-mod-rem-serialize.html": {
+        "failing": 12
+      },
+      "css/css-variables/variable-substitution-shorthands.html": {
+        "failing": 12
+      },
+      "css/selectors/parsing/invalid-pseudos.html": {
+        "failing": 12
+      },
+      "css/selectors/parsing/parse-anplusb.html": {
+        "failing": 12
+      },
+      "css/selectors/parsing/parse-is-where.html": {
+        "failing": 12
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/event-listeners.window.html": {
+        "failing": 12
+      },
+      "css/css-backgrounds/parsing/box-shadow-valid.html": {
+        "failing": 11
+      },
+      "css/css-color/parsing/opacity-valid.html": {
+        "failing": 11
+      },
+      "css/css-inline/parsing/vertical-align-valid.html": {
+        "failing": 11
+      },
+      "css/css-inline/text-box-trim/parsing/text-box-shorthand.html": {
+        "failing": 11
+      },
+      "css/css-masking/parsing/mask-position-valid.html": {
+        "failing": 11
+      },
+      "css/css-sizing/parsing/size-shorthand.html": {
+        "failing": 11
+      },
+      "css/css-text/parsing/text-wrap-computed.html": {
+        "failing": 11
+      },
+      "css/css-text/parsing/text-wrap-valid.html": {
+        "failing": 11
+      },
+      "css/css-values/attr-argument-grammar.html": {
+        "failing": 11
+      },
+      "css/css-values/hypot-pow-sqrt-computed.html": {
+        "failing": 11
+      },
+      "css/motion/parsing/offset-anchor-computed.html": {
+        "failing": 11
+      },
+      "css/motion/parsing/offset-position-computed.html": {
+        "failing": 11
+      },
+      "css/css-backgrounds/parsing/background-image-valid.html": {
+        "failing": 10
+      },
+      "css/css-counter-styles/counter-style-at-rule/name-syntax.html": {
+        "failing": 10
+      },
+      "css/css-counter-styles/counter-style-at-rule/prefix-suffix-syntax.html": {
+        "failing": 10
+      },
+      "css/css-fonts/variations/font-style-parsing.html": {
+        "failing": 10
+      },
+      "css/css-overflow/parsing/overflow-clip-margin.html": {
+        "failing": 10
+      },
+      "css/css-page/parsing/size-valid.html": {
+        "failing": 10
+      },
+      "css/css-syntax/input-preprocessing.html": {
+        "failing": 10
+      },
+      "css/css-values/minmax-number-serialize.html": {
+        "failing": 10
+      },
+      "css/css-values/minmax-percentage-invalid.html": {
+        "failing": 10
+      },
+      "css/css-values/signs-abs-computed.html": {
+        "failing": 10
+      },
+      "css/css-backgrounds/background-size-001.html": {
+        "failing": 9
+      },
+      "css/css-fonts/parsing/font-synthesis-valid.html": {
+        "failing": 9
+      },
+      "css/css-fonts/parsing/font-variation-settings-invalid.html": {
+        "failing": 9
+      },
+      "css/css-grid/parsing/grid-area-valid.html": {
+        "failing": 9
+      },
+      "css/css-overflow/parsing/overflow-clip-margin-computed.html": {
+        "failing": 9
+      },
+      "css/css-properties-values-api/var-reference-registered-properties.html": {
+        "failing": 9
+      },
+      "css/css-shapes/parsing/shape-outside-path-valid.html": {
+        "failing": 9
+      },
+      "css/css-values/ident-function-substitution.html": {
+        "failing": 9
+      },
+      "css/filter-effects/parsing/filter-parsing-valid.html": {
+        "failing": 9
+      },
+      "css/selectors/parsing/parse-has.html": {
+        "failing": 9
+      },
+      "css/selectors/parsing/parse-part.html": {
+        "failing": 9
+      },
+      "css/css-fonts/parsing/font-style-computed.html": {
+        "failing": 8
+      },
+      "css/css-scroll-snap/parsing/scroll-padding-block-inline-computed.html": {
+        "failing": 8
+      },
+      "css/css-text/parsing/text-transform-valid.html": {
+        "failing": 8
+      },
+      "css/css-text/parsing/text-wrap-pretty.html": {
+        "failing": 8
+      },
+      "css/css-transforms/parsing/perspective-origin-valid.html": {
+        "failing": 8
+      },
+      "css/css-transforms/parsing/rotate-parsing-computed.html": {
+        "failing": 8
+      },
+      "css/css-ui/parsing/canonical-order-outline-sub-properties-001.html": {
+        "failing": 8
+      },
+      "css/css-values/attr-pseudo-elem-invalidation-2.html": {
+        "failing": 8
+      },
+      "css/css-values/calc-linear-radial-conic-gradient-001.html": {
+        "failing": 8
+      },
+      "css/css-values/signs-abs-invalid.html": {
+        "failing": 8
+      },
+      "css/css-values/tree-counting/sibling-function-invalidation.html": {
+        "failing": 8
+      },
+      "css/css-view-transitions/navigation/at-rule-cssom.html": {
+        "failing": 8
+      },
+      "css/css-viewport/zoom/parsing/zoom-computed.html": {
+        "failing": 8
+      },
+      "css/cssom/getComputedStyle-pseudo-picker.html": {
+        "failing": 8
+      },
+      "css/cssom/serialize-values.html": {
+        "failing": 8
+      },
+      "css/filter-effects/parsing/backdrop-filter-parsing-invalid.html": {
+        "failing": 8
+      },
+      "css/filter-effects/parsing/backdrop-filter-parsing-valid.html": {
+        "failing": 8
+      },
+      "css/filter-effects/parsing/filter-parsing-invalid.html": {
+        "failing": 8
+      },
+      "css/motion/parsing/offset-path-shape-computed.html": {
+        "failing": 8
+      },
+      "css/css-backgrounds/parsing/background-shorthand-serialization.html": {
+        "failing": 7
+      },
+      "css/css-color-adjust/parsing/color-scheme-invalid.html": {
+        "failing": 7
+      },
+      "css/css-color/parsing/color-computed-powerless.html": {
+        "failing": 7
+      },
+      "css/css-conditional/container-queries/container-name-parsing.html": {
+        "failing": 7
+      },
+      "css/css-conditional/container-queries/container-parsing.html": {
+        "failing": 7
+      },
+      "css/css-counter-styles/counter-style-at-rule/pad-syntax.html": {
+        "failing": 7
+      },
+      "css/css-grid/parsing/grid-area-computed.html": {
+        "failing": 7
+      },
+      "css/css-grid/parsing/grid-template-areas-invalid.html": {
+        "failing": 7
+      },
+      "css/css-images/parsing/gradient-position-valid.html": {
+        "failing": 7
+      },
+      "css/css-images/parsing/object-position-valid.html": {
+        "failing": 7
+      },
+      "css/css-lists/parsing/list-style-image-computed.sub.html": {
+        "failing": 7
+      },
+      "css/css-scroll-snap/parsing/scroll-padding-computed.html": {
+        "failing": 7
+      },
+      "css/css-shadow/part/multiple-scopes.html": {
+        "failing": 7
+      },
+      "css/css-syntax/anb-serialization.html": {
+        "failing": 7
+      },
+      "css/css-values/calc-unit-analysis.html": {
+        "failing": 7
+      },
+      "css/css-values/tree-counting/calc-sibling-function.html": {
+        "failing": 7
+      },
+      "css/css-variables/var-parsing.html": {
+        "failing": 7
+      },
+      "css/cssom/selectorSerialize.html": {
+        "failing": 7
+      },
+      "css/selectors/parsing/parse-slotted.html": {
+        "failing": 7
+      },
+      "webidl/ecmascript-binding/es-exceptions/DOMException-custom-bindings.any.html": {
+        "failing": 7
+      },
+      "css/css-align/parsing/place-items-computed.html": {
+        "failing": 6
+      },
+      "css/css-align/parsing/place-items-valid.html": {
+        "failing": 6
+      },
+      "css/css-anchor-position/parsing/position-try-fallbacks-parsing.html": {
+        "failing": 6
+      },
+      "css/css-animations/computed-style-animation-parsing.html": {
+        "failing": 6
+      },
+      "css/css-backgrounds/parsing/background-size-computed.html": {
+        "failing": 6
+      },
+      "css/css-backgrounds/parsing/border-radius-computed.html": {
+        "failing": 6
+      },
+      "css/css-backgrounds/parsing/border-shorthand.html": {
+        "failing": 6
+      },
+      "css/css-cascade/revert-rule-shadow.html": {
+        "failing": 6
+      },
+      "css/css-color/parsing/color-computed-hwb.html": {
+        "failing": 6
+      },
+      "css/css-conditional/container-queries/container-rule-cssom.html": {
+        "failing": 6
+      },
+      "css/css-counter-styles/counter-style-at-rule/symbols-syntax.html": {
+        "failing": 6
+      },
+      "css/css-counter-styles/counter-style-at-rule/system-syntax.html": {
+        "failing": 6
+      },
+      "css/css-display/display-math-on-non-mathml-elements.html": {
+        "failing": 6
+      },
+      "css/css-flexbox/parsing/flex-computed.html": {
+        "failing": 6
+      },
+      "css/css-flexbox/parsing/flex-flow-shorthand.html": {
+        "failing": 6
+      },
+      "css/css-flexbox/parsing/flex-flow-valid.html": {
+        "failing": 6
+      },
+      "css/css-flexbox/parsing/flex-shorthand.html": {
+        "failing": 6
+      },
+      "css/css-flexbox/parsing/flex-valid.html": {
+        "failing": 6
+      },
+      "css/css-grid/parsing/grid-area-invalid.html": {
+        "failing": 6
+      },
+      "css/css-grid/parsing/grid-auto-columns-computed.html": {
+        "failing": 6
+      },
+      "css/css-grid/parsing/grid-auto-rows-computed.html": {
+        "failing": 6
+      },
+      "css/css-images/parsing/conic-gradient-calc-angle-percentage-valid.html": {
+        "failing": 6
+      },
+      "css/css-logical/parsing/inset-valid.html": {
+        "failing": 6
+      },
+      "css/css-masking/parsing/clip-path-computed.html": {
+        "failing": 6
+      },
+      "css/css-masking/parsing/mask-repeat-computed.html": {
+        "failing": 6
+      },
+      "css/css-masking/parsing/mask-repeat-valid.html": {
+        "failing": 6
+      },
+      "css/css-masking/parsing/mask-size-computed.html": {
+        "failing": 6
+      },
+      "css/css-overflow/parsing/scroll-buttons-invalid.html": {
+        "failing": 6
+      },
+      "css/css-page/parsing/size-invalid.html": {
+        "failing": 6
+      },
+      "css/css-position/parsing/inset-invalid.html": {
+        "failing": 6
+      },
+      "css/css-position/parsing/inset-valid.html": {
+        "failing": 6
+      },
+      "css/css-properties-values-api/registered-properties-inheritance.html": {
+        "failing": 6
+      },
+      "css/css-shadow/part/interaction-with-pseudo-elements.html": {
+        "failing": 6
+      },
+      "css/css-shadow/part/pseudo-elements-after-part.html": {
+        "failing": 6
+      },
+      "css/css-sizing/aspect-ratio/parsing/aspect-ratio-valid.html": {
+        "failing": 6
+      },
+      "css/css-sizing/contain-intrinsic-size/parsing/contain-intrinsic-size-computed.html": {
+        "failing": 6
+      },
+      "css/css-text/parsing/text-spacing-computed.html": {
+        "failing": 6
+      },
+      "css/css-ui/parsing/caret-color-computed.html": {
+        "failing": 6
+      },
+      "css/css-values/acos-asin-atan-atan2-computed.html": {
+        "failing": 6
+      },
+      "css/css-values/attr-pseudo-elem-invalidation.html": {
+        "failing": 6
+      },
+      "css/css-values/exp-log-serialize.html": {
+        "failing": 6
+      },
+      "css/css-values/hypot-pow-sqrt-serialize.html": {
+        "failing": 6
+      },
+      "css/css-values/minmax-time-computed.html": {
+        "failing": 6
+      },
+      "css/css-values/sin-cos-tan-computed.html": {
+        "failing": 6
+      },
+      "css/css-values/urls/url-request-modifiers-import-parsing.sub.html": {
+        "failing": 6
+      },
+      "css/cssom/overflow-serialization.html": {
+        "failing": 6
+      },
+      "html/semantics/selectors/pseudo-classes/focus.html": {
+        "missing": 5,
+        "harnessLoss": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/active.window.html": {
+        "failing": 6
+      },
+      "FileAPI/blob/Blob-array-buffer.any.html": {
+        "failing": 5
+      },
+      "FileAPI/blob/Blob-bytes.any.html": {
+        "failing": 5
+      },
+      "css/css-align/parsing/gap-valid.html": {
+        "failing": 5
+      },
+      "css/css-align/parsing/grid-gap-valid.html": {
+        "failing": 5
+      },
+      "css/css-align/parsing/place-self-computed.html": {
+        "failing": 5
+      },
+      "css/css-align/parsing/place-self-valid.html": {
+        "failing": 5
+      },
+      "css/css-animations/parsing/animation-duration-computed.html": {
+        "failing": 5
+      },
+      "css/css-cascade/scope-evaluation.html": {
+        "failing": 5
+      },
+      "css/css-cascade/scope-nesting.html": {
+        "failing": 5
+      },
+      "css/css-color-adjust/parsing/color-scheme-valid.html": {
+        "failing": 5
+      },
+      "css/css-counter-styles/counter-style-at-rule/fallback.html": {
+        "failing": 5
+      },
+      "css/css-counter-styles/counter-style-at-rule/speak-as-syntax.html": {
+        "failing": 5
+      },
+      "css/css-fonts/font-variation-settings-calc.html": {
+        "failing": 5
+      },
+      "css/css-fonts/parsing/font-feature-settings-valid.html": {
+        "failing": 5
+      },
+      "css/css-fonts/parsing/font-size-adjust-valid.html": {
+        "failing": 5
+      },
+      "css/css-lists/parsing/counter-increment-computed.html": {
+        "failing": 5
+      },
+      "css/css-lists/parsing/counter-reset-computed.html": {
+        "failing": 5
+      },
+      "css/css-lists/parsing/counter-reset-valid.html": {
+        "failing": 5
+      },
+      "css/css-lists/parsing/counter-set-computed.html": {
+        "failing": 5
+      },
+      "css/css-logical/parsing/border-block-width-computed.html": {
+        "failing": 5
+      },
+      "css/css-logical/parsing/border-inline-width-computed.html": {
+        "failing": 5
+      },
+      "css/css-logical/parsing/inset-block-inline-valid.html": {
+        "failing": 5
+      },
+      "css/css-logical/parsing/inset-computed.html": {
+        "failing": 5
+      },
+      "css/css-multicol/parsing/column-pseudo-invalid.html": {
+        "failing": 5
+      },
+      "css/css-page/page-rule-declarations-000.html": {
+        "failing": 5
+      },
+      "css/css-shadow/host-context-parsing.html": {
+        "failing": 5
+      },
+      "css/css-shadow/host-parsing.html": {
+        "failing": 5
+      },
+      "css/css-syntax/escaped-eof.html": {
+        "failing": 5
+      },
+      "css/css-text-decor/parsing/text-decoration-inset-valid.html": {
+        "failing": 5
+      },
+      "css/css-text/parsing/text-indent-valid.html": {
+        "failing": 5
+      },
+      "css/css-text/parsing/text-spacing-valid.html": {
+        "failing": 5
+      },
+      "css/css-transforms/parsing/translate-parsing-computed.html": {
+        "failing": 5
+      },
+      "css/css-transforms/parsing/translate-parsing-valid.html": {
+        "failing": 5
+      },
+      "css/css-values/calc-numbers.html": {
+        "failing": 5
+      },
+      "css/css-values/urls/url-request-modifiers-font-face-parsing.html": {
+        "failing": 5
+      },
+      "css/css-variables/test_variable_legal_values.html": {
+        "failing": 5
+      },
+      "css/cssom/cssom-getPropertyValue-common-checks.html": {
+        "failing": 5
+      },
+      "css/cssom/page-descriptors.html": {
+        "failing": 5
+      },
+      "css/selectors/webkit-pseudo-element.html": {
+        "failing": 5
+      },
+      "html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/load-event-iframe-element.html": {
+        "failing": 5
+      },
+      "html/obsolete/requirements-for-implementations/other-elements-attributes-and-apis/nothing.html": {
+        "failing": 5
+      },
+      "webidl/ecmascript-binding/legacy-callback-interface-object.html": {
+        "failing": 5
+      },
+      "webidl/ecmascript-binding/put-forwards.html": {
+        "failing": 5
+      },
+      "css/css-align/parsing/gap-computed.html": {
+        "failing": 4
+      },
+      "css/css-align/parsing/grid-gap-computed.html": {
+        "failing": 4
+      },
+      "css/css-align/parsing/justify-items-valid.html": {
+        "failing": 4
+      },
+      "css/css-align/parsing/place-content-computed.html": {
+        "failing": 4
+      },
+      "css/css-align/parsing/place-content-valid.html": {
+        "failing": 4
+      },
+      "css/css-animations/parsing/animation-computed.html": {
+        "failing": 4
+      },
+      "css/css-animations/style-animation-parsing.html": {
+        "failing": 4
+      },
+      "css/css-backgrounds/animations/background-position-origin-interpolation.html": {
+        "failing": 4
+      },
+      "css/css-backgrounds/inheritance.sub.html": {
+        "failing": 4
+      },
+      "css/css-backgrounds/parsing/background-computed.html": {
+        "failing": 4
+      },
+      "css/css-backgrounds/parsing/background-position-computed.html": {
+        "failing": 4
+      },
+      "css/css-backgrounds/parsing/border-image-source-computed.sub.html": {
+        "failing": 4
+      },
+      "css/css-cascade/layer-statement-before-import.html": {
+        "failing": 3,
+        "harnessLoss": 1
+      },
+      "css/css-color/system-color-consistency.html": {
+        "failing": 4
+      },
+      "css/css-conditional/js/CSS-supports-selector-picker.html": {
+        "failing": 4
+      },
+      "css/css-contain/parsing/contain-valid.html": {
+        "failing": 4
+      },
+      "css/css-counter-styles/counter-style-at-rule/additive-symbols-syntax.html": {
+        "failing": 4
+      },
+      "css/css-display/parsing/display-computed.html": {
+        "failing": 4
+      },
+      "css/css-fonts/parsing/font-face-size-adjust.html": {
+        "failing": 4
+      },
+      "css/css-fonts/parsing/font-face-width.html": {
+        "failing": 4
+      },
+      "css/css-fonts/parsing/font-variation-settings-computed.html": {
+        "failing": 4
+      },
+      "css/css-fonts/parsing/font-width-computed.html": {
+        "failing": 4
+      },
+      "css/css-fonts/variations/font-stretch.html": {
+        "failing": 4
+      },
+      "css/css-grid/parsing/grid-template-areas-one-cell.html": {
+        "failing": 4
+      },
+      "css/css-inline/parsing/vertical-align-computed.html": {
+        "failing": 4
+      },
+      "css/css-lists/parsing/content-invalid.html": {
+        "failing": 4
+      },
+      "css/css-lists/parsing/list-style-computed.sub.html": {
+        "failing": 4
+      },
+      "css/css-lists/parsing/list-style-shorthand.sub.html": {
+        "failing": 4
+      },
+      "css/css-masking/parsing/clip-path-shape-parsing.html": {
+        "failing": 4
+      },
+      "css/css-overflow/parsing/line-clamp-valid.html": {
+        "failing": 4
+      },
+      "css/css-overscroll-behavior/parsing/overscroll-behavior-valid.html": {
+        "failing": 4
+      },
+      "css/css-page/parsing/margin-rules-002.html": {
+        "failing": 4
+      },
+      "css/css-properties-values-api/determine-registration.html": {
+        "failing": 4
+      },
+      "css/css-properties-values-api/invalid-at-computed-value-time.html": {
+        "failing": 4
+      },
+      "css/css-properties-values-api/registered-property-cssom.html": {
+        "failing": 4
+      },
+      "css/css-shadow/part/part-name-idl.html": {
+        "failing": 4
+      },
+      "css/css-syntax/var-with-blocks.html": {
+        "failing": 4
+      },
+      "css/css-text-decor/parsing/text-emphasis-computed.html": {
+        "failing": 4
+      },
+      "css/css-transitions/parsing/transition-computed.html": {
+        "failing": 4
+      },
+      "css/css-transitions/parsing/transition-timing-function-computed.html": {
+        "failing": 4
+      },
+      "css/css-transitions/parsing/transition-timing-function-invalid.html": {
+        "failing": 4
+      },
+      "css/css-transitions/parsing/transition-timing-function-valid.html": {
+        "failing": 4
+      },
+      "css/css-values/attr-null-namespace.xhtml": {
+        "failing": 4
+      },
+      "css/css-values/calc-invalid-parsing.html": {
+        "failing": 4
+      },
+      "css/css-values/clamp-length-serialize.html": {
+        "failing": 4
+      },
+      "css/css-values/getComputedStyle-calc-mixed-units-003.html": {
+        "failing": 4
+      },
+      "css/css-values/tree-counting/sibling-function-if-style-query.html": {
+        "failing": 4
+      },
+      "css/css-values/urls/empty.html": {
+        "failing": 4
+      },
+      "css/css-variables/revert-layer-in-fallback.html": {
+        "failing": 4
+      },
+      "css/css-variables/revert-rule-in-fallback.html": {
+        "failing": 4
+      },
+      "css/css-variables/var-ident-function.html": {
+        "failing": 4
+      },
+      "css/css-variables/variable-first-letter.html": {
+        "failing": 4
+      },
+      "css/css-variables/variable-first-line.html": {
+        "failing": 4
+      },
+      "css/css-viewport/zoom/parsing/zoom-computed-with-sign-expression.html": {
+        "failing": 4
+      },
+      "css/cssom/getComputedStyle-detached-subtree.html": {
+        "failing": 4
+      },
+      "css/cssom/variable-names.html": {
+        "failing": 4
+      },
+      "css/motion/parsing/offset-path-parsing-invalid.html": {
+        "failing": 4
+      },
+      "css/selectors/invalidation/has-pseudo-element-subject-child-mutation.html": {
+        "failing": 4
+      },
+      "html/webappapis/scripting/reporterror.any.html": {
+        "failing": 4
+      },
+      "uievents/legacy/Event-subclasses-init.html": {
+        "failing": 4
+      },
+      "websockets/interfaces/WebSocket/events/013.html?default": {
+        "failing": 4
+      },
+      "websockets/interfaces/WebSocket/events/013.html?wss": {
+        "failing": 4
+      },
+      "css/css-anchor-position/container-queries/at-container-anchored-serialization.html": {
+        "failing": 3
+      },
+      "css/css-anchor-position/parsing/position-try-fallbacks-computed.html": {
+        "failing": 3
+      },
+      "css/css-animations/parsing/animation-valid.html": {
+        "failing": 3
+      },
+      "css/css-backgrounds/parsing/background-clip-valid.html": {
+        "failing": 3
+      },
+      "css/css-backgrounds/parsing/background-position-valid.html": {
+        "failing": 3
+      },
+      "css/css-backgrounds/parsing/background-valid.html": {
+        "failing": 3
+      },
+      "css/css-backgrounds/parsing/border-image-outset-computed.html": {
+        "failing": 3
+      },
+      "css/css-backgrounds/parsing/border-radius-valid.html": {
+        "failing": 3
+      },
+      "css/css-backgrounds/parsing/webkit-border-radius-valid.html": {
+        "failing": 3
+      },
+      "css/css-cascade/layer-property-override.html": {
+        "failing": 3
+      },
+      "css/css-conditional/container-queries/at-container-serialization.html": {
+        "failing": 3
+      },
+      "css/css-conditional/container-queries/scroll-state/at-container-scrollable-serialization.html": {
+        "failing": 3
+      },
+      "css/css-conditional/container-queries/scroll-state/at-container-scrolled-serialization.html": {
+        "failing": 3
+      },
+      "css/css-conditional/container-queries/scroll-state/at-container-snapped-serialization.html": {
+        "failing": 3
+      },
+      "css/css-conditional/container-queries/scroll-state/at-container-stuck-serialization.html": {
+        "failing": 3
+      },
+      "css/css-conditional/js/supports-at-rule.html": {
+        "failing": 3
+      },
+      "css/css-display/display-contents-blockify-dynamic.html": {
+        "failing": 3
+      },
+      "css/css-display/display-math-on-pseudo-elements-001.html": {
+        "failing": 3
+      },
+      "css/css-fonts/font-size-computed.html": {
+        "failing": 3
+      },
+      "css/css-fonts/variations/font-parse-numeric-stretch-style-weight.html": {
+        "failing": 3
+      },
+      "css/css-gaps/parsing/gap-decorations-style-computed.html": {
+        "failing": 3
+      },
+      "css/css-grid/parsing/grid-auto-flow-computed.html": {
+        "failing": 3
+      },
+      "css/css-grid/parsing/grid-auto-flow-valid.html": {
+        "failing": 3
+      },
+      "css/css-grid/parsing/grid-template-areas-computed.html": {
+        "failing": 3
+      },
+      "css/css-grid/parsing/grid-template-areas-valid.html": {
+        "failing": 3
+      },
+      "css/css-grid/parsing/grid-template-columns-computed-nogrid.html": {
+        "failing": 3
+      },
+      "css/css-grid/parsing/grid-template-rows-computed-nogrid.html": {
+        "failing": 3
+      },
+      "css/css-images/parsing/image-function-computed.html": {
+        "failing": 3
+      },
+      "css/css-images/parsing/object-fit-valid.html": {
+        "failing": 3
+      },
+      "css/css-inline/parsing/line-height-computed.html": {
+        "failing": 3
+      },
+      "css/css-logical/parsing/border-block-width-valid.html": {
+        "failing": 3
+      },
+      "css/css-logical/parsing/border-inline-width-valid.html": {
+        "failing": 3
+      },
+      "css/css-logical/parsing/inset-block-inline-computed.html": {
+        "failing": 3
+      },
+      "css/css-logical/parsing/margin-block-inline-valid.html": {
+        "failing": 3
+      },
+      "css/css-masking/parsing/clip-path-invalid.html": {
+        "failing": 3
+      },
+      "css/css-multicol/parsing/column-pseudo-computed.html": {
+        "failing": 3
+      },
+      "css/css-multicol/parsing/column-rule-computed.html": {
+        "failing": 3
+      },
+      "css/css-overflow/parsing/getComputedStyle-scroll-button.html": {
+        "failing": 3
+      },
+      "css/css-overflow/parsing/overflow-computed.html": {
+        "failing": 3
+      },
+      "css/css-overflow/parsing/overflow-valid.html": {
+        "failing": 3
+      },
+      "css/css-overflow/parsing/scroll-axis-lock-computed.html": {
+        "failing": 3
+      },
+      "css/css-overflow/parsing/webkit-line-clamp-computed.html": {
+        "failing": 3
+      },
+      "css/css-page/page-rule-declarations-003.html": {
+        "missing": 2,
+        "failing": 1
+      },
+      "css/css-page/parsing/page-rules-001.html": {
+        "failing": 3
+      },
+      "css/css-properties-values-api/var-reference-registered-properties-cycles.html": {
+        "failing": 3
+      },
+      "css/css-shadow/part/grouping-with-checked.html": {
+        "failing": 3
+      },
+      "css/css-shadow/part/grouping-with-disabled.html": {
+        "failing": 3
+      },
+      "css/css-shapes/parsing/shape-image-threshold-valid.html": {
+        "failing": 3
+      },
+      "css/css-sizing/aspect-ratio/parsing/aspect-ratio-computed.html": {
+        "failing": 3
+      },
+      "css/css-sizing/contain-intrinsic-size/parsing/contain-intrinsic-size-valid.html": {
+        "failing": 3
+      },
+      "css/css-sizing/parsing/height-valid.html": {
+        "failing": 3
+      },
+      "css/css-sizing/parsing/width-valid.html": {
+        "failing": 3
+      },
+      "css/css-syntax/custom-property-rule-ambiguity.html": {
+        "failing": 3
+      },
+      "css/css-text-decor/parsing/text-decoration-computed.html": {
+        "failing": 3
+      },
+      "css/css-text/parsing/hyphenate-limit-chars-computed.html": {
+        "failing": 3
+      },
+      "css/css-text/parsing/hyphenate-limit-chars-valid.html": {
+        "failing": 3
+      },
+      "css/css-text/parsing/tab-size-computed.html": {
+        "failing": 3
+      },
+      "css/css-text/parsing/white-space-invalid.html": {
+        "failing": 3
+      },
+      "css/css-transforms/parsing/rotate-parsing-valid.html": {
+        "failing": 3
+      },
+      "css/css-transforms/parsing/scale-parsing-invalid.html": {
+        "failing": 3
+      },
+      "css/css-transforms/parsing/transform-origin-valid.html": {
+        "failing": 3
+      },
+      "css/css-transitions/parsing/transition-valid.html": {
+        "failing": 3
+      },
+      "css/css-values/attr-length-specified.html": {
+        "failing": 3
+      },
+      "css/css-values/calc-complex-unresolved-serialize.html": {
+        "failing": 3
+      },
+      "css/css-values/tree-counting/calc-sibling-function-in-shadow-dom.html": {
+        "failing": 3
+      },
+      "css/css-values/tree-counting/sibling-index-linear-gradient-gcs.html": {
+        "failing": 3
+      },
+      "css/css-values/tree-counting/trig-functions-with-runtime-angle-arguments.html": {
+        "failing": 3
+      },
+      "css/css-values/urls/fragment-only.html": {
+        "failing": 3
+      },
+      "css/css-variables/variable-reference-name-substitution-attr-taint.html": {
+        "failing": 3
+      },
+      "css/cssom/shorthand-values.html": {
+        "failing": 3
+      },
+      "css/cssom/style-background-position-longhands.html": {
+        "failing": 3
+      },
+      "css/motion/parsing/offset-path-shape-parsing.html": {
+        "failing": 3
+      },
+      "css/selectors/is-where-shadow.html": {
+        "failing": 3
+      },
+      "fetch/api/headers/headers-basic.any.html": {
+        "failing": 3
+      },
+      "html/browsers/history/the-history-interface/008.html": {
+        "missing": 2,
+        "harnessLoss": 1
+      },
+      "html/dom/self-origin.sub.html": {
+        "failing": 2,
+        "harnessLoss": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/149.html": {
+        "failing": 3
+      },
+      "html/webappapis/animation-frames/no-interference-timers.html": {
+        "failing": 2,
+        "harnessLoss": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/form-control-state.html": {
+        "failing": 2,
+        "harnessLoss": 1
+      },
+      "html/webappapis/scripting/events/event-handler-spec-example.window.html": {
+        "failing": 3
+      },
+      "html/webappapis/scripting/events/onerroreventhandler.html": {
+        "failing": 2,
+        "harnessLoss": 1
+      },
+      "shadow-dom/Document-prototype-currentScript.html": {
+        "failing": 2,
+        "harnessLoss": 1
+      },
+      "shadow-dom/ShadowRoot-interface.html": {
+        "failing": 3
+      },
+      "shadow-dom/focus/focus-shadowhost-display-none.html": {
+        "failing": 2,
+        "harnessLoss": 1
+      },
+      "webidl/ecmascript-binding/setter-argument.html": {
+        "failing": 3
+      },
+      "websockets/multi-globals/message-received.html": {
+        "failing": 2,
+        "harnessLoss": 1
+      },
+      "FileAPI/blob/Blob-constructor.any.html": {
+        "failing": 2
+      },
+      "css/css-anchor-position/parsing/position-try-computed.html": {
+        "failing": 2
+      },
+      "css/css-animations/parsing/animation-delay-computed.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/animations/border-radius-interpolation.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/parsing/background-clip-computed.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/parsing/background-position-x-computed.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/parsing/background-position-x-valid.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/parsing/background-position-y-computed.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/parsing/background-position-y-valid.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/parsing/background-size-valid.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/parsing/border-image-slice-computed.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/parsing/border-image-valid.html": {
+        "failing": 2
+      },
+      "css/css-box/parsing/margin-valid.html": {
+        "failing": 2
+      },
+      "css/css-box/parsing/width-invalid.html": {
+        "failing": 2
+      },
+      "css/css-cascade/revert-val-005.html": {
+        "failing": 2
+      },
+      "css/css-cascade/scope-implicit.html": {
+        "failing": 2
+      },
+      "css/css-cascade/scope-import-parent-pseudo.html": {
+        "failing": 2
+      },
+      "css/css-cascade/scope-invalidation.html": {
+        "failing": 2
+      },
+      "css/css-cascade/scope-name-defining-rules.html": {
+        "failing": 2
+      },
+      "css/css-color-adjust/parsing/color-scheme-computed.html": {
+        "failing": 2
+      },
+      "css/css-color/nested-color-mix-with-currentcolor.html": {
+        "failing": 2
+      },
+      "css/css-conditional/js/CSS-supports-L5.html": {
+        "failing": 2
+      },
+      "css/css-content/parsing/content-invalid.html": {
+        "failing": 2
+      },
+      "css/css-fonts/font-feature-settings-serialization-001.html": {
+        "failing": 2
+      },
+      "css/css-fonts/parsing/font-size-computed.html": {
+        "failing": 2
+      },
+      "css/css-fonts/parsing/font-style-valid.html": {
+        "failing": 2
+      },
+      "css/css-fonts/parsing/font-variation-settings-valid.html": {
+        "failing": 2
+      },
+      "css/css-fonts/variations/font-shorthand.html": {
+        "failing": 2
+      },
+      "css/css-grid/parsing/grid-column-shortest-serialization.html": {
+        "failing": 2
+      },
+      "css/css-grid/parsing/grid-column-shorthand.html": {
+        "failing": 2
+      },
+      "css/css-grid/parsing/grid-row-shortest-serialization.html": {
+        "failing": 2
+      },
+      "css/css-grid/parsing/grid-row-shorthand.html": {
+        "failing": 2
+      },
+      "css/css-grid/parsing/grid-template-columns-valid.html": {
+        "failing": 2
+      },
+      "css/css-grid/parsing/grid-template-rows-valid.html": {
+        "failing": 2
+      },
+      "css/css-grid/subgrid/grid-template-invalid.html": {
+        "failing": 2
+      },
+      "css/css-lists/parsing/counter-increment-valid.html": {
+        "failing": 2
+      },
+      "css/css-lists/parsing/counter-reset-invalid.html": {
+        "failing": 2
+      },
+      "css/css-lists/parsing/counter-set-valid.html": {
+        "failing": 2
+      },
+      "css/css-lists/parsing/list-style-type-invalid.html": {
+        "failing": 2
+      },
+      "css/css-logical/parsing/border-block-valid.html": {
+        "failing": 2
+      },
+      "css/css-logical/parsing/border-inline-valid.html": {
+        "failing": 2
+      },
+      "css/css-masking/parsing/mask-size-valid.html": {
+        "failing": 2
+      },
+      "css/css-multicol/parsing/column-pseudo-valid.html": {
+        "failing": 2
+      },
+      "css/css-page/cssom/margin-003.html": {
+        "failing": 2
+      },
+      "css/css-page/cssom/page-002.html": {
+        "failing": 2
+      },
+      "css/css-properties-values-api/property-cascade.html": {
+        "failing": 2
+      },
+      "css/css-properties-values-api/registered-property-dependency-through-fallback.html": {
+        "failing": 2
+      },
+      "css/css-properties-values-api/var-reference-unit-cycles.html": {
+        "failing": 2
+      },
+      "css/css-scroll-snap/parsing/scroll-padding-block-inline-invalid.html": {
+        "failing": 2
+      },
+      "css/css-scroll-snap/parsing/scroll-padding-block-inline-valid.html": {
+        "failing": 2
+      },
+      "css/css-scroll-snap/parsing/scroll-padding-valid.html": {
+        "failing": 2
+      },
+      "css/css-scroll-snap/parsing/scroll-snap-type-valid.html": {
+        "failing": 2
+      },
+      "css/css-shadow/part/all-hosts.html": {
+        "failing": 2
+      },
+      "css/css-shadow/part/serialization.html": {
+        "failing": 2
+      },
+      "css/css-shadow/shadow-reassign-dynamic-003.html": {
+        "failing": 2
+      },
+      "css/css-sizing/parsing/max-height-computed.html": {
+        "failing": 2
+      },
+      "css/css-sizing/parsing/max-width-computed.html": {
+        "failing": 2
+      },
+      "css/css-sizing/parsing/min-height-computed.html": {
+        "failing": 2
+      },
+      "css/css-sizing/parsing/min-width-computed.html": {
+        "failing": 2
+      },
+      "css/css-syntax/anb-parsing.html": {
+        "failing": 2
+      },
+      "css/css-syntax/ident-three-code-points.html": {
+        "failing": 2
+      },
+      "css/css-tables/parsing/border-spacing-computed.html": {
+        "failing": 2
+      },
+      "css/css-text-decor/parsing/text-emphasis-position-computed.html": {
+        "failing": 2
+      },
+      "css/css-text-decor/parsing/text-underline-position-valid.html": {
+        "failing": 2
+      },
+      "css/css-text/parsing/text-indent-computed.html": {
+        "failing": 2
+      },
+      "css/css-text/parsing/white-space-shorthand-text-wrap.html": {
+        "failing": 2
+      },
+      "css/css-ui/parsing/cursor-valid.html": {
+        "failing": 2
+      },
+      "css/css-values/calc-letter-spacing.html": {
+        "failing": 2
+      },
+      "css/css-values/clamp-length-computed.html": {
+        "failing": 2
+      },
+      "css/css-values/exp-log-compute.html": {
+        "failing": 2
+      },
+      "css/css-values/getComputedStyle-border-radius-001.html": {
+        "failing": 2
+      },
+      "css/css-values/if-function-revert-rule.html": {
+        "failing": 2
+      },
+      "css/css-values/minmax-percentage-computed.html": {
+        "failing": 2
+      },
+      "css/css-values/progress-invalid.html": {
+        "failing": 2
+      },
+      "css/css-variables/css-variable-change-style-001.html": {
+        "failing": 2
+      },
+      "css/css-variables/variable-pseudo-element.html": {
+        "failing": 2
+      },
+      "css/css-variables/variable-reference-shorthands.html": {
+        "failing": 2
+      },
+      "css/cssom/CSSStyleRule-set-selectorText-namespace.html": {
+        "failing": 2
+      },
+      "css/cssom/StyleSheet-properties.html": {
+        "failing": 2
+      },
+      "css/cssom/css-style-reparse.html": {
+        "failing": 2
+      },
+      "css/cssom/cssom-fontfacerule-constructors.html": {
+        "failing": 2
+      },
+      "css/cssom/cssstyledeclaration-csstext-all-shorthand.html": {
+        "failing": 2
+      },
+      "css/cssom/cssstyledeclaration-setter-declarations.html": {
+        "failing": 2
+      },
+      "css/cssom/getComputedStyle-pseudo-checkmark.html": {
+        "failing": 2
+      },
+      "css/cssom/getComputedStyle-pseudo-picker-icon.html": {
+        "failing": 2
+      },
+      "css/cssom/getComputedStyle-pseudo-shadow.html": {
+        "failing": 2
+      },
+      "css/cssom/import-namespace-invalid-prelude.html": {
+        "failing": 2
+      },
+      "css/cssom/rule-restrictions.html": {
+        "failing": 2
+      },
+      "css/cssom/serialize-custom-props.html": {
+        "failing": 2
+      },
+      "css/motion/parsing/offset-rotate-parsing-valid.html": {
+        "failing": 2
+      },
+      "css/selectors/invalidation/host-context-pseudo-class-in-has.html": {
+        "failing": 2
+      },
+      "css/selectors/invalidation/host-pseudo-class-in-has.html": {
+        "failing": 2
+      },
+      "css/selectors/invalidation/part-dir.html": {
+        "failing": 2
+      },
+      "css/selectors/invalidation/part-lang.html": {
+        "failing": 2
+      },
+      "custom-elements/parser/parser-uses-create-an-element-for-a-token-svg.svg": {
+        "failing": 2
+      },
+      "dom/nodes/CharacterData-data.html": {
+        "failing": 2
+      },
+      "dom/nodes/Document-contentType/contentType/contenttype_javascripturi.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/browsers/history/the-history-interface/history_go_cross_realm_method.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/dom/elements/global-attributes/lang-attribute-shadow.window.html": {
+        "failing": 2
+      },
+      "html/rendering/the-css-user-agent-style-sheet-and-presentational-hints/no-help-cursor-on-links-wrapped-in-svg.historical.html": {
+        "failing": 2
+      },
+      "html/rendering/the-css-user-agent-style-sheet-and-presentational-hints/no-help-cursor-on-links.historical.html": {
+        "failing": 2
+      },
+      "html/scripting/the-script-element/classic-external-unknown-scheme.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/document-metadata/the-link-element/link-multiple-load-events.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/document-metadata/the-style-element/style-load-mutate-while-parsing.xhtml": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/document-metadata/the-style-element/style_load_async.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/embedded-content/the-iframe-element/bad-src-means-about-blank.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/forms/the-select-element/customizable-select/option-disabled-optgroup-wrapper.html": {
+        "failing": 2
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/068.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/120.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/122.html": {
+        "failing": 2
+      },
+      "html/semantics/scripting-1/the-script-element/script-onerror-insertion-point-1.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/scripting-1/the-script-element/script-onload-insertion-point.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/selectors/pseudo-classes/autofill.html": {
+        "failing": 2
+      },
+      "html/syntax/parsing/ambiguous-ampersand.html": {
+        "failing": 2
+      },
+      "html/syntax/parsing/unclosed-svg-script.html": {
+        "failing": 2
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_001.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_003.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/002.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/aborted-parser.window.html": {
+        "failing": 2
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/custom-element.window.html": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/webappapis/scripting/events/messageevent-constructor.https.html": {
+        "failing": 2
+      },
+      "webidl/ecmascript-binding/interface-object-set-receiver.html": {
+        "failing": 2
+      },
+      "webidl/ecmascript-binding/legacy-platform-object/OwnPropertyKeys.html": {
+        "failing": 2
+      },
+      "xhr/open-url-javascript-window-2.htm": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "xhr/open-url-javascript-window.htm": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "cookies/secure/set-from-wss.https.sub.html": {
+        "failing": 1
+      },
+      "css/css-align/parsing/align-content-valid.html": {
+        "failing": 1
+      },
+      "css/css-align/parsing/align-items-valid.html": {
+        "failing": 1
+      },
+      "css/css-align/parsing/align-self-valid.html": {
+        "failing": 1
+      },
+      "css/css-align/parsing/column-gap-computed.html": {
+        "failing": 1
+      },
+      "css/css-align/parsing/grid-column-gap-computed.html": {
+        "failing": 1
+      },
+      "css/css-align/parsing/grid-row-gap-computed.html": {
+        "failing": 1
+      },
+      "css/css-align/parsing/justify-self-valid.html": {
+        "failing": 1
+      },
+      "css/css-align/parsing/row-gap-computed.html": {
+        "failing": 1
+      },
+      "css/css-animations/parsing/animation-duration-invalid.html": {
+        "failing": 1
+      },
+      "css/css-animations/parsing/animation-invalid.html": {
+        "failing": 1
+      },
+      "css/css-animations/parsing/animation-iteration-count-computed.html": {
+        "failing": 1
+      },
+      "css/css-animations/parsing/animation-name-computed.html": {
+        "failing": 1
+      },
+      "css/css-animations/parsing/animation-name-invalid.html": {
+        "failing": 1
+      },
+      "css/css-animations/parsing/animation-name-valid.html": {
+        "failing": 1
+      },
+      "css/css-animations/parsing/animation-range-end-computed.html": {
+        "failing": 1
+      },
+      "css/css-animations/parsing/animation-range-start-computed.html": {
+        "failing": 1
+      },
+      "css/css-animations/parsing/keyframes-allowed-properties.html": {
+        "failing": 1
+      },
+      "css/css-backgrounds/background-332.html": {
+        "failing": 1
+      },
+      "css/css-backgrounds/background-shorthand-keyword.html": {
+        "failing": 1
+      },
+      "css/css-backgrounds/border-image-slice-shorthand-reset.html": {
+        "failing": 1
+      },
+      "css/css-backgrounds/border-radius-css-text.html": {
+        "failing": 1
+      },
+      "css/css-backgrounds/border-radius-shorthand.html": {
+        "failing": 1
+      },
+      "css/css-backgrounds/parsing/border-image-repeat-valid.html": {
+        "failing": 1
+      },
+      "css/css-backgrounds/parsing/border-image-slice-valid.html": {
+        "failing": 1
+      },
+      "css/css-backgrounds/parsing/border-image-width-computed.html": {
+        "failing": 1
+      },
+      "css/css-backgrounds/parsing/border-width-computed.html": {
+        "failing": 1
+      },
+      "css/css-cascade/layer-cssom-order-reverse-at-property.html": {
+        "failing": 1
+      },
+      "css/css-cascade/revert-val-004.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-import-implicit.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-import-inner-scope.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-import-multiple.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-import-scope-end.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-import-scope-pseudo.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-import-scope-start.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-overlapping-has.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-specificity.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-style-sharing-001.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-style-sharing-002.html": {
+        "failing": 1
+      },
+      "css/css-cascade/scope-visited-cssom.html": {
+        "failing": 1
+      },
+      "css/css-color/contrast-color-currentcolor-inherited.html": {
+        "failing": 1
+      },
+      "css/css-color/parsing/color-computed-color-mix-function.html": {
+        "failing": 1
+      },
+      "css/css-conditional/container-queries/at-container-style-parsing.html": {
+        "harnessLoss": 1
+      },
+      "css/css-conditional/container-queries/scroll-state/container-type-scroll-state-parsing.html": {
+        "failing": 1
+      },
+      "css/css-counter-styles/counter-style-at-rule/negative-syntax.html": {
+        "failing": 1
+      },
+      "css/css-counter-styles/counter-style-at-rule/range-syntax.html": {
+        "failing": 1
+      },
+      "css/css-display/display-contents-computed-style.html": {
+        "failing": 1
+      },
+      "css/css-flexbox/parsing/flex-basis-computed.html": {
+        "failing": 1
+      },
+      "css/css-fonts/font-shorthand-serialization-font-stretch.html": {
+        "failing": 1
+      },
+      "css/css-fonts/font-size-relative-across-calc-ff-bug-001.html": {
+        "failing": 1
+      },
+      "css/css-fonts/font-style-angle.html": {
+        "failing": 1
+      },
+      "css/css-fonts/font-style-sign-function.html": {
+        "failing": 1
+      },
+      "css/css-fonts/font-variation-settings-serialization-001.html": {
+        "failing": 1
+      },
+      "css/css-fonts/font-variation-settings-serialization-002.html": {
+        "failing": 1
+      },
+      "css/css-fonts/parsing/font-feature-settings-computed.html": {
+        "failing": 1
+      },
+      "css/css-fonts/parsing/font-feature-settings-invalid.html": {
+        "failing": 1
+      },
+      "css/css-fonts/parsing/font-palette-values-valid.html": {
+        "failing": 1
+      },
+      "css/css-fonts/parsing/font-variant-east-asian-valid.html": {
+        "failing": 1
+      },
+      "css/css-fonts/parsing/font-variant-serialization.html": {
+        "failing": 1
+      },
+      "css/css-fonts/parsing/font-weight-computed.html": {
+        "failing": 1
+      },
+      "css/css-fonts/variations/font-weight-parsing.html": {
+        "failing": 1
+      },
+      "css/css-grid/parsing/grid-template-columns-computed-withcontent.html": {
+        "failing": 1
+      },
+      "css/css-grid/parsing/grid-template-columns-invalid.html": {
+        "failing": 1
+      },
+      "css/css-grid/parsing/grid-template-rows-computed-withcontent.html": {
+        "failing": 1
+      },
+      "css/css-grid/parsing/grid-template-rows-invalid.html": {
+        "failing": 1
+      },
+      "css/css-inline/parsing/alignment-baseline-invalid.html": {
+        "failing": 1
+      },
+      "css/css-inline/parsing/vertical-align-invalid.html": {
+        "failing": 1
+      },
+      "css/css-lists/parsing/list-style-type-valid.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/block-size-computed.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/border-block-style-computed.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/border-block-style-valid.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/border-inline-style-computed.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/border-inline-style-valid.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/inline-size-computed.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/max-block-size-computed.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/max-inline-size-computed.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/min-block-size-computed.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/min-inline-size-computed.html": {
+        "failing": 1
+      },
+      "css/css-logical/parsing/padding-block-inline-valid.html": {
+        "failing": 1
+      },
+      "css/css-masking/parsing/clip-computed.html": {
+        "failing": 1
+      },
+      "css/css-multicol/parsing/column-rule-width-computed.html": {
+        "failing": 1
+      },
+      "css/css-multicol/parsing/column-width-computed.html": {
+        "failing": 1
+      },
+      "css/css-nesting/nested-declarations-matching.html": {
+        "failing": 1
+      },
+      "css/css-overflow/parsing/max-lines-valid.html": {
+        "failing": 1
+      },
+      "css/css-overflow/parsing/scrollbar-gutter-valid.html": {
+        "failing": 1
+      },
+      "css/css-page/cssom/margin-001.html": {
+        "failing": 1
+      },
+      "css/css-page/cssom/margin-002.html": {
+        "harnessLoss": 1
+      },
+      "css/css-page/cssom/page-001.html": {
+        "failing": 1
+      },
+      "css/css-page/page-rule-declarations-004.html": {
+        "failing": 1
+      },
+      "css/css-page/parsing/page-computed.html": {
+        "failing": 1
+      },
+      "css/css-properties-values-api/at-property-shadow.html": {
+        "failing": 1
+      },
+      "css/css-properties-values-api/register-property.html": {
+        "failing": 1
+      },
+      "css/css-properties-values-api/registered-property-ident-function.html": {
+        "failing": 1
+      },
+      "css/css-properties-values-api/resolved-color-value.html": {
+        "failing": 1
+      },
+      "css/css-properties-values-api/var-reference-registered-properties-002.html": {
+        "failing": 1
+      },
+      "css/css-rhythm/parsing/block-step-size-computed.html": {
+        "failing": 1
+      },
+      "css/css-scroll-snap/parsing/scroll-margin-valid.html": {
+        "failing": 1
+      },
+      "css/css-scroll-snap/parsing/scroll-padding-invalid.html": {
+        "failing": 1
+      },
+      "css/css-scroll-snap/parsing/scroll-snap-align-computed.html": {
+        "failing": 1
+      },
+      "css/css-scroll-snap/parsing/scroll-snap-align-valid.html": {
+        "failing": 1
+      },
+      "css/css-scroll-snap/parsing/scroll-snap-type-computed.html": {
+        "failing": 1
+      },
+      "css/css-shadow/has-slotted-manual-assignment.html": {
+        "failing": 1
+      },
+      "css/css-shadow/host-descendant-invalidation.html": {
+        "failing": 1
+      },
+      "css/css-shadow/host-dom-001.html": {
+        "failing": 1
+      },
+      "css/css-shadow/host-functional-descendant-invalidation.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/both-part-and-exportparts.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/complex-matching.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/double-forward.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/exportparts-multiple.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/host-part-001.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/host-part-002.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/host-part-nesting.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/inner-host.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/invalidation-change-exportparts-forward.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/invalidation-change-part-name-forward.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/invalidation-change-part-name-idl-domtokenlist.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/invalidation-change-part-name-idl-setter.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/invalidation-change-part-name.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/invalidation-complex-selector-forward.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/invalidation-complex-selector.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/multiple-parts.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/part-mutation-pseudo.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/precedence-part-vs-part.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/simple-forward-shorthand.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/simple-forward.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/simple-inline.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/simple.html": {
+        "failing": 1
+      },
+      "css/css-shadow/part/style-sharing.html": {
+        "failing": 1
+      },
+      "css/css-shadow/slotted-invalidation.html": {
+        "failing": 1
+      },
+      "css/css-shadow/slotted-link.html": {
+        "failing": 1
+      },
+      "css/css-shadow/slotted-nested.html": {
+        "failing": 1
+      },
+      "css/css-shapes/parsing/shape-image-threshold-computed.html": {
+        "failing": 1
+      },
+      "css/css-size-adjust/parsing/text-size-adjust-computed.html": {
+        "failing": 1
+      },
+      "css/css-size-adjust/parsing/text-size-adjust-valid.html": {
+        "failing": 1
+      },
+      "css/css-sizing/aspect-ratio.html": {
+        "failing": 1
+      },
+      "css/css-syntax/inclusive-ranges.html": {
+        "failing": 1
+      },
+      "css/css-syntax/serialize-escape-identifiers.html": {
+        "failing": 1
+      },
+      "css/css-tables/parsing/border-spacing-valid.html": {
+        "failing": 1
+      },
+      "css/css-text-decor/parsing/text-decoration-color-computed.html": {
+        "failing": 1
+      },
+      "css/css-text-decor/parsing/text-decoration-skip-spaces-valid.html": {
+        "failing": 1
+      },
+      "css/css-text-decor/parsing/text-emphasis-position-valid.html": {
+        "failing": 1
+      },
+      "css/css-text-decor/text-shadow/parsing/text-shadow-computed.html": {
+        "failing": 1
+      },
+      "css/css-text-decor/text-shadow/parsing/text-shadow-valid.html": {
+        "failing": 1
+      },
+      "css/css-text/parsing/letter-spacing-computed.html": {
+        "failing": 1
+      },
+      "css/css-text/parsing/tab-size-invalid.html": {
+        "failing": 1
+      },
+      "css/css-text/parsing/word-spacing-computed.html": {
+        "failing": 1
+      },
+      "css/css-transforms/parsing/translate-parsing-invalid.html": {
+        "failing": 1
+      },
+      "css/css-transitions/parsing/starting-style-parsing.html": {
+        "failing": 1
+      },
+      "css/css-transitions/parsing/transition-delay-computed.html": {
+        "failing": 1
+      },
+      "css/css-transitions/parsing/transition-duration-computed.html": {
+        "failing": 1
+      },
+      "css/css-transitions/parsing/transition-duration-invalid.html": {
+        "failing": 1
+      },
+      "css/css-transitions/parsing/transition-property-computed.html": {
+        "failing": 1
+      },
+      "css/css-transitions/parsing/transition-property-valid.html": {
+        "failing": 1
+      },
+      "css/css-ui/parsing/resize-computed.html": {
+        "failing": 1
+      },
+      "css/css-values/attr-invalidation-after-stylesheet-change.html": {
+        "failing": 1
+      },
+      "css/css-values/attr-invalidation.html": {
+        "failing": 1
+      },
+      "css/css-values/attr-parse-url.html": {
+        "failing": 1
+      },
+      "css/css-values/attr-revert-rule.html": {
+        "failing": 1
+      },
+      "css/css-values/attr-serialization.html": {
+        "failing": 1
+      },
+      "css/css-values/attr-universal-selector.html": {
+        "failing": 1
+      },
+      "css/css-values/calc-dimension-serialization-order.html": {
+        "failing": 1
+      },
+      "css/css-values/calc-in-font-feature-settings.html": {
+        "failing": 1
+      },
+      "css/css-values/calc-nesting.html": {
+        "failing": 1
+      },
+      "css/css-values/calc-serialization.html": {
+        "failing": 1
+      },
+      "css/css-values/getComputedStyle-border-radius-003.html": {
+        "failing": 1
+      },
+      "css/css-values/getComputedStyle-calc-mixed-units-001.html": {
+        "failing": 1
+      },
+      "css/css-values/getComputedStyle-calc-mixed-units-002.html": {
+        "failing": 1
+      },
+      "css/css-values/if-initial-unregistered.html": {
+        "failing": 1
+      },
+      "css/css-values/if-invalidation.html": {
+        "failing": 1
+      },
+      "css/css-values/if-style-invalidation.html": {
+        "failing": 1
+      },
+      "css/css-values/inherit-function-parsing.html": {
+        "failing": 1
+      },
+      "css/css-values/lh-unit-004.html": {
+        "failing": 1
+      },
+      "css/css-values/lh-unit-005.html": {
+        "failing": 1
+      },
+      "css/css-values/minmax-length-serialize.html": {
+        "failing": 1
+      },
+      "css/css-values/random-item-computed.html": {
+        "failing": 1
+      },
+      "css/css-values/rlh-on-root-lengths.html": {
+        "failing": 1
+      },
+      "css/css-values/tree-counting/trig-functions-in-gradient-position.html": {
+        "failing": 1
+      },
+      "css/css-values/typed_arithmetic_cycle.html": {
+        "failing": 1
+      },
+      "css/css-values/urls/referrer-policy/no-referrer/url-import-referrer-policy.html": {
+        "harnessLoss": 1
+      },
+      "css/css-values/viewport-relative-lengths-scaled-viewport.html": {
+        "failing": 1
+      },
+      "css/css-variables/variable-css-wide-keywords-after-substitution.html": {
+        "failing": 1
+      },
+      "css/css-variables/variable-cssText.html": {
+        "failing": 1
+      },
+      "css/css-variables/variable-reference.html": {
+        "failing": 1
+      },
+      "css/css-variables/variable-substitution-shadow-properties.html": {
+        "failing": 1
+      },
+      "css/css-variables/variable-substitution-variable-declaration.html": {
+        "failing": 1
+      },
+      "css/css-viewport/zoom/parsing/zoom-valid.html": {
+        "failing": 1
+      },
+      "css/cssom-view/scrollingElement.html": {
+        "harnessLoss": 1
+      },
+      "css/cssom/CSS-escape-numeric-id.html": {
+        "failing": 1
+      },
+      "css/cssom/CSSImportRule-layer-false-positive.html": {
+        "failing": 1
+      },
+      "css/cssom/CSSKeyframeRule.html": {
+        "failing": 1
+      },
+      "css/cssom/CSSStyleRule-set-selectorText.html": {
+        "failing": 1
+      },
+      "css/cssom/HTMLStyleElement-load-event.html": {
+        "failing": 1
+      },
+      "css/cssom/adoptedstylesheets-observablearray.html": {
+        "failing": 1
+      },
+      "css/cssom/at-namespace.html": {
+        "failing": 1
+      },
+      "css/cssom/css-style-attr-decl-block.html": {
+        "failing": 1
+      },
+      "css/cssom/cssom-fontfacerule.html": {
+        "failing": 1
+      },
+      "css/cssom/cssstyledeclaration-csstext.html": {
+        "failing": 1
+      },
+      "css/cssom/cssstyledeclaration-removeProperty-all.html": {
+        "failing": 1
+      },
+      "css/cssom/cssstyledeclaration-setter-logical.html": {
+        "failing": 1
+      },
+      "css/cssom/font-shorthand-serialization.html": {
+        "failing": 1
+      },
+      "css/cssom/functional-values-comma.html": {
+        "failing": 1
+      },
+      "css/cssom/invalid-pseudo-elements.html": {
+        "failing": 1
+      },
+      "css/cssom/medialist-interfaces-002.html": {
+        "failing": 1
+      },
+      "css/cssom/serialize-media-rule.html": {
+        "failing": 1
+      },
+      "css/cssom/style-sheet-interfaces-001.html": {
+        "failing": 1
+      },
+      "css/mediaqueries/mq-invalid-media-type-005.html": {
+        "failing": 1
+      },
+      "css/motion/parsing/offset-rotate-computed.html": {
+        "failing": 1
+      },
+      "css/selectors/focus-visible-017.html": {
+        "failing": 1
+      },
+      "css/selectors/invalidation/has-complexity.html": {
+        "harnessLoss": 1
+      },
+      "css/selectors/invalidation/quirks-mode-stylesheet-dynamic-add-001.html": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-159.xml": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-177a.xml": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-38.xml": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-39.xml": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-39a.xml": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-39b.xml": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-39c.xml": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-41.xml": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-41a.xml": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-42.xml": {
+        "failing": 1
+      },
+      "css/selectors/old-tests/css3-modsel-42a.xml": {
+        "failing": 1
+      },
+      "css/selectors/parsing/parse-has-disallow-nesting-has-inside-has.html": {
+        "failing": 1
+      },
+      "css/selectors/x-pseudo-element.html": {
+        "failing": 1
+      },
+      "custom-elements/custom-element-reaction-queue.html": {
+        "failing": 1
+      },
+      "custom-elements/parser/parser-constructs-custom-element-in-document-write.html": {
+        "failing": 1
+      },
+      "custom-elements/parser/xml-parser-custom-element-reparents-during-construction.xhtml": {
+        "harnessLoss": 1
+      },
+      "custom-elements/perform-microtask-checkpoint-before-construction-xml-parser.xhtml": {
+        "harnessLoss": 1
+      },
+      "dom/nodes/Node-contains-xml.xml": {
+        "failing": 1
+      },
+      "dom/nodes/ParentNode-querySelector-host-pseudo-class.html": {
+        "failing": 1
+      },
+      "dom/nodes/ParentNode-querySelector-hyphen-prefix.html": {
+        "failing": 1
+      },
+      "dom/nodes/insertion-removing-steps/insertion-removing-steps-iframe.window.html": {
+        "failing": 1
+      },
+      "dom/nodes/namespaced-attribute-mutations.html": {
+        "failing": 1
+      },
+      "html/browsers/browsing-the-web/history-traversal/unset_context_name.html": {
+        "harnessLoss": 1
+      },
+      "html/browsers/browsing-the-web/navigating-across-documents/abort-document-load.html": {
+        "failing": 1
+      },
+      "html/browsers/browsing-the-web/navigating-across-documents/javascript-url-no-beforeunload.window.html": {
+        "failing": 1
+      },
+      "html/browsers/browsing-the-web/navigating-across-documents/javascript-url-query-fragment-components.html": {
+        "failing": 1
+      },
+      "html/browsers/browsing-the-web/navigating-across-documents/javascript-url-return-value-handling.html": {
+        "failing": 1
+      },
+      "html/browsers/history/the-location-interface/location-protocol-setter-non-broken.html": {
+        "harnessLoss": 1
+      },
+      "html/browsers/windows/clear-window-name.https.html": {
+        "harnessLoss": 1
+      },
+      "html/browsers/windows/dangling-markup-window-name.html": {
+        "harnessLoss": 1
+      },
+      "html/dom/elements/global-attributes/custom-attrs.html": {
+        "failing": 1
+      },
+      "html/dom/elements/global-attributes/dir-slots-directionality.html": {
+        "failing": 1
+      },
+      "html/dom/elements/global-attributes/lang-attribute.window.html": {
+        "failing": 1
+      },
+      "html/dom/elements/name-content-attribute-and-property.html": {
+        "missing": 1
+      },
+      "html/interaction/focus/the-autofocus-attribute/skip-not-fully-active.html": {
+        "failing": 1
+      },
+      "html/obsolete/requirements-for-implementations/the-marquee-element-0/marquee-overflow.html": {
+        "failing": 1
+      },
+      "html/rendering/the-css-user-agent-style-sheet-and-presentational-hints/mouse-cursor-imagemap.html": {
+        "failing": 1
+      },
+      "html/semantics/document-metadata/the-link-element/link-style-data-url-quirks.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/document-metadata/the-style-element/mutations.window.html": {
+        "failing": 1
+      },
+      "html/semantics/document-metadata/the-style-element/no-browsing-context.html": {
+        "failing": 1
+      },
+      "html/semantics/document-metadata/the-style-element/style_load_event.html": {
+        "failing": 1
+      },
+      "html/semantics/embedded-content/the-iframe-element/iframe-load-event.html": {
+        "failing": 1
+      },
+      "html/semantics/embedded-content/the-iframe-element/iframe_javascript_url_in_src.htm": {
+        "harnessLoss": 1
+      },
+      "html/semantics/embedded-content/the-iframe-element/iframe_remove_src.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-origin-no-referrer-when-downgrade.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-origin-no-referrer.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-origin-origin-when-cross-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-origin-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-origin-same-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-origin-strict-origin-when-cross-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-origin-strict-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-origin-unsafe-url.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-referrer-no-referrer-when-downgrade.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-referrer-no-referrer.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-referrer-origin-when-cross-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-referrer-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-referrer-same-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-referrer-strict-origin-when-cross-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-referrer-strict-origin.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-referrer-unsafe-url.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/links/downloading-resources/header-referrer.html": {
+        "harnessLoss": 1
+      },
+      "html/semantics/scripting-1/the-script-element/async_009.htm": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/async_011.htm": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/005.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/006.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/007.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/008.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/009.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/010.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/011.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/012.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/026.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/027.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/028.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/041.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/074.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/096.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/097.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/106-import-xhtml.xhtml": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/106-noimport-xhtml.xhtml": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/125.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/150-import-xhtml.xhtml": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/execution-timing/150-noimport-xhtml.xhtml": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/fetch-src/empty-with-base.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/fetch-src/empty.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/fetch-src/failure.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/script-defer-xhtml.xhtml": {
+        "failing": 1
+      },
+      "html/syntax/parsing/the-end.html": {
+        "failing": 1
+      },
+      "html/syntax/serializing-html-fragments/escaping.html": {
+        "failing": 1
+      },
+      "html/syntax/serializing-html-fragments/serializing-cdata-in-html-document.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/closing-the-input-stream/document.close-01.xhtml": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/001.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/002.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/003.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/004.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/005.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/006.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/007.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/008.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/009.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/010.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/011.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/012.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/013.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/014.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/015.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/016.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/017.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/018.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/019.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/020.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/021.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/022.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/023.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/024.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/025.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/026.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/027.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/028.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/029.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/030.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/031.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/032.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/033.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/034.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/035.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/036.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/037.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/038.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/039.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/040.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/041.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/042.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/043.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/044.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/045.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/046.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/049.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/050.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/iframe_003.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/iframe_004.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/iframe_005.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/iframe_006.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/iframe_010.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_002.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_004.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_005.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_006.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_007.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_008.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_009.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_010.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_011.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_012.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/document-write/script_013.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/015.html": {
+        "harnessLoss": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/016.html": {
+        "harnessLoss": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/document.open-03.html": {
+        "harnessLoss": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/remove-initial-about-blankness.window.html": {
+        "failing": 1
+      },
+      "html/webappapis/scripting/events/event-handler-idl-attribute-realm.window.html": {
+        "failing": 1
+      },
+      "html/webappapis/scripting/processing-model-2/addEventListener.html": {
+        "failing": 1
+      },
+      "html/webappapis/scripting/processing-model-2/compile-error-in-attribute.html": {
+        "failing": 1
+      },
+      "html/webappapis/scripting/processing-model-2/compile-error-in-body-onerror.html": {
+        "failing": 1
+      },
+      "html/webappapis/scripting/reporterror-cross-realm-method.html": {
+        "failing": 1
+      },
+      "html/webappapis/timers/evil-spec-example.any.html": {
+        "failing": 1
+      },
+      "shadow-dom/declarative/innerhtml-on-ordinary-template.html": {
+        "harnessLoss": 1
+      },
+      "shadow-dom/innerHTML-setter.xhtml": {
+        "failing": 1
+      },
+      "url/urlsearchparams-constructor.any.html": {
+        "failing": 1
+      },
+      "webidl/current-realm.html": {
+        "failing": 1
+      },
+      "webidl/ecmascript-binding/attributes-accessors-unique-function-objects.html": {
+        "failing": 1
+      },
+      "webidl/ecmascript-binding/default-toJSON-cross-realm.html": {
+        "failing": 1
+      },
+      "webidl/ecmascript-binding/global-immutable-prototype.any.html": {
+        "harnessLoss": 1
+      },
+      "webidl/ecmascript-binding/global-object-implicit-this-value.any.html": {
+        "failing": 1
+      },
+      "webidl/ecmascript-binding/invalid-this-value-cross-realm.html": {
+        "failing": 1
+      },
+      "webidl/ecmascript-binding/iterator-prototype-object.html": {
+        "failing": 1
+      },
+      "webidl/ecmascript-binding/legacy-platform-object/GetOwnProperty.html": {
+        "failing": 1
+      },
+      "webmessaging/message-channels/cross-document.html": {
+        "harnessLoss": 1
+      },
+      "websockets/cookies/002.html?default": {
+        "failing": 1
+      },
+      "websockets/cookies/002.html?wss&wpt_flags=https": {
+        "failing": 1
+      },
+      "websockets/cookies/005.html?default": {
+        "failing": 1
+      },
+      "websockets/cookies/005.html?wss&wpt_flags=https": {
+        "failing": 1
+      },
+      "websockets/cookies/007.html?default": {
+        "failing": 1
+      },
+      "websockets/cookies/cross-origin-cookie-set.html": {
+        "failing": 1
+      }
+    },
+    "jsdom local WPT": {
+      "css/css-conditional/container-unit-writing-modes.html": {
+        "failing": 26
+      },
+      "html/semantics/scripting-1/the-script-element/parser-blocking.html": {
+        "failing": 20,
+        "harnessLoss": 1
+      },
+      "css/css-values/viewport-unit-writing-modes.html": {
+        "failing": 16
+      },
+      "css/css-properties-values-api/registration-layer-precedence.html": {
+        "failing": 15
+      },
+      "css/css-values/random-early-substitution-scope.tentative.html": {
+        "failing": 15
+      },
+      "css/selectors/pseudo-element-state-syntax.html": {
+        "failing": 15
+      },
+      "css/filter-effects/filter-argument-serialization.html": {
+        "failing": 14
+      },
+      "css/css-values/if-invalid-style-comparisons.tentative.html": {
+        "failing": 13
+      },
+      "html/webappapis/scripting/processing-model/task-document-lifetime.html": {
+        "failing": 12,
+        "harnessLoss": 1
+      },
+      "css/css-variables/computed-cdc-token-boundaries.html": {
+        "failing": 12
+      },
+      "css/cssom/CSSStyleDeclaration-logical-shorthand-order.html": {
+        "failing": 12
+      },
+      "css/css-values/empty-attr-media-value.html": {
+        "failing": 11
+      },
+      "css/cssom/getComputedStyle-legacy-box-properties.html": {
+        "failing": 11
+      },
+      "css/selectors/escaped-asterisks.html": {
+        "failing": 11
+      },
+      "css/selectors/local-link.tentative.html": {
+        "failing": 11
+      },
+      "css/css-shadow/part-cascade.html": {
+        "failing": 10
+      },
+      "css/css-syntax/declaration-bad-string-boundary.html": {
+        "failing": 10
+      },
+      "css/css-syntax/eof-recovery-serialization.html": {
+        "failing": 10
+      },
+      "css/css-cascade/logical-property-cascade.html": {
+        "failing": 9
+      },
+      "css/cssom/CSSStyleDeclaration-authored-shorthands.html": {
+        "failing": 9
+      },
+      "css/selectors/element-backed-pseudo-classes.tentative.html": {
+        "failing": 9
+      },
+      "svg/painting/paint-order-serialization-dont-upstream.html": {
+        "failing": 9
+      },
+      "css/css-syntax/path-data.html": {
+        "failing": 8
+      },
+      "css/css-values/if-media-negation.html": {
+        "failing": 8
+      },
+      "css/css-values/random-occurrence-index.tentative.html": {
+        "failing": 8
+      },
+      "css/cssom/computed-url-base.html": {
+        "failing": 8
+      },
+      "css/cssom/stylesheet-media-lifecycle.html": {
+        "failing": 7,
+        "harnessLoss": 1
+      },
+      "css/css-mixins/functions/function-default-framing.html": {
+        "failing": 7
+      },
+      "css/css-values/computed-logical-position.html": {
+        "failing": 7
+      },
+      "css/css-values/empty-substitution-media-whitespace.html": {
+        "failing": 7
+      },
+      "css/cssom/selector-serialization-namespaces.html": {
+        "failing": 7
+      },
+      "css/css-animations/trigger-shorthand-serialization.tentative.html": {
+        "failing": 6
+      },
+      "css/css-backgrounds/background-position-shorthand-longhands.html": {
+        "failing": 6
+      },
+      "css/css-backgrounds/computed-logical-position.html": {
+        "failing": 6
+      },
+      "css/css-color-adjust/embedding-color-scheme-invalidation.html": {
+        "failing": 6
+      },
+      "css/css-conditional/container-unit-viewport-fallback.html": {
+        "failing": 6
+      },
+      "css/css-mixins/functions/function-universal-defaults.html": {
+        "failing": 6
+      },
+      "css/css-page/page-selector-anb-functions.html": {
+        "failing": 6
+      },
+      "css/css-values/computed-position.html": {
+        "failing": 6
+      },
+      "css/css-values/empty-substitution-trivia.html": {
+        "failing": 6
+      },
+      "css/css-values/if-style-query-cycles.tentative.html": {
+        "failing": 6
+      },
+      "css/css-variables/registered-computed-live.html": {
+        "failing": 6
+      },
+      "css/css-variables/substitution-contexts.html": {
+        "failing": 6
+      },
+      "css/cssom/animation-transition-shorthand-serialization.html": {
+        "failing": 6
+      },
+      "css/cssom/getComputedStyle-pseudo-token-boundaries.html": {
+        "failing": 6
+      },
+      "css/cssom/internal-css-environment.html": {
+        "failing": 6
+      },
+      "css/cssom/number-serialization-precision.tentative.html": {
+        "failing": 6
+      },
+      "css/selectors/named-pseudo-wildcards.html": {
+        "failing": 6
+      },
+      "css/css-anchor-position/container-queries/anchored-fallback-complete-values.html": {
+        "failing": 5
+      },
+      "css/css-cascade/import-unsupported-declaration.html": {
+        "failing": 5
+      },
+      "css/css-cascade/rule-candidate-selection.html": {
+        "failing": 5
+      },
+      "css/css-cascade/stylesheet-selector-matching.html": {
+        "failing": 5
+      },
+      "css/css-display/computed-blockification.html": {
+        "failing": 5
+      },
+      "css/css-lists/counter-default-roundtrip.html": {
+        "failing": 5
+      },
+      "css/css-properties-values-api/property-registration-defaults.html": {
+        "failing": 5
+      },
+      "css/css-shadow/part-mapping.html": {
+        "failing": 5
+      },
+      "css/css-shapes/polygon-rounding-radius.html": {
+        "failing": 5
+      },
+      "css/css-values/if-result-colons.html": {
+        "failing": 5
+      },
+      "css/cssom/adoptedstylesheets-bindings.html": {
+        "failing": 5
+      },
+      "css/cssom/rule-cssText-setter.html": {
+        "failing": 5
+      },
+      "css/cssom/style-shape-shadow-offset-serialization.html": {
+        "failing": 5
+      },
+      "css/css-color/rgb-hsl-argument-contexts.html": {
+        "failing": 4
+      },
+      "css/css-conditional/container-query-feature-context.html": {
+        "failing": 4
+      },
+      "css/css-pseudo/before-after-content-normal.html": {
+        "failing": 4
+      },
+      "css/css-shadow/slotted-pseudo-elements.html": {
+        "failing": 4
+      },
+      "css/css-text-decor/text-decoration-currentcolor-serialization.html": {
+        "failing": 4
+      },
+      "css/css-values/empty-attr-provenance.html": {
+        "failing": 4
+      },
+      "css/css-values/empty-attr-registered-provenance.html": {
+        "failing": 4
+      },
+      "css/css-variables/computed-token-spelling.html": {
+        "failing": 4
+      },
+      "css/cssom/computed-style-live-eligibility.html": {
+        "failing": 4
+      },
+      "css/cssom/declaration-serialization-after-mutation.html": {
+        "failing": 4
+      },
+      "css/cssom/getComputedStyle-outline-text-colors.html": {
+        "failing": 4
+      },
+      "css/mediaqueries/webkit-device-pixel-ratio-values.html": {
+        "failing": 4
+      },
+      "css/selectors/has-pseudo-elements.html": {
+        "failing": 4
+      },
+      "css/selectors/highlight-wildcards.tentative.html": {
+        "failing": 4
+      },
+      "css/selectors/pseudo-element-logical-matching.tentative.html": {
+        "failing": 4
+      },
+      "html/browsers/browsing-the-web/scroll-to-fragid/target-selector-state.html": {
+        "failing": 4
+      },
+      "html/interaction/focus/processing-model/focus-fixup.html": {
+        "failing": 3,
+        "harnessLoss": 1
+      },
+      "html/rendering/widgets/form-control-default-styles.html": {
+        "failing": 4
+      },
+      "html/semantics/scripting-1/the-script-element/dynamic-script-preparation-document.html": {
+        "failing": 4
+      },
+      "html/webappapis/scripting/reporterror-throwing-values.html": {
+        "failing": 4
+      },
+      "svg/styling/default-link-focus-styles.html": {
+        "failing": 4
+      },
+      "svg/styling/user-agent-styles.html": {
+        "failing": 4
+      },
+      "css/css-backgrounds/box-shadow-complete-items.tentative.html": {
+        "failing": 3
+      },
+      "css/css-cascade/selector-list-namespaces.xhtml": {
+        "failing": 3
+      },
+      "css/css-lists/marker-default-namespace.html": {
+        "failing": 3
+      },
+      "css/css-properties-values-api/registration-syntax.html": {
+        "failing": 3
+      },
+      "css/css-pseudo/marker-content-display.html": {
+        "failing": 3
+      },
+      "css/css-shadow/query-shadow-host.html": {
+        "failing": 3
+      },
+      "css/css-shapes/shape-outside-box-serialization.html": {
+        "failing": 3
+      },
+      "css/css-syntax/inline-declaration-boundaries.html": {
+        "failing": 3
+      },
+      "css/css-transforms/function-serialization.html": {
+        "failing": 3
+      },
+      "css/css-ui/caret-auto-used-value.html": {
+        "failing": 3
+      },
+      "css/css-values/computed-numeric-context.html": {
+        "failing": 3
+      },
+      "css/css-values/if-condition-parsing.html": {
+        "failing": 3
+      },
+      "css/css-variables/custom-property-name-strings.html": {
+        "failing": 3
+      },
+      "css/cssom/CSSStyleDeclaration-shorthand-invalidation.html": {
+        "failing": 3
+      },
+      "css/cssom/background-shorthand-serialization.tentative.html": {
+        "failing": 3
+      },
+      "css/cssom/computed-url-stylesheet.html": {
+        "failing": 3
+      },
+      "css/cssom/counter-style-name-setter.tentative.html": {
+        "failing": 3
+      },
+      "css/cssom/getComputedStyle-nested-pseudo.tentative.html": {
+        "failing": 3
+      },
+      "css/cssom/namespace-prefix-escaping.html": {
+        "failing": 3
+      },
+      "css/cssom/optional-component-serialization.tentative.html": {
+        "failing": 3
+      },
+      "css/cssom/registered-initial-url-base.tentative.html": {
+        "failing": 3
+      },
+      "css/cssom/style-background-shorthand.html": {
+        "failing": 3
+      },
+      "css/cssom/style-rule-declaration-parsing.html": {
+        "failing": 3
+      },
+      "css/selectors/unknown-pseudo-names.html": {
+        "failing": 3
+      },
+      "html/interaction/focus/processing-model/blur-non-focusable.html": {
+        "failing": 3
+      },
+      "html/semantics/document-metadata/stylesheet-import-load-events.tentative.html?link": {
+        "failing": 3
+      },
+      "html/semantics/document-metadata/the-style-element/shadow-tree-load-event.html": {
+        "failing": 2,
+        "harnessLoss": 1
+      },
+      "css/css-anchor-position/anchor-size-declaration-context.html": {
+        "failing": 2
+      },
+      "css/css-animations/keyframe-important-declarations.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/long-image-urls.html": {
+        "failing": 2
+      },
+      "css/css-cascade/namespace-attribute-case.html": {
+        "failing": 2
+      },
+      "css/css-color/currentcolor-function-inheritance.html": {
+        "failing": 2
+      },
+      "css/css-mixins/function-name-escapes.html": {
+        "failing": 2
+      },
+      "css/css-pseudo/marker-default-cascade.html": {
+        "failing": 2
+      },
+      "css/css-values/direct-empty-attr.html": {
+        "failing": 2
+      },
+      "css/css-values/ident-function-escaping.html": {
+        "failing": 2
+      },
+      "css/css-values/src-url-serialization.html": {
+        "failing": 2
+      },
+      "css/cssom/CSSStyleDeclaration-property-name-case.html": {
+        "failing": 2
+      },
+      "css/cssom/font-face-descriptor-mutation.html": {
+        "failing": 2
+      },
+      "css/cssom/media-rule-matches-lifecycle.html": {
+        "failing": 2
+      },
+      "css/cssom/owner-declaration-access.html": {
+        "failing": 2
+      },
+      "css/cssom/page-declaration-order.html": {
+        "failing": 2
+      },
+      "css/cssom/stylesheet-add-rule-replace-lock.html": {
+        "failing": 2
+      },
+      "css/cssom/stylesheet-declaration-access.html": {
+        "failing": 2
+      },
+      "css/selectors/dir-slotted-native-nodes.html": {
+        "failing": 2
+      },
+      "css/selectors/invalidation/media-state-computed-style.html": {
+        "failing": 2
+      },
+      "html/browsers/browsing-the-web/navigating-across-documents/abort-descendant-requests.html": {
+        "failing": 2
+      },
+      "html/rendering/non-replaced-elements/heading-level-default-styles.html": {
+        "failing": 2
+      },
+      "html/semantics/document-metadata/dynamic-stylesheet-does-not-block-script.html?parser-created": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/embedded-content/the-iframe-element/initial-blank-event-listeners.html": {
+        "failing": 2
+      },
+      "html/semantics/scripting-1/the-script-element/parser-created-resources-while-blocked.html?style": {
+        "failing": 1,
+        "harnessLoss": 1
+      },
+      "html/semantics/scripting-1/the-script-element/script-url-error-after-stop.html": {
+        "failing": 2
+      },
+      "html/webappapis/dynamic-markup-insertion/opening-the-input-stream/event-handlers-after-open.html": {
+        "failing": 2
+      },
+      "jsdom-only/css-feature-scope.html": {
+        "failing": 2
+      },
+      "jsdom-only/css-substitution-limits.html": {
+        "failing": 2
+      },
+      "css/css-backgrounds/background-shorthand.html": {
+        "failing": 1
+      },
+      "css/css-backgrounds/border-style-none.html": {
+        "failing": 1
+      },
+      "css/css-cascade/layer-order-media-changes.html": {
+        "failing": 1
+      },
+      "css/css-cascade/layer-topology-name-defining-rules.html": {
+        "failing": 1
+      },
+      "css/css-color-adjust/color-scheme-custom-ident.html": {
+        "failing": 1
+      },
+      "css/css-properties-values-api/registration-initial-independence.tentative.html": {
+        "failing": 1
+      },
+      "css/css-syntax/comments-and-preserved-source.html": {
+        "failing": 1
+      },
+      "css/css-text/text-autospace-keyword-serialization.html": {
+        "failing": 1
+      },
+      "css/css-values/random-computed-context.tentative.html": {
+        "failing": 1
+      },
+      "css/css-variables/computed-substitution.html": {
+        "failing": 1
+      },
+      "css/css-variables/computed-token-comments.tentative.html": {
+        "failing": 1
+      },
+      "css/css-variables/custom-setter-root-whitespace.tentative.html": {
+        "failing": 1
+      },
+      "css/cssom/adopted-stylesheet-mutation.html": {
+        "failing": 1
+      },
+      "css/cssom/box-shadow-initial-color.tentative.html": {
+        "failing": 1
+      },
+      "css/cssom/declaration-lookup-order.html": {
+        "failing": 1
+      },
+      "css/cssom/declaration-value-independence.html": {
+        "failing": 1
+      },
+      "css/cssom/rule-declaration-shorthands.html": {
+        "failing": 1
+      },
+      "css/cssom/size-shorthand-serialization.tentative.html": {
+        "failing": 1
+      },
+      "css/mediaqueries/numeric-media-range-operands.tentative.html": {
+        "failing": 1
+      },
+      "css/selectors/pseudo-element-selector-lists.html": {
+        "failing": 1
+      },
+      "css/selectors/selectors-4/lang-023-dont-upstream.html": {
+        "failing": 1
+      },
+      "css/selectors/selectors-4/lang-024-dont-upstream.html": {
+        "failing": 1
+      },
+      "html/browsers/browsing-the-web/navigating-across-documents/stop-during-parsing-no-load.html": {
+        "failing": 1
+      },
+      "html/browsers/browsing-the-web/navigating-across-documents/stop-pending-script-no-load.html?blocking-readiness": {
+        "failing": 1
+      },
+      "html/rendering/non-replaced-elements/default-stylesheet-namespace.html": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/parser-created-resources-while-blocked.html?iframe": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/parser-created-resources-while-blocked.html?link": {
+        "failing": 1
+      },
+      "html/semantics/scripting-1/the-script-element/parser-script-adopted-during-parsing.html": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/closing-the-input-stream/document-close-lifecycle.html?reentrant-frame-load": {
+        "failing": 1
+      },
+      "html/webappapis/dynamic-markup-insertion/closing-the-input-stream/iframe-load-after-document-close.html": {
+        "failing": 1
+      },
+      "jsdom-only/css-environment.html": {
+        "failing": 1
+      }
+    }
+  }
+}

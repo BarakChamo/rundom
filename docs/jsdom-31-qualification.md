@@ -1,5 +1,7 @@
 # RunDOM qualification against jsdom 31.0.1
 
+This report records the earlier qualification. [Updated CSS compatibility, WPT and four-provider benchmark results](./jsdom-31-css-qualification.md)
+
 November 22, 2026. The upstream reference was jsdom 31.0.1 at `b76da26fd3b2786771b493f0bbec8dbd7a3d36d0`. The RunDOM source measured here is commit `6c7b84f` on the qualification branch. Happy DOM was 21.0.4 and TurboDOM was 0.7.1. The version-matched npm release is held because named upstream Web Platform Test assertions still fail.
 
 ## Observable behavior
