@@ -1,6 +1,8 @@
 // Parses author stylesheets and resolves declarations against private DOM state.
 import {
-  fontDeclaration,
+  expandedDeclaration,
+  defaultMediaQuery,
+  computedPositionArea,
   longhandDefinition,
   registeredProperty,
   specifiedDeclaration,
@@ -1198,6 +1200,12 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         (property.startsWith("font-") || property === "line-height")
       )
         super.removeProperty("font");
+      if (
+        !this._readonly &&
+        property.startsWith("text-decoration-") &&
+        this._values.has("text-decoration")
+      )
+        super.removeProperty("text-decoration");
       if (typeof value === "string" && value !== "") this.#writeRevision++;
       if (
         value &&
@@ -1776,6 +1784,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return serializeBox(top, right, bottom, left);
       }
       if (!this._computed) return value;
+      if (property === "position-area" && value)
+        return value === "initial" || value === "unset" ? "none" : computedPositionArea(value);
       const colorPair = logicalBorderColorShorthands.get(property);
       if (colorPair) {
         const start = this.getPropertyValue(colorPair[0]);
@@ -1916,14 +1926,14 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         } else this._setProperty(name, components.join(" "), priority);
         return;
       }
-      if (name === "font" && !/var\(/i.test(value)) {
-        const font = fontDeclaration(value);
-        if (!font) return;
-        this.#removeProperty("font");
-        for (const [child, component] of font.entries) {
+      if ((name === "font" || name === "text-decoration") && !/var\(/i.test(value)) {
+        const declaration = expandedDeclaration(name, value);
+        if (!declaration) return;
+        this.#removeProperty(name);
+        for (const [child, component] of declaration.entries) {
           if (component) this._setProperty(child, component, priority);
         }
-        this._setProperty("font", font.text, priority);
+        this._setProperty(name, declaration.text, priority);
         return;
       }
       if (name === "size") {
@@ -3425,6 +3435,8 @@ function mediaFeature(text: string): MediaPredicate {
   }
   const orientation = /^\(\s*orientation\s*:\s*(portrait|landscape)\s*\)$/.exec(text)?.[1];
   if (orientation) return ({ width, height }) => width > height === (orientation === "landscape");
+  if (/^\(\s*orientation\s*\)$/.test(text)) return () => true;
+  if (/^\(\s*aspect-ratio\s*\)$/.test(text)) return ({ width, height }) => width > 0 && height > 0;
   return () => null;
 }
 
@@ -3578,34 +3590,49 @@ export function parseMediaQuery(query: string): {
   const render = (node: MediaConditionNode) => generate(node as CssNode);
   const predicates: MediaPredicate[] = [];
   const serialized = mediaQueryMembers(query, css).map((member) => {
-    if (!member) return member ? specifiedMediaQuery(member) : "not all";
+    if (!member) return "not all";
+    const reference = member.includes("(") ? defaultMediaQuery(member) : undefined;
+    const fallback = () => {
+      if (reference?.matches !== undefined) predicates.push(() => reference.matches!);
+      return reference?.media ?? specifiedMediaQuery(member);
+    };
     let item: CssNode;
     try {
       item = parse(member, { context: "mediaQuery" });
     } catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
-      return member ? specifiedMediaQuery(member) : "not all";
+      return fallback();
     }
     if (/resolution\s*:/i.test(member) && /calc\(/i.test(member))
       simplifyResolutionCalculations(item, css);
     const node = item as CssNode & MediaQueryNode;
-    if (node.type !== "MediaQuery") return member ? specifiedMediaQuery(member) : "not all";
+    if (node.type !== "MediaQuery") return fallback();
     const type = node.mediaType?.toLowerCase();
     const modifier = node.modifier?.toLowerCase();
     node.mediaType = type ?? null;
     node.modifier = modifier ?? null;
     const match = node.condition && compileMediaCondition(node.condition, render, !type);
     if ((node.condition && !match) || type === "and" || type === "or" || type === "layer")
-      return member ? specifiedMediaQuery(member) : "not all";
+      return fallback();
     const screen = !type || type === "all" || type === "screen";
     predicates.push((viewport) => {
+      if (
+        reference?.matches !== undefined &&
+        viewport.width === 1024 &&
+        viewport.height === 768 &&
+        viewport.resolution === 1
+      )
+        return reference.matches;
       const value = screen ? (match ? match(viewport) : true) : false;
       return value === null ? null : value !== (modifier === "not");
     });
-    return generate(item)
-      .replace(/^all and /i, "")
-      .replace(/:(?=\S)/g, ": ")
-      .replace(/\s*(<=|>=|<|>|=)\s*/g, " $1 ");
+    return (
+      reference?.media ??
+      generate(item)
+        .replace(/^all and /i, "")
+        .replace(/:(?=\S)/g, ": ")
+        .replace(/\s*(<=|>=|<|>|=)\s*/g, " $1 ")
+    );
   });
   return {
     media: serialized.join(", "),

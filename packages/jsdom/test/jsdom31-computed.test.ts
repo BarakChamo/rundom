@@ -82,3 +82,21 @@ it("matches every enumerated value for an unstyled paragraph", () => {
   expect(declarations[0]).toHaveLength(544);
   expect(declarations[1]).toEqual(declarations[0]);
 });
+
+it("applies device media queries to live shorthand components inside resized frames", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor("<iframe style='width:300px'></iframe>");
+    const frame = (window.document.querySelector("iframe") as HTMLIFrameElement).contentWindow!;
+    const sheet = frame.document.createElement("style");
+    sheet.textContent =
+      "body { text-decoration: underline; position-area: span-inline-start span-block-end }";
+    frame.document.head.append(sheet);
+    const live = frame.getComputedStyle(frame.document.body);
+    sheet.media = "(min-width: 1000px) and (color)";
+    expect(live.textDecorationLine).toBe("underline");
+    expect(live.getPropertyValue("position-area")).toBe("span-end span-start");
+    sheet.media = "not (unknown)";
+    expect(live.textDecorationLine).toBe("none");
+    window.close();
+  }
+});

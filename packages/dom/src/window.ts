@@ -18804,6 +18804,8 @@ function buildWindow(
   let mediaQueryFinalizer: FinalizationRegistry<WeakRef<MediaQueryList>> | undefined;
 
   function frameViewportDimension(axis: "width" | "height"): number | undefined {
+    // jsdom frames expose the default headless viewport independently of their container.
+    if (options.jsdomCompatibility) return undefined;
     const frame = options.frameElement && nodeRecord(options.frameElement)?.node;
     if (!frame || !tree.isElementNode(frame) || frame.tagName !== "iframe") return undefined;
     const value = attribute(frame, axis)?.trim();
