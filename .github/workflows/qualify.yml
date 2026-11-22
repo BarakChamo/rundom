@@ -340,7 +340,9 @@ jobs:
         run: |
           mkdir "$RUNNER_TEMP/scully"
           cd "$RUNNER_TEMP/scully"
-          curl -fsSL --retry 2 https://codeload.github.com/scullyio/scully/tar.gz/179650fc26b8951e0eaedf9edc0a0f6b9a49fc8b | tar xz --strip-components=1
+          git init -q
+          git fetch --quiet --depth 1 https://github.com/scullyio/scully.git 179650fc26b8951e0eaedf9edc0a0f6b9a49fc8b
+          git checkout --quiet --detach FETCH_HEAD
           npm ci --legacy-peer-deps --no-fund --no-audit
           npm run build:code
           npm run symlinks
