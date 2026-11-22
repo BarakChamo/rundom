@@ -1,7 +1,8 @@
 // Compares public declaration syntax and enumeration with the pinned upstream provider.
 import { expect, it } from "vitest";
-import { JSDOM as Reference } from "jsdom";
-import { JSDOM } from "../src/jsdom.js";
+import { createRequire } from "node:module";
+import { JSDOM } from "@run-dom/jsdom";
+const { JSDOM: Reference }: { JSDOM: typeof JSDOM } = createRequire(import.meta.url)("jsdom");
 
 it("preserves relative color syntax, resolves it and rejects invalid replacements", () => {
   for (const Constructor of [Reference, JSDOM]) {
@@ -45,6 +46,27 @@ it("reads longhand initial values through computed declarations only", () => {
       expect(style.getPropertyValue(name)).toBe(value);
       expect(node.style.getPropertyValue(name)).toBe("");
     }
+    window.close();
+  }
+});
+
+it("keeps registrations local to a window and exposes their initial values to retained styles", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor(
+      "<style>@property --angle { syntax: '<angle>'; inherits: false; initial-value: 10deg }</style><main style='--angle: 20deg'><p></p></main>",
+    );
+    const node = window.document.querySelector("p")!;
+    const view = window.getComputedStyle(node);
+    expect(view.getPropertyValue("--angle")).toBe("10deg");
+    window.CSS.registerProperty({
+      name: "--count",
+      inherits: false,
+      syntax: "<number>",
+      initialValue: "4",
+    });
+    expect(view.getPropertyValue("--count")).toBe("4");
+    expect(Array.from(view).slice(-2)).toEqual(["--angle", "--count"]);
+    expect(() => window.CSS.registerProperty({ name: "--count" })).toThrow();
     window.close();
   }
 });

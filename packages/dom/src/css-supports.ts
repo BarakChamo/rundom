@@ -167,8 +167,15 @@ export function readSupportsCondition(
 }
 
 /** Creates the Window CSS namespace and shares its condition evaluator with CSS imports. */
-export function createCSSNamespace(selector: (source: string) => boolean) {
+export function createCSSNamespace(
+  selector: (source: string) => boolean,
+  register: (definition: unknown) => void,
+) {
   const namespace = {
+    registerProperty(definition: unknown): void {
+      if (!arguments.length) throw new TypeError("A property definition is required");
+      register(definition);
+    },
     supports(conditionOrProperty: string, value?: string): boolean {
       if (arguments.length === 0) throw new TypeError("A CSS condition or property is required");
       const source = ownedString(`${conditionOrProperty}`);

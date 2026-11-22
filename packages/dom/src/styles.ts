@@ -1,5 +1,10 @@
 // Parses author stylesheets and resolves declarations against private DOM state.
-import { longhandDefinition, specifiedDeclaration } from "./css-reference.js";
+import {
+  longhandDefinition,
+  registeredProperty,
+  specifiedDeclaration,
+  type RegisteredProperty,
+} from "./css-reference.js";
 import { ownedString } from "./owned-string.js";
 import { createRequire } from "node:module";
 import { serializePhysicalBorder, isPhysicalBorder } from "./css-border-serialization.js";
@@ -5260,8 +5265,13 @@ export function createStyles(input: {
   }
 
   let cssNamespace: ReturnType<typeof createCSSNamespace> | undefined;
+  let scriptRegistrations: Map<string, RegisteredProperty> | undefined;
   function css() {
-    return (cssNamespace ??= createCSSNamespace(supportsSelector));
+    return (cssNamespace ??= createCSSNamespace(supportsSelector, (inputValue) => {
+      const result = registeredProperty(inputValue, scriptRegistrations, input.DOMException);
+      (scriptRegistrations ??= new Map()).set(result.name, result);
+      linkedSheetChanged();
+    }));
   }
 
   const ruleInterfaces = createRuleInterfaces(
@@ -6347,6 +6357,7 @@ export function createStyles(input: {
     baseURL: string | undefined;
     focusRevision?: number | undefined;
     siblingColor?: boolean;
+    registered?: boolean;
     custom?: CustomProjection;
     units: number;
     characters: number;
@@ -6700,7 +6711,7 @@ export function createStyles(input: {
       revision !== undefined &&
       input.styleRevision(root) === revision &&
       linkedSheetRevision === linked;
-    if (!available.length && stableCollection && !input.isXML) {
+    if (!available.length && !scriptRegistrations && stableCollection && !input.isXML) {
       const snapshot = userAgentSnapshot(node, revision);
       if (snapshot) return snapshot;
     }
@@ -7460,7 +7471,7 @@ export function createStyles(input: {
       } = userAgentStyle(element);
       const userAgentDirection = needsDirection ? input.directionality(element) : undefined;
       function sameEnvironment(cached: ComputedFrame): boolean {
-        if (cached.siblingColor) return false;
+        if (cached.siblingColor || cached.registered || scriptRegistrations) return false;
         const currentViewport = cached.viewport && (viewport ??= input.viewport());
         const sameViewport =
           !cached.viewport ||
@@ -7563,6 +7574,7 @@ export function createStyles(input: {
           });
         }
       }
+      let sheetRegistrations: Map<string, RegisteredProperty> | undefined;
       function apply(
         sheet: Sheet,
         rules: Rule[],
@@ -7579,6 +7591,19 @@ export function createStyles(input: {
         for (const rule of hostContext || scoped || parentSelection
           ? rules
           : candidates(rules, sheet)) {
+          if (rule.kind === "property") {
+            if (!hostContext)
+              for (const name of rule.view.names) {
+                const def = rule.view;
+                (sheetRegistrations ??= new Map()).set(name, {
+                  name,
+                  syntax: def.syntax,
+                  inherits: def.inherits,
+                  ...(def.initialValue !== null ? { initialValue: def.initialValue } : {}),
+                });
+              }
+            continue;
+          }
           if (rule.kind === "media") {
             if (mediaListState(rule.view.media).matches((viewport ??= input.viewport())))
               apply(
@@ -7777,6 +7802,7 @@ export function createStyles(input: {
         take(inlineStyle(element), 2 ** 52);
       if (
         previous &&
+        !sheetRegistrations &&
         sameContext &&
         previous.inputs &&
         previous.inputs.length === inputs.length &&
@@ -7986,6 +8012,23 @@ export function createStyles(input: {
         } else if (hasHistory) {
           for (const winner of winners.values()) if (winner.previous) winner.previous = undefined;
         }
+        const registrations =
+          sheetRegistrations && scriptRegistrations
+            ? new Map([...sheetRegistrations, ...scriptRegistrations])
+            : (scriptRegistrations ?? sheetRegistrations);
+        if (registrations)
+          for (const [name, registration] of registrations) {
+            const current = winners.get(name);
+            if (
+              current?.value === "initial" ||
+              ((!current || current.value === "unset") &&
+                (!registration.inherits || !prior?.getPropertyValue(name)))
+            ) {
+              if (registration.initialValue !== undefined)
+                winners.set(name, { context: -1, weight: 0, value: registration.initialValue });
+              else winners.delete(name);
+            }
+          }
         const computedWinners: Map<string, ComputedWinner> = winners;
         let custom: CustomProjection | undefined;
         const parentProjection = prior && partialAncestors?.get(prior);
@@ -8001,7 +8044,7 @@ export function createStyles(input: {
         }
         const projected = prior && inheritedCustomBlocks?.get(prior);
         if (prior) {
-          let shared = theme ? undefined : shareableCustomBlock(prior);
+          let shared = theme || registrations ? undefined : shareableCustomBlock(prior);
           if (shared) {
             for (const name of winners.keys()) {
               if (shared.values.has(name)) {
@@ -8018,6 +8061,8 @@ export function createStyles(input: {
             const winner = winners.get(name);
             const value = winner?.value;
             const isCustom = name.startsWith("--");
+            if (isCustom && registrations?.get(name)?.inherits === false && value !== "inherit")
+              return;
             if (isCustom && !winner) {
               if (shared && !projected && shared.values.has(name)) {
                 customEnd++;
@@ -8265,6 +8310,7 @@ export function createStyles(input: {
         frame = {
           ...resolved,
           ...(siblingColor ? { siblingColor } : {}),
+          ...(registrations ? { registered: true } : {}),
           inputs: retainInputs ? inputs : undefined,
           userAgentDirection,
           userAgentHiddenInput: hiddenInput,
