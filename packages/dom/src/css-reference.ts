@@ -68,11 +68,12 @@ function detachedDeclaration(declarations: readonly unknown[]) {
 }
 
 /** Serializes CSS blocks containing overlapping gap decoration shorthands. */
-export function serializeGapBlock(text: string): string {
+export type PendingGap = { shorthand: string; text: string; declaration: object };
+export function serializeGapBlock(text: string, pending?: ReadonlyMap<string, PendingGap>): string {
   const {
     parseDeclarations,
   }: {
-    parseDeclarations(text: string, context: object): unknown[];
+    parseDeclarations(text: string, context: object): { name: string; important: boolean }[];
   } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
   const {
     createContext,
@@ -80,22 +81,40 @@ export function serializeGapBlock(text: string): string {
     createContext(owner: object): object;
   } = require("rundom-css-reference/lib/jsdom/living/css/parse/context.js");
   context ??= createContext({ _globalObject: globalThis });
-  return detachedDeclaration(parseDeclarations(text, context)).cssText;
+  const declarations = parseDeclarations(text, context);
+  return detachedDeclaration(
+    pending?.size
+      ? declarations.map((declaration) => {
+          const source = pending.get(declaration.name);
+          return source ? { ...source.declaration, important: declaration.important } : declaration;
+        })
+      : declarations,
+  ).cssText;
 }
 
 /** Expands a shorthand and serializes it from all of its longhands in declaration order. */
 export function expandedDeclaration(
   name: string,
   value: string,
-): { text: string; entries: [string, string][] } | undefined {
+):
+  | {
+      text: string;
+      entries: [string, string][];
+      declarations: { name: string; pending?: unknown }[];
+    }
+  | undefined {
   const parsed = parseDeclaration(name, value);
   if (!parsed) return;
   const expand: (
     declaration: unknown,
-  ) => { name: string }[] = require("rundom-css-reference/lib/jsdom/living/css/parse/shorthand.js");
+  ) => {
+    name: string;
+    pending?: unknown;
+  }[] = require("rundom-css-reference/lib/jsdom/living/css/parse/shorthand.js");
   const declarations = expand(parsed);
   const style = detachedDeclaration(declarations);
   return {
+    declarations,
     text: style.getPropertyValue(name),
     entries: declarations.map(({ name }) => [name, style.getPropertyValue(name)]),
   };
@@ -292,4 +311,69 @@ export function fontFeatureValues(
     ) => { cssText: string; fontFamily: string };
   } = require("rundom-css-reference/lib/jsdom/living/css/CSSFontFeatureValuesRule-impl.js");
   return new FontFeatures(globalThis, [], rules[0]);
+}
+
+export type PositionTryStyle = {
+  readonly length: number;
+  cssText: string;
+  item(index: number): string;
+  setProperty(name: string, value: string, priority?: string): void;
+  getPropertyValue(name: string): string;
+  getPropertyPriority(name: string): string;
+  removeProperty(name: string): string;
+};
+export type PositionTry = {
+  readonly name: string;
+  readonly cssText: string;
+  readonly style: PositionTryStyle;
+};
+
+/** Binds the descriptor grammar to the owning stylesheet's URL and invalidation callbacks. */
+export function createDescriptorRuleParser(baseURL: () => string, changed: () => void) {
+  const {
+    parseRule,
+  }: {
+    parseRule(
+      text: string,
+      global: object,
+    ): PositionTry | { cssText: string; fontFamily: string } | { message: string };
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const globals = {
+    Object,
+    Array,
+    TypeError,
+    Error,
+    Number,
+    String,
+    DOMException,
+    _document: { baseURLSerialized: baseURL, _clearStyleSheetCache: changed },
+  };
+  for (const name of [
+    "CSSRule",
+    "CSSPositionTryRule",
+    "CSSFontFeatureValuesRule",
+    "CSSStyleDeclaration",
+    "CSSPositionTryDescriptors",
+  ]) {
+    const idl: { install(global: object, names: string[]): void } = require(
+      "rundom-css-reference/lib/generated/idl/" + name + ".js",
+    );
+    idl.install(globals, ["Window"]);
+  }
+  return {
+    position(text: string) {
+      const rule = parseRule(text, globals);
+      if (!("style" in rule)) return;
+      const {
+        wrapperForImpl,
+      }: {
+        wrapperForImpl(implementation: object): PositionTry;
+      } = require("rundom-css-reference/lib/generated/idl/utils.js");
+      return wrapperForImpl(rule);
+    },
+    font(text: string) {
+      const rule = parseRule(text, globals);
+      return "fontFamily" in rule ? rule : undefined;
+    },
+  };
 }

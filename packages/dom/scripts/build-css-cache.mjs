@@ -41,6 +41,11 @@ for (const [name, descriptor] of Object.entries(
 )) {
   if (descriptor.get && descriptor.set && !properties.includes(name)) properties.push(name);
 }
+const positionDescriptors = Object.keys(window.CSSPositionTryDescriptors.prototype);
+writeFileSync(
+  "dist/css-position-descriptor-names.cjs",
+  `module.exports = ${JSON.stringify(positionDescriptors)};\n`,
+);
 window.close();
 writeFileSync("dist/css-property-names.cjs", `module.exports = ${JSON.stringify(properties)};\n`);
 copyFileSync("src/css-runtime-loader.cjs", "dist/css-runtime.cjs");

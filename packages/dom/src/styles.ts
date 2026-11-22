@@ -2,9 +2,12 @@
 import {
   expandedDeclaration,
   fontFeatureValues,
+  createDescriptorRuleParser,
+  type PositionTry,
   gapLonghands,
   serializeGapShorthand,
   serializeGapBlock,
+  type PendingGap,
   defaultMediaQuery,
   computedPositionArea,
   longhandDefinition,
@@ -192,6 +195,12 @@ type NestedDeclarationsRule = {
   readonly style: PublicDeclaration;
   readonly cssText: string;
 };
+type PositionTryRule = {
+  readonly type: 0;
+  readonly name: string;
+  readonly cssText: string;
+  readonly style: ReturnType<ReturnType<typeof createDeclarationViews>["positionDescriptors"]>;
+};
 type FontFeatureValuesRule = { readonly type: 14; fontFamily: string; readonly cssText: string };
 type PropertyRule = {
   readonly type: 0;
@@ -214,6 +223,7 @@ type StyleRule = (
   | QualifiedRule
   | PropertyRule
   | FontFeatureValuesRule
+  | PositionTryRule
   | ImportRule
   | MediaRule
   | SupportsRule
@@ -251,6 +261,7 @@ type Rule =
   | { kind: "keyframes"; view: KeyframesRule & RuleParents; rules: KeyframeEntry[] }
   | { kind: "page"; view: PageRule & RuleParents; rules: Rule[] }
   | { kind: "property"; view: PropertyRule & RuleParents }
+  | { kind: "position-try"; view: PositionTryRule & RuleParents }
   | { kind: "counter-style"; view: CounterStyleRule & RuleParents }
   | {
       kind: "font-feature-values";
@@ -1200,7 +1211,9 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       styleMutationOwners.set(this, mutationOperations);
     }
     #writeRevision = 0;
+    #pendingGaps?: Map<string, PendingGap>;
     override _setProperty(property: string, value: string, priority?: string): void {
+      this.#pendingGaps?.delete(property);
       const requested = requestedStyleWrites.get(this);
       if (requested?.property === property) priority = requested.priority;
       else priority ??= requested?.priority ?? "";
@@ -1298,7 +1311,20 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     override get cssText(): string {
       let text = super.cssText;
-      if (/(?:^|; )(?:column|row)-rule-(?:width|style|color|inset)[-:]/.test(text))
+      if (this.#pendingGaps?.size) {
+        // CSSOM deliberately hides the value of a longhand with a pending shorthand.
+        // Feed its specified source into the serializer while preserving original order.
+        const declarations: string[] = [];
+        for (let i = 0; i < this._length; i++) {
+          const name = this[i];
+          if (!name) continue;
+          const value = this.#pendingGaps.get(name)?.text ?? super.getPropertyValue(name);
+          declarations.push(
+            name + ": " + value + (super.getPropertyPriority(name) ? " !important;" : ";"),
+          );
+        }
+        text = serializeGapBlock(declarations.join(" "), this.#pendingGaps);
+      } else if (/(?:^|; )(?:column|row)-rule-(?:width|style|color|inset)[-:]/.test(text))
         text = serializeGapBlock(text);
       if (
         this._values.has("background") &&
@@ -1421,6 +1447,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return;
       }
       // Clear through the dependency, then own declaration ordering and importance.
+      this.#pendingGaps?.clear();
       super.cssText = "";
       const { parse, generate }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
       let list: CssNode;
@@ -1503,14 +1530,20 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (this._readonly) return super.removeProperty(property);
       if (name.startsWith("background-") && super.getPropertyValue(name))
         super.removeProperty("background");
-      if (!longhands.length && !isPhysicalBorder(name)) return super.removeProperty(property);
+      if (!longhands.length && !isPhysicalBorder(name)) {
+        this.#pendingGaps?.delete(name);
+        return super.removeProperty(property);
+      }
       const previous = this.getPropertyValue(name);
       const changed = this._onChange;
       const original = changed && !this._updating ? this.cssText : undefined;
       this._onChange = undefined;
       try {
         super.removeProperty(name);
-        for (const child of longhands) super.removeProperty(child);
+        for (const child of longhands) {
+          this.#pendingGaps?.delete(child);
+          super.removeProperty(child);
+        }
         if (isPhysicalBorder(name)) {
           const removed = new Set([name, ...longhands]);
           for (const parent of borderShorthands) {
@@ -1526,6 +1559,11 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     override getPropertyPriority(property: string): string {
       property = canonicalProperty(property);
+      const gap = gapLonghands(property);
+      if (gap)
+        return gap.every((child) => super.getPropertyPriority(child) === "important")
+          ? "important"
+          : "";
       if (property !== "outline" || super.getPropertyValue(property))
         return super.getPropertyPriority(property);
       return this.getPropertyValue(property) ? super.getPropertyPriority("outline-color") : "";
@@ -1613,9 +1651,19 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         if (inherited) return inherited.get(property) ?? this._values.get(property) ?? "";
       }
       property = canonicalProperty(property);
+      if (this.#pendingGaps?.has(property)) return "";
       const gap = gapLonghands(property);
-      if (gap && /var\(/i.test(super.getPropertyValue(property)))
-        return super.getPropertyValue(property);
+      if (gap && this.#pendingGaps?.size) {
+        const source = this.#pendingGaps.get(gap[0]!);
+        if (
+          source?.shorthand === property &&
+          gap.every((child) => {
+            const entry = this.#pendingGaps?.get(child);
+            return entry?.shorthand === property && entry.text === source.text;
+          })
+        )
+          return source.text;
+      }
       if (gap)
         return serializeGapShorthand(
           property,
@@ -1951,11 +1999,19 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         } else this._setProperty(name, components.join(" "), priority);
         return;
       }
-      if (gapLonghands(name) && !/var\(/i.test(value)) {
-        const declaration = expandedDeclaration(name, value);
-        if (!declaration) return;
-        for (const [child, component] of declaration.entries)
-          this._setProperty(child, component, priority);
+      if (gapLonghands(name)) {
+        const shorthand = expandedDeclaration(name, value);
+        if (!shorthand) return;
+        for (const [i, [child, component]] of shorthand.entries.entries()) {
+          const declaration = shorthand.declarations[i]!;
+          this._setProperty(child, component || shorthand.text, priority);
+          if (declaration.pending)
+            (this.#pendingGaps ??= new Map()).set(child, {
+              shorthand: name,
+              text: shorthand.text,
+              declaration,
+            });
+        }
         return;
       }
       if ((name === "font" || name === "text-decoration") && !/var\(/i.test(value)) {
@@ -2331,6 +2387,8 @@ function createRuleInterfaces(
   ) => RuleSelection | undefined,
   namespacesForSheet: (sheet: Sheet | null) => Map<string, string> | undefined,
   exposeDeclaration: (style: Declaration) => PublicDeclaration,
+  parsePosition: (text: string) => PositionTry | undefined,
+  positionDescriptors: ReturnType<typeof createDeclarationViews>["positionDescriptors"],
 ) {
   const key = Symbol();
   const listMembers = new WeakMap<CSSRuleList, readonly Rule[]>();
@@ -2453,6 +2511,27 @@ function createRuleInterfaces(
   }
   for (const name of ["type", "parentRule", "parentStyleSheet"]) {
     Object.defineProperty(CSSRule.prototype, name, { enumerable: true });
+  }
+  class CSSPositionTryRule extends CSSRule<0> {
+    #rule: PositionTry;
+    #style: PositionTryRule["style"];
+    constructor(token: symbol, rule: PositionTry) {
+      super(token, 0);
+      this.#rule = rule;
+      this.#style = positionDescriptors(rule.style, this);
+    }
+    get name(): string {
+      return this.#rule.name;
+    }
+    get style() {
+      return this.#style;
+    }
+    get cssText(): string {
+      return this.#rule.cssText;
+    }
+    get [Symbol.toStringTag](): string {
+      return "CSSPositionTryRule";
+    }
   }
   class CSSFontFeatureValuesRule extends CSSRule<14> {
     #features: NonNullable<ReturnType<typeof fontFeatureValues>>;
@@ -2820,7 +2899,7 @@ function createRuleInterfaces(
       if (invalid && entry?.kind === "style" && rules.length === 1) {
         const { parse }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
         try {
-          parse(String(rule), { context: "rule", parseValue: false });
+          parse(text, { context: "rule", parseValue: false });
           invalid = false;
         } catch (error) {
           if (!(error instanceof SyntaxError)) throw error;
@@ -3187,6 +3266,8 @@ function createRuleInterfaces(
     CSSNestedDeclarations,
     CSSFontFaceRule,
     CSSFontFeatureValuesRule,
+    CSSPositionTryRule,
+    parsePosition,
     CSSPropertyRule,
     CSSNamespaceRule,
     CSSCounterStyleRule,
@@ -4688,6 +4769,15 @@ function parseSheet(
       });
       return;
     }
+    if (node.type === "Atrule" && node.name === "position-try" && node.block) {
+      const rule = interfaces.parsePosition(generate(node));
+      if (rule)
+        target.push({
+          kind: "position-try",
+          view: new interfaces.CSSPositionTryRule(interfaces.key, rule),
+        });
+      return;
+    }
     if (node.type === "Atrule" && node.name === "font-feature-values" && node.block) {
       const features = fontFeatureValues(generate(node));
       if (features)
@@ -5418,6 +5508,10 @@ export function createStyles(input: {
     }));
   }
 
+  let descriptorParser: ReturnType<typeof createDescriptorRuleParser> | undefined;
+  function descriptorRules() {
+    return (descriptorParser ??= createDescriptorRuleParser(input.baseURL, linkedSheetChanged));
+  }
   const ruleInterfaces = createRuleInterfaces(
     parseRules,
     input.DOMException,
@@ -5434,6 +5528,8 @@ export function createStyles(input: {
       }),
     namespacesForSheet,
     (style) => views().expose(style),
+    (text) => descriptorRules().position(text),
+    (style, parent) => views().positionDescriptors(style, parent),
   );
   const declarationKey = Symbol();
   let declarationViews: ReturnType<typeof createDeclarationViews> | undefined;
@@ -5731,7 +5827,22 @@ export function createStyles(input: {
       const position = Number(index) >>> 0;
       if (position > state.rules.length)
         throw new input.DOMException("Rule index out of bounds", "IndexSizeError");
-      const parsed = parseRules(String(rule), namespacesForSheet(this));
+      const text = String(rule);
+      const featureRule = /^\s*@font-feature-values\b/i.test(text);
+      const features = featureRule && descriptorRules().font(text);
+      const parsed = featureRule
+        ? {
+            rules: features
+              ? [
+                  {
+                    kind: "font-feature-values" as const,
+                    view: new ruleInterfaces.CSSFontFeatureValuesRule(ruleInterfaces.key, features),
+                  },
+                ]
+              : [],
+            errors: features ? [] : ["Invalid font feature values rule"],
+          }
+        : parseRules(text, namespacesForSheet(this));
       const { rules } = parsed;
       const errors = parsed.errors.filter((message) => message !== "Colon is expected");
       const entry = rules[0];
@@ -5739,7 +5850,7 @@ export function createStyles(input: {
       if (invalid && entry?.kind === "style" && rules.length === 1) {
         const { parse }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
         try {
-          parse(String(rule), { context: "rule", parseValue: false });
+          parse(text, { context: "rule", parseValue: false });
           invalid = false;
         } catch (error) {
           if (!(error instanceof SyntaxError)) throw error;
@@ -7874,6 +7985,7 @@ export function createStyles(input: {
             rule.kind === "namespace" ||
             rule.kind === "counter-style" ||
             rule.kind === "font-feature-values" ||
+            rule.kind === "position-try" ||
             rule.kind === "page" ||
             rule.kind === "keyframe" ||
             rule.kind === "keyframes" ||
@@ -8528,6 +8640,10 @@ export function createStyles(input: {
     CSSConditionRule: ruleInterfaces.CSSConditionRule,
     CSSFontFaceRule: ruleInterfaces.CSSFontFaceRule,
     CSSFontFeatureValuesRule: ruleInterfaces.CSSFontFeatureValuesRule,
+    CSSPositionTryRule: ruleInterfaces.CSSPositionTryRule,
+    get CSSPositionTryDescriptors() {
+      return views().CSSPositionTryDescriptors;
+    },
     CSSPropertyRule: ruleInterfaces.CSSPropertyRule,
     CSSNamespaceRule: ruleInterfaces.CSSNamespaceRule,
     CSSCounterStyleRule: ruleInterfaces.CSSCounterStyleRule,

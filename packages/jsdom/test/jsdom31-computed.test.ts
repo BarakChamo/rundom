@@ -118,3 +118,20 @@ it("keeps overlapping gap shorthands coherent after a longhand edit", () => {
     window.close();
   }
 });
+
+it("retains the pending shorthand and each leaf's importance through partial overrides", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor("<p></p>");
+    const style = window.document.querySelector("p")!.style;
+    style.setProperty("rule", "5px solid red");
+    style.setProperty("rule", "var(--decoration)", "important");
+    expect(style.length).toBe(6);
+    expect(style.getPropertyValue("rule")).toBe("var(--decoration)");
+    expect(style.getPropertyValue("row-rule-width")).toBe("");
+    expect(style.cssText).toBe("rule: var(--decoration) !important;");
+    style.setProperty("row-rule-width", "2px");
+    expect(style.getPropertyValue("rule")).toBe("");
+    expect(style.getPropertyPriority("column-rule-width")).toBe("important");
+    window.close();
+  }
+});

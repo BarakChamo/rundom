@@ -659,7 +659,7 @@ describe("Window stylesheets", () => {
       expect(sheets.length).toBe(0);
       style.type = "text/css";
       const rule = sheets.item(0)?.cssRules[0];
-      expect(rule && "style" in rule && rule.style.color).toBe("blue");
+      expect(rule && "style" in rule && rule.style.getPropertyValue("color")).toBe("blue");
     } finally {
       window.close();
     }

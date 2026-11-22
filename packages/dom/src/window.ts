@@ -19075,6 +19075,12 @@ function buildWindow(
     get CSSPropertyRule() {
       return styles().CSSPropertyRule;
     }
+    get CSSPositionTryDescriptors() {
+      return styles().CSSPositionTryDescriptors;
+    }
+    get CSSPositionTryRule() {
+      return styles().CSSPositionTryRule;
+    }
     get CSSFontFeatureValuesRule() {
       return styles().CSSFontFeatureValuesRule;
     }

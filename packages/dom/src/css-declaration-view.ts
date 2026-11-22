@@ -1,6 +1,7 @@
 // Owns WebIDL CSS declaration views; private parser/cascade objects never become public receivers.
 
 import { createRequire } from "node:module";
+import type { PositionTryStyle } from "./css-reference.js";
 
 const requireCSS = createRequire(import.meta.url);
 let standardNames: readonly string[] | undefined;
@@ -269,6 +270,64 @@ export function createDeclarationViews(input: {
     writable: true,
     configurable: true,
   });
+  class CSSPositionTryDescriptors extends CSSStyleDeclaration {}
+  let descriptorNamesInstalled = false;
+  function positionDescriptorConstructor() {
+    if (!descriptorNamesInstalled) {
+      const names: string[] = requireCSS("./css-position-descriptor-names.cjs");
+      for (const key of names) {
+        const property = key
+          .replace(/[A-Z]/g, (letter) => "-" + letter.toLowerCase())
+          .replace(/^webkit-/, "-webkit-");
+        Object.defineProperty(CSSPositionTryDescriptors.prototype, key, {
+          configurable: true,
+          enumerable: true,
+          get(this: CSSPositionTryDescriptors) {
+            return receiver(this).getPropertyValue(property);
+          },
+          set(this: CSSPositionTryDescriptors, value: unknown) {
+            receiver(this).setProperty(property, value == null ? "" : cssString(value));
+          },
+        });
+      }
+      Object.defineProperty(CSSPositionTryDescriptors.prototype, Symbol.toStringTag, {
+        value: "CSSPositionTryDescriptors",
+        configurable: true,
+      });
+      descriptorNamesInstalled = true;
+    }
+    return CSSPositionTryDescriptors;
+  }
+  function positionDescriptors(style: PositionTryStyle, parentRule: object) {
+    positionDescriptorConstructor();
+    const implementation: DeclarationImplementation = {
+      parentRule,
+      get _length() {
+        return style.length;
+      },
+      get cssText() {
+        return style.cssText;
+      },
+      set cssText(text) {
+        style.cssText = text;
+      },
+      setProperty: style.setProperty.bind(style),
+      getPropertyValue: style.getPropertyValue.bind(style),
+      getPropertyPriority: style.getPropertyPriority.bind(style),
+      removeProperty: style.removeProperty.bind(style),
+    };
+    const target = Object.create(CSSPositionTryDescriptors.prototype) as CSSPositionTryDescriptors;
+    const view = new Proxy<CSSPositionTryDescriptors>(
+      target,
+      indexedHandler(
+        Reflect,
+        () => style.length,
+        (_, index) => style.item(index) || undefined,
+      ),
+    );
+    implementations.set(view, implementation);
+    return view;
+  }
   const nativePropertyReader = CSSStyleDeclaration.prototype.getPropertyValue;
   const write = input.write;
   let published = false;
@@ -464,6 +523,10 @@ export function createDeclarationViews(input: {
   }
   return {
     CSSStyleDeclaration,
+    get CSSPositionTryDescriptors() {
+      return positionDescriptorConstructor();
+    },
+    positionDescriptors,
     hasNativePropertyReader(): boolean {
       return (
         Object.getPrototypeOf(propertyPrototype) === CSSStyleDeclaration.prototype &&
