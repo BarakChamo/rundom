@@ -88,6 +88,29 @@ export function replaceSystemColors(value: string, scheme: string): string {
   return end ? output + value.slice(end) : value;
 }
 
+// The relative-color grammar and precision follow the pinned jsdom CSS implementation.
+const relativeColor = /\(\s*from\s/i;
+export function relativeColorValue(value: string, currentColor?: string, scheme = "light"): string | undefined {
+  if (!relativeColor.test(value)) return;
+  const { parseGrammar }: { parseGrammar: (source: string, grammar: string) => unknown } =
+    require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const { isFailure }: { isFailure: (value: unknown) => boolean } =
+    require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+  const { serializeComponentValue }: { serializeComponentValue: (value: unknown) => string } =
+    require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const parsed = parseGrammar(currentColor === undefined ? value : replaceSystemColors(value, scheme), "<color>");
+  if (isFailure(parsed)) return;
+  if (currentColor === undefined) return serializeComponentValue(parsed);
+  const { resolveColor }: { resolveColor: (value: unknown, context: object) => unknown } =
+    require("rundom-css-reference/lib/jsdom/living/css/utils/resolve-color.js");
+  const resolved = resolveColor(parsed, {
+    used: true,
+    colorScheme: () => scheme,
+    get currentColor() { return parseGrammar(currentColor, "<color>"); },
+  });
+  return resolved ? serializeComponentValue(resolved) : undefined;
+}
+
 /** Serializes modern color functions while retaining system keywords until computation. */
 export function specifiedColorFunction(value: string): string | undefined {
   if (
@@ -96,6 +119,7 @@ export function specifiedColorFunction(value: string): string | undefined {
     return undefined;
   // Variables are owned by the declaration's substitution path, including case-sensitive names.
   if (/var\(/i.test(value)) return undefined;
+  if (relativeColor.test(value)) return relativeColorValue(value);
   // Serialization is not validation: the color library repairs some invalid syntax.
   const { parsePropertyValue }: { parsePropertyValue: (name: string, value: string) => unknown } =
     require("./css-runtime.cjs").cssStyle;

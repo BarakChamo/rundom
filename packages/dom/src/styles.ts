@@ -21,7 +21,7 @@ import {
 import { defaultTreeAdapter as tree, html, type DefaultTreeAdapterTypes as Raw } from "parse5";
 import type { CssNode, Selector, Value, WalkOptionsNoVisit } from "css-tree";
 import { createCSSNamespace, readSupportsCondition } from "./css-supports.js";
-import { replaceSystemColors, specifiedColorFunction, systemColor } from "./css-colors.js";
+import { relativeColorValue, replaceSystemColors, specifiedColorFunction, systemColor } from "./css-colors.js";
 import { parseSelectorList, customStateIdentifier } from "./selector-syntax.js";
 import { compileSelector, compileSimpleSubject, compileTreeSelector } from "./selectors.js";
 import { queryDependsOnTreeOrFocus, queryDependsOnlyOnTree } from "./query-index.js";
@@ -4932,6 +4932,8 @@ function resolveColor(
   options: { currentColor: string; colorScheme: string; fallback?: string | undefined },
 ): string {
   const { currentColor, colorScheme, fallback } = options;
+  const relative = relativeColorValue(value, currentColor, colorScheme);
+  if (relative !== undefined) return relative;
   const system = systemColor(value, colorScheme);
   if (system) return system;
   const rgb = value.startsWith("#") ? serializeHexColor(value) : serializeRGB(value);

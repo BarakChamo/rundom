@@ -1,5 +1,18 @@
 // Owns WebIDL CSS declaration views; private parser/cascade objects never become public receivers.
 
+import { createRequire } from "node:module";
+
+const requireCSS = createRequire(import.meta.url);
+let standardNames: readonly string[] | undefined;
+function computedLonghands(): readonly string[] {
+  if (standardNames) return standardNames;
+  const properties: Record<string, unknown> = requireCSS("rundom-css-reference/lib/generated/css-property-definitions.js");
+  const shorthands: ReadonlyMap<string, unknown> = requireCSS("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js");
+  const names = Object.keys(properties).filter(name => name !== "--*" && !shorthands.has(name)).sort();
+  standardNames = [...names.filter(name => !name.startsWith("-")), ...names.filter(name => name.startsWith("-"))];
+  return standardNames;
+}
+
 export type DeclarationImplementation = {
   readonly _length: number;
   readonly [index: number]: string | undefined;
@@ -207,6 +220,7 @@ export function createDeclarationViews(input: {
     }
     get length(): number {
       const style = receiver(this);
+      if (typeof computedValues?.get(this) === "function") return computedNames(style).length;
       const indices = inheritedIndices.get(style);
       return style._length + (indices?.names.length ?? 0) + (indices?.last ? 1 : 0);
     }
@@ -386,15 +400,31 @@ export function createDeclarationViews(input: {
     const current = source();
     return current ? declarationImplementation(current) : (empty ??= input.emptyComputed());
   }
+  const indexedNames = new WeakMap<DeclarationImplementation, readonly string[]>();
+  function computedNames(style: DeclarationImplementation): readonly string[] {
+    if (style === empty) return [];
+    const cached = indexedNames.get(style);
+    if (cached) return cached;
+    const inherited = inheritedIndices.get(style);
+    const custom: string[] = [];
+    for (let i = 0, length = indexedLength(style, inherited); i < length; i++) {
+      const name = indexedItem(style, i, inherited);
+      if (name?.startsWith("--")) custom.push(name);
+    }
+    const standard = computedLonghands();
+    const names = custom.length ? [...standard, ...custom.sort()] : standard;
+    indexedNames.set(style, names);
+    return names;
+  }
   const computedHandler = indexedHandler(
     privateLookup,
     (target) => {
       const value = computedValue(target);
-      return indexedLength(value, inheritedIndices.get(value));
+      return typeof computedValues?.get(target) === "function" ? computedNames(value).length : indexedLength(value, inheritedIndices.get(value));
     },
     (target, index) => {
       const value = computedValue(target);
-      return indexedItem(value, index, inheritedIndices.get(value));
+      return typeof computedValues?.get(target) === "function" ? computedNames(value)[index] : indexedItem(value, index, inheritedIndices.get(value));
     },
   );
   function publishComputed(prototype: object, value: ComputedSource): CSSStyleProperties {

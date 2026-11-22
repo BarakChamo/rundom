@@ -38,6 +38,7 @@
     "cssstyle": "6.2.0",
     "html-encoding-sniffer": "7.0.0",
     "parse5": "8.1.0",
+    "rundom-css-reference": "npm:jsdom@31.0.1",
     "saxes": "6.0.0",
     "w3c-xmlserializer": "6.0.0",
     "whatwg-url": "17.2.0",
