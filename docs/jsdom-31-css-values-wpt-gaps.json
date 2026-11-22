@@ -1,49 +1,51 @@
 {
   "reference": "jsdom 31.0.1",
-  "candidate": "a3e72f7",
+  "candidate": "837bd62",
   "priorCandidate": "2af947b",
   "comparisons": {
     "Upstream WPT": {
-      "casesRecovered": 4585,
-      "casesRegressed": 38,
+      "casesRecovered": 4787,
+      "casesRegressed": 40,
       "regressionsByFile": {
-        "css/css-pseudo/parsing/marker-supported-properties.html": 5,
         "css/css-pseudo/parsing/marker-supported-properties-in-animation.html": 5,
+        "css/css-pseudo/parsing/marker-supported-properties.html": 5,
         "css/css-values/minmax-length-computed.html": 4,
         "css/css-display/display-math-on-pseudo-elements-001.html": 3,
         "css/css-shadow/slotted-parsing.html": 3,
+        "css/css-flexbox/parsing/webkit-aliases.html": 2,
         "css/css-backgrounds/animations/box-shadow-interpolation.html": 2,
-        "css/css-variables/css-variable-change-style-002.html": 1,
-        "css/css-animations/parsing/animation-delay-computed.html": 1,
-        "css/cssom/serialize-custom-props.html": 1,
-        "css/css-masking/parsing/mask-valid.sub.html": 1,
-        "css/css-conditional/container-queries/scroll-state/at-container-stuck-serialization.html": 1,
-        "css/css-variables/variable-cssText.html": 1,
-        "css/css-values/signs-abs-computed.html": 1,
-        "css/css-conditional/container-queries/scroll-state/at-container-snapped-serialization.html": 1,
-        "css/css-conditional/container-queries/scroll-state/at-container-scrolled-serialization.html": 1,
-        "css/cssom/getComputedStyle-pseudo.html": 1,
-        "css/css-flexbox/parsing/webkit-aliases.html": 1,
-        "css/css-masking/parsing/mask-computed.html": 1,
-        "css/css-conditional/container-queries/scroll-state/at-container-scrollable-serialization.html": 1,
         "css/css-anchor-position/container-queries/at-container-anchored-serialization.html": 1,
         "css/css-variables/css-variable-change-style-001.html": 1,
-        "css/cssom/cssom-getPropertyValue-common-checks.html": 1
+        "css/css-masking/parsing/mask-valid.sub.html": 1,
+        "css/css-conditional/container-queries/scroll-state/at-container-stuck-serialization.html": 1,
+        "css/css-variables/css-variable-change-style-002.html": 1,
+        "css/css-conditional/container-queries/scroll-state/at-container-scrolled-serialization.html": 1,
+        "css/css-variables/variable-cssText.html": 1,
+        "css/cssom/serialize-custom-props.html": 1,
+        "css/css-values/signs-abs-computed.html": 1,
+        "css/css-conditional/container-queries/scroll-state/at-container-snapped-serialization.html": 1,
+        "css/cssom/cssom-getPropertyValue-common-checks.html": 1,
+        "css/cssom/getComputedStyle-pseudo.html": 1,
+        "css/css-masking/parsing/mask-computed.html": 1,
+        "css/css-animations/parsing/animation-delay-computed.html": 1,
+        "css/css-conditional/container-queries/scroll-state/at-container-scrollable-serialization.html": 1,
+        "css/cssom/flex-serialization.html": 1
       }
     },
     "jsdom-local WPT": {
-      "casesRecovered": 337,
-      "casesRegressed": 4,
+      "casesRecovered": 350,
+      "casesRegressed": 17,
       "regressionsByFile": {
+        "css/cssom/CSSStyleDeclaration-shorthand-keywords.html": 12,
         "css/cssom/CSSStyleDeclaration-logical-shorthand-order.html": 3,
-        "css/cssom/style-attribute-property-roundtrip.html": 1
+        "css/cssom/style-attribute-property-roundtrip.html": 2
       }
     }
   },
   "filesWithDifferences": {
     "Upstream WPT": {
       "css/css-cascade/all-prop-revert-layer.html": {
-        "missing": 32,
+        "missing": 26,
         "assertions": [
           {
             "name": "background-position-x",
@@ -106,18 +108,6 @@
             "passedPreviousBuild": false
           },
           {
-            "name": "border-bottom-left-radius",
-            "occurrence": 1,
-            "status": "missing",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "border-bottom-right-radius",
-            "occurrence": 1,
-            "status": "missing",
-            "passedPreviousBuild": false
-          },
-          {
             "name": "border-inline-end-color",
             "occurrence": 1,
             "status": "missing",
@@ -154,18 +144,6 @@
             "passedPreviousBuild": false
           },
           {
-            "name": "border-top-left-radius",
-            "occurrence": 1,
-            "status": "missing",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "border-top-right-radius",
-            "occurrence": 1,
-            "status": "missing",
-            "passedPreviousBuild": false
-          },
-          {
             "name": "box-shadow-blur",
             "occurrence": 1,
             "status": "missing",
@@ -185,18 +163,6 @@
           },
           {
             "name": "box-shadow-spread",
-            "occurrence": 1,
-            "status": "missing",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "contain-intrinsic-height",
-            "occurrence": 1,
-            "status": "missing",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "contain-intrinsic-width",
             "occurrence": 1,
             "status": "missing",
             "passedPreviousBuild": false
@@ -235,191 +201,6 @@
             "name": "view-timeline-name",
             "occurrence": 1,
             "status": "missing",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-backgrounds/parsing/border-image-shorthand.sub.html": {
-        "failing": 30,
-        "assertions": [
-          {
-            "name": "e.style['border-image'] = \"1 2% 3 4% / 5% / 6\" should not set unrelated longhands",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"1 2% 3 4% / 5% / 6\" should set border-image-outset",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"1 2% 3 4% / 5% / 6\" should set border-image-repeat",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"1 2% 3 4% / 5% / 6\" should set border-image-slice",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"1 2% 3 4% / 5% / 6\" should set border-image-source",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"1 2% 3 4% / 5% / 6\" should set border-image-width",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"none\" should not set unrelated longhands",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"none\" should set border-image-outset",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"none\" should set border-image-repeat",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"none\" should set border-image-slice",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"none\" should set border-image-source",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"none\" should set border-image-width",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"repeat round\" should not set unrelated longhands",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"repeat round\" should set border-image-outset",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"repeat round\" should set border-image-repeat",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"repeat round\" should set border-image-slice",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"repeat round\" should set border-image-source",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"repeat round\" should set border-image-width",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") 1 2 3 4 fill\" should not set unrelated longhands",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") 1 2 3 4 fill\" should set border-image-outset",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") 1 2 3 4 fill\" should set border-image-repeat",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") 1 2 3 4 fill\" should set border-image-slice",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") 1 2 3 4 fill\" should set border-image-source",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") 1 2 3 4 fill\" should set border-image-width",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") fill 1 2% 3 4%\" should not set unrelated longhands",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") fill 1 2% 3 4%\" should set border-image-outset",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") fill 1 2% 3 4%\" should set border-image-repeat",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") fill 1 2% 3 4%\" should set border-image-slice",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") fill 1 2% 3 4%\" should set border-image-source",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://web-platform.test/\\\") fill 1 2% 3 4%\" should set border-image-width",
-            "occurrence": 1,
-            "status": "fail",
             "passedPreviousBuild": false
           }
         ]
@@ -1090,107 +871,6 @@
           },
           {
             "name": "Property background-image value 'url(\"http://web-platform.test:9000/css/support/1x1-green.png\" referrer-policy(unsafe-url))'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-view-transitions/navigation/with-types/at-rule-with-types-parsing.html": {
-        "failing": 16,
-        "assertions": [
-          {
-            "name": "types:    abc \txyz  shoud result in [\"abc\",\"xyz\"]",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: * shoud result in []",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: *11 abc shoud result in []",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: 123 shoud result in []",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: abc -ok-something shoud result in [\"abc\",\"-ok-something\"]",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: abc -uA-something shoud result in [\"abc\",\"-uA-something\"]",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: abc -ua-something shoud result in []",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: abc ABC shoud result in [\"abc\",\"ABC\"]",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: abc abc shoud result in [\"abc\",\"abc\"]",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: abc none shoud result in []",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: abc shoud result in [\"abc\"]",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: abc xyz shoud result in [\"abc\",\"xyz\"]",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: abc, def shoud result in []",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: abc\\ xyz shoud result in [\"abc xyz\"]",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: dEfAuLt shoud result in []",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "types: nOnE shoud result in []",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -1920,136 +1600,6 @@
           }
         ]
       },
-      "css/css-counter-styles/counter-style-at-rule/name-syntax.html": {
-        "failing": 10,
-        "assertions": [
-          {
-            "name": "@counter-style name circle is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style name decimal is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style name disc is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style name disclosure-closed is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style name disclosure-open is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style name inherit is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style name initial is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style name none is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style name square is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style name unset is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-counter-styles/counter-style-at-rule/prefix-suffix-syntax.html": {
-        "failing": 10,
-        "assertions": [
-          {
-            "name": "@counter-style 'prefix: foo bar' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'prefix: inherit' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'prefix: initial' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'prefix: unset' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'prefix: url(https://example.com/foo.png)' is valid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'suffix: foo bar' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'suffix: inherit' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'suffix: initial' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'suffix: unset' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'suffix: url(https://example.com/foo.png)' is valid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-page/parsing/size-valid.html": {
         "failing": 10,
         "assertions": [
@@ -2475,59 +2025,6 @@
           }
         ]
       },
-      "css/css-view-transitions/navigation/at-rule-cssom.html": {
-        "failing": 8,
-        "assertions": [
-          {
-            "name": "'navigation: auto gunk' fails to parse.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "'navigation: auto' is correctly parsed.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "'navigation: foo' fails to parse.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "'navigation: none !important' fails to parse.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "'navigation: none' is correctly parsed.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "CSSViewTransitionRule is correctly parsed and accessible via CSSOM.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "`navigation` descriptor is readonly.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "`types` descriptor is readonly.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/selectors/parsing/parse-has.html": {
         "failing": 8,
         "assertions": [
@@ -2722,53 +2219,6 @@
           },
           {
             "name": "Property color value 'oklch(from color(display-p3 0.0860989 0.08610658 0.08610454) l c h)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-counter-styles/counter-style-at-rule/pad-syntax.html": {
-        "failing": 7,
-        "assertions": [
-          {
-            "name": "@counter-style 'pad: \"X\" -1' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'pad: \"X\" 10' is valid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'pad: \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'pad: -1 \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'pad: 10 \"X\" \"Y\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'pad: 10 10 \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'pad: 10' is invalid",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -3087,41 +2537,41 @@
           }
         ]
       },
-      "css/css-backgrounds/parsing/border-radius-computed.html": {
+      "css/css-backgrounds/parsing/border-image-shorthand.sub.html": {
         "failing": 6,
         "assertions": [
           {
-            "name": "Property border-bottom-right-radius value 'calc(0.5em + 10px) 40%'",
+            "name": "e.style['border-image'] = \"none\" should not set unrelated longhands",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "Property border-radius value '1px 1px 1px 1px / 1px 1px 2% 1px'",
+            "name": "e.style['border-image'] = \"none\" should set border-image-outset",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "Property border-radius value '1px 1px 1px 2% / 1px 2% 1px 2%'",
+            "name": "e.style['border-image'] = \"none\" should set border-image-repeat",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "Property border-radius value '1px 2% 2% 2% / 1px 2% 3px 2%'",
+            "name": "e.style['border-image'] = \"none\" should set border-image-slice",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "Property border-radius value '1px 2% 3px 4% / 5em'",
+            "name": "e.style['border-image'] = \"none\" should set border-image-source",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "Property border-radius value '5em / 1px 2% 3px 4%'",
+            "name": "e.style['border-image'] = \"none\" should set border-image-width",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -3210,88 +2660,6 @@
           }
         ]
       },
-      "css/css-counter-styles/counter-style-at-rule/symbols-syntax.html": {
-        "failing": 6,
-        "assertions": [
-          {
-            "name": "@counter-style 'symbols: default \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'symbols: inherit \"X\" \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'symbols: initial \"X\" \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'symbols: revert \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'symbols: revert-layer \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'symbols: unset \"X\" \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-counter-styles/counter-style-at-rule/system-syntax.html": {
-        "failing": 6,
-        "assertions": [
-          {
-            "name": "@counter-style 'system: cyclic cyclic' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'system: extends inherit' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'system: extends initial' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'system: extends none' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'system: extends unset' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'system: float' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-display/display-math-on-non-mathml-elements.html": {
         "failing": 6,
         "assertions": [
@@ -3371,88 +2739,6 @@
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": true
-          }
-        ]
-      },
-      "css/css-flexbox/parsing/flex-shorthand.html": {
-        "failing": 6,
-        "assertions": [
-          {
-            "name": "e.style['flex'] = \"7% 8\" should set flex-basis",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex'] = \"7% 8\" should set flex-grow",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex'] = \"7% 8\" should set flex-shrink",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex'] = \"auto 1 2\" should set flex-basis",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex'] = \"auto 1 2\" should set flex-grow",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex'] = \"auto 1 2\" should set flex-shrink",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-flexbox/parsing/flex-valid.html": {
-        "failing": 6,
-        "assertions": [
-          {
-            "name": "e.style['flex'] = \"1 1 calc(10px + (sign(20cqw - 10px) * 5px))\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex'] = \"6px 4 5\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex'] = \"6px 4\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex'] = \"7% 8\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex'] = \"calc(-1) calc(-1) 0\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex'] = \"calc(10 + (sign(20cqw - 10px) * 5)) calc(10 + (sign(20cqw - 10px) * 5)) 1px\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
           }
         ]
       },
@@ -3819,47 +3105,6 @@
           },
           {
             "name": "e.style['aspect-ratio'] = \"auto 16\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-sizing/contain-intrinsic-size/parsing/contain-intrinsic-size-computed.html": {
-        "failing": 6,
-        "assertions": [
-          {
-            "name": "Property contain-intrinsic-size value '2px 3.3vh'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property contain-intrinsic-size value '2px 3vh'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property contain-intrinsic-size value '2vw 3px'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property contain-intrinsic-size value '5px 5px'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property contain-intrinsic-size value 'auto 1px auto 1px'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property contain-intrinsic-size value 'inherit'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -4288,111 +3533,6 @@
           }
         ]
       },
-      "css/css-counter-styles/counter-style-at-rule/fallback.html": {
-        "failing": 5,
-        "assertions": [
-          {
-            "name": "@counter-style 'fallback: \"bar\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'fallback: inherit' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'fallback: initial' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'fallback: none' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'fallback: unset' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-counter-styles/counter-style-at-rule/speak-as-syntax.html": {
-        "failing": 5,
-        "assertions": [
-          {
-            "name": "@counter-style 'speak-as: bullets numbers' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'speak-as: inherit' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'speak-as: initial' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'speak-as: none' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'speak-as: unset' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-flexbox/parsing/flex-computed.html": {
-        "failing": 5,
-        "assertions": [
-          {
-            "name": "Property flex value '1 1 calc(-10em)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property flex value '7% 8'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property flex value 'calc(-1) calc(-1) 0'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property flex value 'calc(10 + (sign(20cqw - 10px) * 5)) calc(10 + (sign(20cqw - 10px) * 5)) 1px'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property flex value 'calc(10px - 0.5em)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-fonts/parsing/font-feature-settings-valid.html": {
         "failing": 5,
         "assertions": [
@@ -4422,41 +3562,6 @@
           },
           {
             "name": "e.style['font-feature-settings'] = \"\\\"tnum\\\", 'hist'\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-lists/parsing/counter-reset-valid.html": {
-        "failing": 5,
-        "assertions": [
-          {
-            "name": "e.style['counter-reset'] = \"chapter chapter 9\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['counter-reset'] = \"chapter reversed(chapter)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['counter-reset'] = \"chapter\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['counter-reset'] = \"first -1 second third 99\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['counter-reset'] = \"reversed(chapter) 9 chapter\" should set the property value",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -4702,41 +3807,6 @@
           },
           {
             "name": "e.style['text-indent'] = \"hanging calc(50% + 60px)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-transforms/parsing/translate-parsing-computed.html": {
-        "failing": 5,
-        "assertions": [
-          {
-            "name": "Property translate value '100px 0px 0px'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property translate value '100px 0px'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property translate value '100px 200px 0px'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property translate value '100px calc(10px - 10%)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property translate value '1px 2px 0'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -5401,35 +4471,6 @@
           }
         ]
       },
-      "css/css-counter-styles/counter-style-at-rule/additive-symbols-syntax.html": {
-        "failing": 4,
-        "assertions": [
-          {
-            "name": "@counter-style 'additive-symbols: \"X\" 1' is valid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'additive-symbols: -1 \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'additive-symbols: 1 \"I\", 5 \"V\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "@counter-style 'additive-symbols: 1 \"X\", 1 \"Y\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-display/parsing/display-computed.html": {
         "failing": 4,
         "assertions": [
@@ -5865,122 +4906,6 @@
           }
         ]
       },
-      "css/css-text-decor/parsing/text-emphasis-computed.html": {
-        "failing": 4,
-        "assertions": [
-          {
-            "name": "Property text-emphasis value ''*''",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property text-emphasis value 'dot red'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property text-emphasis value 'dot'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property text-emphasis value 'open sesame'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-transitions/parsing/transition-timing-function-computed.html": {
-        "failing": 4,
-        "assertions": [
-          {
-            "name": "Property transition-timing-function value 'step-end'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property transition-timing-function value 'step-start'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property transition-timing-function value 'steps(2, end)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property transition-timing-function value 'steps(2, jump-end)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-transitions/parsing/transition-timing-function-invalid.html": {
-        "failing": 4,
-        "assertions": [
-          {
-            "name": "e.style['transition-timing-function'] = \"steps(0, jump-both)\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['transition-timing-function'] = \"steps(0, jump-end)\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['transition-timing-function'] = \"steps(0, jump-start)\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['transition-timing-function'] = \"steps(1, jump-none)\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-transitions/parsing/transition-timing-function-valid.html": {
-        "failing": 4,
-        "assertions": [
-          {
-            "name": "e.style['transition-timing-function'] = \"step-end\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['transition-timing-function'] = \"step-start\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['transition-timing-function'] = \"steps(2, end)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['transition-timing-function'] = \"steps(2, jump-end)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-values/calc-numbers.html": {
         "failing": 4,
         "assertions": [
@@ -6357,52 +5282,6 @@
           }
         ]
       },
-      "css/css-backgrounds/parsing/border-radius-valid.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "e.style['border-radius'] = \"1px 1px 1px 1px / 1px 1px 2% 1px\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-radius'] = \"1px 1px 1px 2% / 1px 2% 1px 2%\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-radius'] = \"1px 2% 2% 2% / 1px 2% 3px 2%\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-backgrounds/parsing/webkit-border-radius-valid.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "e.style['-webkit-border-radius'] = \"1px 1px 1px 1px / 1px 1px 2% 1px\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['-webkit-border-radius'] = \"1px 1px 1px 2% / 1px 2% 1px 2%\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['-webkit-border-radius'] = \"1px 2% 2% 2% / 1px 2% 3px 2%\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-color/parsing/opacity-valid.html": {
         "failing": 3,
         "assertions": [
@@ -6495,6 +5374,29 @@
           }
         ]
       },
+      "css/css-flexbox/parsing/flex-computed.html": {
+        "failing": 3,
+        "assertions": [
+          {
+            "name": "Property flex value '1 1 calc(-10em)'",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "Property flex value 'calc(-1) calc(-1) 0'",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "Property flex value 'calc(10px - 0.5em)'",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          }
+        ]
+      },
       "css/css-fonts/variations/font-parse-numeric-stretch-style-weight.html": {
         "failing": 3,
         "assertions": [
@@ -6535,52 +5437,6 @@
           },
           {
             "name": "\"foo.bar[baz]::picker(select)\" should be a valid selector",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-grid/parsing/grid-auto-flow-computed.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "Property grid-auto-flow value 'dense column'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property grid-auto-flow value 'dense row'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property grid-auto-flow value 'row dense'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-grid/parsing/grid-auto-flow-valid.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "e.style['grid-auto-flow'] = \"dense column\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['grid-auto-flow'] = \"dense row\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['grid-auto-flow'] = \"row dense\" should set the property value",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -6650,75 +5506,6 @@
           },
           {
             "name": "e.style['object-fit'] = \"scale-down cover\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-lists/parsing/counter-increment-computed.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "Property counter-increment value 'myCounter 7 otherCounter'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property counter-increment value 'myCounter otherCounter -8'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property counter-increment value 'myCounter'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-lists/parsing/counter-reset-computed.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "Property counter-reset value 'myCounter 7 otherCounter'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property counter-reset value 'myCounter otherCounter -8'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property counter-reset value 'myCounter'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-lists/parsing/counter-set-computed.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "Property counter-set value 'myCounter 7 otherCounter'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property counter-set value 'myCounter otherCounter 8'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property counter-set value 'myCounter'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -6887,8 +5674,8 @@
         ]
       },
       "css/css-page/page-rule-declarations-003.html": {
-        "missing": 2,
         "failing": 1,
+        "missing": 2,
         "assertions": [
           {
             "name": "CSS Paged Media: parsing @page selectors",
@@ -6996,52 +5783,6 @@
           },
           {
             "name": "e.style['shape-image-threshold'] = \"50%\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-sizing/aspect-ratio/parsing/aspect-ratio-computed.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "Property aspect-ratio value '0 auto'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property aspect-ratio value '16/9'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property aspect-ratio value 'auto 1'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-sizing/contain-intrinsic-size/parsing/contain-intrinsic-size-valid.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "e.style['contain-intrinsic-size'] = \"5px 5px\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['contain-intrinsic-size'] = \"auto 1px auto 1px\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['contain-intrinsic-size'] = \"none none\" should set the property value",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -7674,23 +6415,6 @@
           }
         ]
       },
-      "css/css-backgrounds/animations/border-radius-interpolation.html": {
-        "failing": 2,
-        "assertions": [
-          {
-            "name": "CSS Animations: property <border-top-left-radius> from [10px] to [50px] at (0) should be [10px]",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "CSS Animations: property <border-top-left-radius> from neutral to [20px] at (0) should be [10px]",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-backgrounds/animations/box-shadow-interpolation.html": {
         "failing": 2,
         "assertions": [
@@ -7770,23 +6494,6 @@
           },
           {
             "name": "e.style['background-size'] = \"1px\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-backgrounds/parsing/border-image-valid.html": {
-        "failing": 2,
-        "assertions": [
-          {
-            "name": "e.style['border-image'] = \"fill 1 2% 3 4% / auto\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['border-image'] = \"url(\\\"http://www.example.com/\\\") fill 1 2% 3 4%\" should set the property value",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -7909,6 +6616,23 @@
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
+          }
+        ]
+      },
+      "css/css-flexbox/parsing/webkit-aliases.html": {
+        "failing": 2,
+        "assertions": [
+          {
+            "name": "-webkit-flex is a legacy name alias for flex",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "-webkit-flex-flow is a legacy name alias for flex-flow",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
           }
         ]
       },
@@ -8127,57 +6851,6 @@
           },
           {
             "name": "e.style['grid-template-rows'] = \"subgrid repeat(auto-fill, [a]) repeat(auto-fill, [b]\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-lists/parsing/counter-increment-valid.html": {
-        "failing": 2,
-        "assertions": [
-          {
-            "name": "e.style['counter-increment'] = \"chapter\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['counter-increment'] = \"first -1 second third 99\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-lists/parsing/counter-reset-invalid.html": {
-        "failing": 2,
-        "assertions": [
-          {
-            "name": "e.style['counter-reset'] = \"reversed(chapter) none\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['counter-reset'] = \"reversed(none)\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-lists/parsing/counter-set-valid.html": {
-        "failing": 2,
-        "assertions": [
-          {
-            "name": "e.style['counter-set'] = \"chapter\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['counter-set'] = \"first -1 second third 99\" should set the property value",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -8518,23 +7191,6 @@
           },
           {
             "name": "two should be green",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-tables/parsing/border-spacing-computed.html": {
-        "failing": 2,
-        "assertions": [
-          {
-            "name": "Property border-spacing value 'calc(10px + 0.5em) calc(10px - 0.5em)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property border-spacing value 'calc(10px - 0.5em) calc(10px + 0.5em)'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -9550,33 +8206,11 @@
           }
         ]
       },
-      "css/css-backgrounds/border-image-slice-shorthand-reset.html": {
-        "failing": 1,
-        "assertions": [
-          {
-            "name": "Check that the border-image shorthand resets border-image-slice to its initial value.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-backgrounds/border-radius-css-text.html": {
         "failing": 1,
         "assertions": [
           {
             "name": "Setting border-radius does not expand to longhand properties in cssText.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-backgrounds/border-radius-shorthand.html": {
-        "failing": 1,
-        "assertions": [
-          {
-            "name": "longhand from shorthand",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -9621,6 +8255,17 @@
         "assertions": [
           {
             "name": "Property border-image-width value 'calc(-0.5em + 10px)'",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          }
+        ]
+      },
+      "css/css-backgrounds/parsing/border-radius-computed.html": {
+        "failing": 1,
+        "assertions": [
+          {
+            "name": "Property border-bottom-right-radius value 'calc(0.5em + 10px) 40%'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -9816,28 +8461,6 @@
           }
         ]
       },
-      "css/css-counter-styles/counter-style-at-rule/negative-syntax.html": {
-        "failing": 1,
-        "assertions": [
-          {
-            "name": "@counter-style 'negative: \"X\" \"X\" \"X\"' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-counter-styles/counter-style-at-rule/range-syntax.html": {
-        "failing": 1,
-        "assertions": [
-          {
-            "name": "@counter-style 'range: 0 -1' is invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-display/display-contents-computed-style.html": {
         "failing": 1,
         "assertions": [
@@ -9857,17 +8480,6 @@
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-flexbox/parsing/webkit-aliases.html": {
-        "failing": 1,
-        "assertions": [
-          {
-            "name": "-webkit-flex-flow is a legacy name alias for flex-flow",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": true
           }
         ]
       },
@@ -10732,17 +9344,6 @@
           }
         ]
       },
-      "css/css-syntax/serialize-escape-identifiers.html": {
-        "failing": 1,
-        "assertions": [
-          {
-            "name": "Rules must be the same after serialization round-trip, even with escaped characters",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-tables/parsing/border-spacing-valid.html": {
         "failing": 1,
         "assertions": [
@@ -11241,6 +9842,17 @@
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
+          }
+        ]
+      },
+      "css/cssom/flex-serialization.html": {
+        "failing": 1,
+        "assertions": [
+          {
+            "name": "Single value flex with CSS-wide keyword should serialize correctly.",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
           }
         ]
       },
@@ -13308,6 +11920,83 @@
           }
         ]
       },
+      "css/cssom/CSSStyleDeclaration-shorthand-keywords.html": {
+        "failing": 12,
+        "assertions": [
+          {
+            "name": "Parsing border: /* before */initial expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Parsing border: /**/UnSeT/**/ expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Parsing border: /**/r\\65vert-layer/**/ expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Parsing border: \\72 evert expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Parsing border: inherit/* var(--unused) */ expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Parsing border: inherit/**/ expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Setting border: /* before */initial expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Setting border: /**/UnSeT/**/ expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Setting border: /**/r\\65vert-layer/**/ expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Setting border: \\72 evert expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Setting border: inherit/* var(--unused) */ expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "Setting border: inherit/**/ expands the keyword to its longhands",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          }
+        ]
+      },
       "css/css-shadow/part-cascade.html": {
         "failing": 10,
         "assertions": [
@@ -14184,41 +12873,6 @@
           }
         ]
       },
-      "css/css-lists/counter-default-roundtrip.html": {
-        "failing": 5,
-        "assertions": [
-          {
-            "name": "A substituted counter increment gains its default without changing the pending specified value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "A substituted counter set gains its zero default without changing the pending specified value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "An ordinary counter name beginning with reversed still has the ordinary zero default",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Each mixed counter reset preserves its own ordinary, omitted reversed, or explicit zero value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Substituted resets fill ordinary defaults while preserving omitted reversed resets",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-properties-values-api/property-registration-defaults.html": {
         "failing": 5,
         "assertions": [
@@ -14318,41 +12972,6 @@
           },
           {
             "name": "Iterable assignment, self-assignment, and indexed operations preserve array identity on a shadow root",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/cssom/rule-cssText-setter.html": {
-        "failing": 5,
-        "assertions": [
-          {
-            "name": "cssText assignment is a converting no-op for @font-face { font-family: Example; src: url(example.woff); }",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cssText assignment is a converting no-op for @font-feature-values Example { @styleset { one: 1; } }",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cssText assignment is a converting no-op for @keyframes example { from { opacity: 0; } }",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cssText assignment is a converting no-op for @media all { b { color: blue; } }",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cssText assignment is a converting no-op for a { color: red; }",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -15180,29 +13799,6 @@
           }
         ]
       },
-      "css/cssom/counter-style-name-setter.tentative.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "Reserved and predefined counter style names are matched without ASCII case",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "The counter style name setter accepts strings that need identifier escaping",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "The counter style name setter treats a backslash as part of the name",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/cssom/namespace-prefix-escaping.html": {
         "failing": 3,
         "assertions": [
@@ -15672,6 +14268,23 @@
           }
         ]
       },
+      "css/cssom/style-attribute-property-roundtrip.html": {
+        "failing": 2,
+        "assertions": [
+          {
+            "name": "Setting flex declarations updates the serialized style attribute",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          },
+          {
+            "name": "transform-origin survives cssText assignment and IDL assignment alongside white-space",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          }
+        ]
+      },
       "css/cssom/stylesheet-add-rule-replace-lock.html": {
         "failing": 2,
         "assertions": [
@@ -16123,17 +14736,6 @@
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/cssom/style-attribute-property-roundtrip.html": {
-        "failing": 1,
-        "assertions": [
-          {
-            "name": "transform-origin survives cssText assignment and IDL assignment alongside white-space",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": true
           }
         ]
       },
