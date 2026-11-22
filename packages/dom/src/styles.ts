@@ -212,6 +212,13 @@ type PropertyRule = {
   readonly cssText: string;
 };
 // Inheritance keeps unitless line heights as multipliers. Public snapshots expose their used length.
+let pendingGapDeclarations: WeakMap<object, Map<string, PendingGap>> | undefined;
+function setPendingGap(owner: object, child: string, value: PendingGap): void {
+  pendingGapDeclarations ??= new WeakMap();
+  let entries = pendingGapDeclarations.get(owner);
+  if (!entries) pendingGapDeclarations.set(owner, (entries = new Map()));
+  entries.set(child, value);
+}
 const unitlessLineHeights = new WeakMap<object, string>();
 const publicLineHeights = new WeakMap<object, string>();
 type QualifiedRule = DeclarationRule &
@@ -778,6 +785,24 @@ function splitOutline(value: string): ReadonlyMap<string, string> | undefined {
   return components;
 }
 
+/** A CSS-wide keyword is one identifier token, including escaped spellings. */
+function canonicalWideKeyword(value: string): string {
+  if (!value.includes("/*") && !value.includes("\\")) return value;
+  const css: typeof import("css-tree") & CSSTokenizer = require("./css-runtime.cjs").cssTree;
+  let identifier: string | undefined;
+  let other = false;
+  css.tokenize(value, (type, start, end) => {
+    if (type === css.tokenTypes.WhiteSpace || type === css.tokenTypes.Comment) return;
+    if (type !== css.tokenTypes.Ident || identifier !== undefined) other = true;
+    else identifier = css.ident.decode(value.slice(start, end)).toLowerCase();
+  });
+  return !other &&
+    identifier &&
+    /^(?:inherit|initial|unset|revert(?:-layer|-rule)?)$/.test(identifier)
+    ? identifier
+    : value;
+}
+
 function normalizeFontLineHeight(value: string): string {
   if (!/\b\d{1,4}\s/.test(value)) return value;
   const {
@@ -1211,9 +1236,9 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       styleMutationOwners.set(this, mutationOperations);
     }
     #writeRevision = 0;
-    #pendingGaps?: Map<string, PendingGap>;
+
     override _setProperty(property: string, value: string, priority?: string): void {
-      this.#pendingGaps?.delete(property);
+      pendingGapDeclarations?.get(this)?.delete(property);
       const requested = requestedStyleWrites.get(this);
       if (requested?.property === property) priority = requested.priority;
       else priority ??= requested?.priority ?? "";
@@ -1311,19 +1336,20 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     override get cssText(): string {
       let text = super.cssText;
-      if (this.#pendingGaps?.size) {
+      if (pendingGapDeclarations?.get(this)?.size) {
         // CSSOM deliberately hides the value of a longhand with a pending shorthand.
         // Feed its specified source into the serializer while preserving original order.
         const declarations: string[] = [];
         for (let i = 0; i < this._length; i++) {
           const name = this[i];
           if (!name) continue;
-          const value = this.#pendingGaps.get(name)?.text ?? super.getPropertyValue(name);
+          const value =
+            pendingGapDeclarations?.get(this)?.get(name)?.text ?? super.getPropertyValue(name);
           declarations.push(
             name + ": " + value + (super.getPropertyPriority(name) ? " !important;" : ";"),
           );
         }
-        text = serializeGapBlock(declarations.join(" "), this.#pendingGaps);
+        text = serializeGapBlock(declarations.join(" "), pendingGapDeclarations?.get(this));
       } else if (/(?:^|; )(?:column|row)-rule-(?:width|style|color|inset)[-:]/.test(text))
         text = serializeGapBlock(text);
       if (
@@ -1447,7 +1473,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return;
       }
       // Clear through the dependency, then own declaration ordering and importance.
-      this.#pendingGaps?.clear();
+      pendingGapDeclarations?.get(this)?.clear();
       super.cssText = "";
       const { parse, generate }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
       let list: CssNode;
@@ -1531,7 +1557,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (name.startsWith("background-") && super.getPropertyValue(name))
         super.removeProperty("background");
       if (!longhands.length && !isPhysicalBorder(name)) {
-        this.#pendingGaps?.delete(name);
+        pendingGapDeclarations?.get(this)?.delete(name);
         return super.removeProperty(property);
       }
       const previous = this.getPropertyValue(name);
@@ -1541,7 +1567,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       try {
         super.removeProperty(name);
         for (const child of longhands) {
-          this.#pendingGaps?.delete(child);
+          pendingGapDeclarations?.get(this)?.delete(child);
           super.removeProperty(child);
         }
         if (isPhysicalBorder(name)) {
@@ -1651,14 +1677,14 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         if (inherited) return inherited.get(property) ?? this._values.get(property) ?? "";
       }
       property = canonicalProperty(property);
-      if (this.#pendingGaps?.has(property)) return "";
+      if (pendingGapDeclarations?.get(this)?.has(property)) return "";
       const gap = gapLonghands(property);
-      if (gap && this.#pendingGaps?.size) {
-        const source = this.#pendingGaps.get(gap[0]!);
+      if (gap && pendingGapDeclarations?.get(this)?.size) {
+        const source = pendingGapDeclarations?.get(this)?.get(gap[0]!);
         if (
           source?.shorthand === property &&
           gap.every((child) => {
-            const entry = this.#pendingGaps?.get(child);
+            const entry = pendingGapDeclarations?.get(this)?.get(child);
             return entry?.shorthand === property && entry.text === source.text;
           })
         )
@@ -1964,6 +1990,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       });
     }
     #setPropertyValue(property: string, value: string, priority: string): void {
+      if (!property.startsWith("--")) value = canonicalWideKeyword(value);
       const name = property.toLowerCase();
       value = normalizePropertyInput(name, value);
       if (!name.startsWith("--") && hasContextlessPercentage(name, value)) return;
@@ -2006,7 +2033,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           const declaration = shorthand.declarations[i]!;
           this._setProperty(child, component || shorthand.text, priority);
           if (declaration.pending)
-            (this.#pendingGaps ??= new Map()).set(child, {
+            setPendingGap(this, child, {
               shorthand: name,
               text: shorthand.text,
               declaration,
@@ -2036,6 +2063,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         this.#removeProperty(name);
         for (const child of propertyDefinitions.get(name)?.longhands ?? [])
           this._setProperty(child, value.toLowerCase(), priority);
+        for (const axis of backgroundPositionAxes)
+          this._setProperty(axis, value.toLowerCase(), priority);
         this._setProperty(name, value.toLowerCase(), priority);
         return;
       }
@@ -2062,6 +2091,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
             (child) => !propertyDefinitions.get(child)?.longhands,
           ),
         );
+        if (name === "border") leaves.add("border-image");
         for (const shorthand of borderShorthands)
           if (shorthandLonghands(shorthand, propertyDefinitions).some((child) => leaves.has(child)))
             super.removeProperty(shorthand);

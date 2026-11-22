@@ -105,9 +105,7 @@ export function expandedDeclaration(
   | undefined {
   const parsed = parseDeclaration(name, value);
   if (!parsed) return;
-  const expand: (
-    declaration: unknown,
-  ) => {
+  const expand: (declaration: unknown) => {
     name: string;
     pending?: unknown;
   }[] = require("rundom-css-reference/lib/jsdom/living/css/parse/shorthand.js");
