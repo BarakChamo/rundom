@@ -221,6 +221,38 @@ export function specifiedMediaQuery(value: string): string {
   return isFailure(result) ? "not all" : serializeComponentValue(result);
 }
 
+/** Reads an import URL with request modifiers, preserving its canonical CSS spelling. */
+export function importResource(
+  source: string,
+): { href: string; cssText: string; end: number } | undefined {
+  const {
+    value,
+  }: {
+    value: { rules: { name: string; prelude?: string }[] };
+  } = require("rundom-css-reference/lib/jsdom/living/css/rules/definitions.js");
+  const grammar = value.rules.find((rule) => rule.name === "@import")?.prelude;
+  if (!grammar) throw new Error("Missing CSS import grammar");
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const prelude = parseGrammar(source, grammar);
+  if (!Array.isArray(prelude)) return;
+  const resource = prelude[0];
+  if (!Array.isArray(resource?.value) || typeof resource.value[0]?.value !== "string") return;
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue(node: unknown): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  return {
+    href: resource.value[0].value,
+    cssText: serializeComponentValue(resource),
+    end: resource.end,
+  };
+}
+
 interface ConditionSyntax {
   name: string;
   query: string;

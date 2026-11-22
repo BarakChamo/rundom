@@ -20442,7 +20442,7 @@ function buildWindow(
               hasNavigation
                 ? { ...childOptions, frameLoaded: () => {}, frameClosed: () => {} }
                 : childOptions,
-              hasNavigation ? "navigation" : "blank",
+              hasNavigation && !/^javascript:/i.test(href.trimStart()) ? "navigation" : "blank",
               sharedAreas(),
             ),
       signature,

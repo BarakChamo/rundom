@@ -5,6 +5,7 @@ import {
   createDescriptorRuleParser,
   type PositionTry,
   grammarLonghands,
+  importResource,
   parseContainerConditions,
   validPseudoSelectorList,
   type FunctionRuleData,
@@ -123,7 +124,12 @@ type ImportRule = {
   set media(value: string | null);
   readonly cssText: string;
 };
-type ImportCondition = { layerName: string | null; supportsText: string | null; media: string };
+type ImportCondition = {
+  resourceText?: string;
+  layerName: string | null;
+  supportsText: string | null;
+  media: string;
+};
 type GroupingRuleView = {
   readonly type: 0 | 1 | 4 | 6 | 12;
   insertRule(rule: string, index?: number): number;
@@ -2975,7 +2981,9 @@ function createRuleInterfaces(
     }
     get cssText(): string {
       const { string }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      const parts = [`@import url(${string.encode(this.href)})`];
+      const parts = [
+        `@import ${this.#condition.resourceText ?? `url(${string.encode(this.href)})`}`,
+      ];
       if (this.layerName !== null)
         parts.push(this.layerName ? `layer(${this.layerName})` : "layer");
       if (this.supportsText !== null) parts.push(`supports(${this.supportsText})`);
@@ -4898,7 +4906,16 @@ function parseSheet(
     }
     if (node.type === "Atrule" && node.name === "import" && node.prelude) {
       if (target !== rules) return;
-      const source = generate(node.prelude);
+      let source = generate(node.prelude);
+      let resourceText: string | undefined;
+      if (node.prelude.type === "Raw" && /^url\(\s*["']/i.test(source)) {
+        const resource = importResource(source);
+        if (resource) {
+          const { string }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+          resourceText = resource.cssText;
+          source = string.encode(resource.href) + source.slice(resource.end);
+        }
+      }
       let prelude: CssNode;
       try {
         prelude = parse(source, { context: "atrulePrelude", atrule: "import", positions: true });
@@ -4911,6 +4928,7 @@ function parseSheet(
       const resource = prelude.children.first;
       if (resource?.type !== "String" && resource?.type !== "Url") return;
       const condition: ImportCondition = { layerName: null, supportsText: null, media: "" };
+      if (resourceText) condition.resourceText = resourceText;
       // Native parsing owns modifier position and recovery. Invalid layer() remains
       // the beginning of the media tail; later functions cannot become modifiers.
       for (const item of prelude.children) {
@@ -5204,22 +5222,24 @@ function userAgentStyle(element: Raw.Element) {
 }
 
 function resolveCSSURLs(value: string, base: string): string {
-  const { parse, walk, generate }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+  const { parse, walk, string }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
   try {
-    const ast = parse(value, { context: "value" });
-    let changed = false;
+    const ast = parse(value, { context: "value", positions: true });
+    let result = "";
+    let offset = 0;
     walk(ast, {
       visit: "Url",
       enter(node) {
-        if (node.value.startsWith("#")) return;
-        const resolved = URL.parse(node.value, base);
-        if (resolved && resolved.href !== node.value) {
-          node.value = resolved.href;
-          changed = true;
-        }
+        if (!node.loc) return;
+        const href =
+          node.value && !node.value.startsWith("#")
+            ? (URL.parse(node.value, base)?.href ?? node.value)
+            : node.value;
+        result += value.slice(offset, node.loc.start.offset) + "url(" + string.encode(href) + ")";
+        offset = node.loc.end.offset;
       },
     });
-    return changed ? generate(ast) : value;
+    return result + value.slice(offset);
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
     return value;
@@ -5249,6 +5269,12 @@ function simplifyCSSCalculation(value: string): string {
 // These longhands normalize lists, coordinates or ratios using the element's style context.
 const contextualLonghand =
   /^(?:(?:column|row)-rule-(?:style|color|width)|aspect-ratio|translate|transition-timing-function|counter-reset|counter-increment|counter-set|border-spacing|grid-auto-flow|font-style|rotate|background-size|grid-auto-rows|grid-auto-columns|zoom|scale|shape-outside|object-position|perspective-origin|transform-origin|offset-(?:anchor|path|position|rotate)|list-style-image|overflow-clip-margin(?:-|$)|text-box-edge|background-position-[xy])$/;
+// The pinned evaluator has a fixed viewport. RunDOM resolves physical viewport
+// math against the dimensions captured for the declaration, including var() input.
+function usesDynamicViewportMath(value: string): boolean {
+  return /calc\(/i.test(value) && /[0-9](?:[sld])?v(?:w|h|min|max)\b/i.test(value);
+}
+
 function usesTypedValueGrammar(name: string, text: string): boolean {
   return (
     !name.startsWith("--") &&
@@ -5257,12 +5283,12 @@ function usesTypedValueGrammar(name: string, text: string): boolean {
       /(?:linear|radial|conic)-gradient\(/i.test(text) ||
       name === "clip-path" ||
       name === "opacity" ||
-      (name === "color" && /\bcalc\(/i.test(text)) ||
+      /\bcalc\(/i.test(text) ||
       name === "mask-image" ||
       name === "filter" ||
       name === "backdrop-filter" ||
       (name === "transform" && /[0-9](?:grad|rad|turn)\b/i.test(text)) ||
-      /(?:^|[^\w-])(?:alpha|palette-mix|light-dark|calc-size|sibling-count|sibling-index|image|image-set|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
+      /(?:^|[^\w-])(?:alpha|palette-mix|light-dark|random-item|calc-size|sibling-count|sibling-index|image|image-set|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
         text,
       ) ||
       ((name === "transform" || /[/*]|\b(?:nan|infinity)\b/i.test(text)) && /calc\(/i.test(text)))
@@ -7326,7 +7352,11 @@ export function createStyles(input: {
       return typeof entry === "string" ? entry : (entry?.value ?? custom?.values.get(name));
     }
     function resolveValue(name: string, value: string): string | undefined {
-      if (substitution && (substitutionFunction.test(value) || variableSyntax.test(value)))
+      if (
+        substitution &&
+        !usesDynamicViewportMath(value) &&
+        (substitutionFunction.test(value) || variableSyntax.test(value))
+      )
         return substitution.read(name) || undefined;
       if (!variableSyntax.test(value)) return value;
       const variable = !name.startsWith("--") && directVariable.exec(value)?.[1];
@@ -7467,6 +7497,7 @@ export function createStyles(input: {
       if (
         resolver.substitution &&
         (!shorthand || variableSyntax.test(specified)) &&
+        !usesDynamicViewportMath(specified) &&
         (substitutionFunction.test(specified) ||
           contextualLonghand.test(name) ||
           usesTypedValueGrammar(name, specified) ||

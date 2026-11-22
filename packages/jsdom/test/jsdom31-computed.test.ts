@@ -324,3 +324,26 @@ it("serializes border radius after an unrelated inline style change", () => {
     window.close();
   }
 });
+
+it("uses matching declaration grammars for CSS math and URL request modifiers", () => {
+  const { window } = new JSDOM(
+    '<style>@import url("theme.css" cross-origin(anonymous));</style><p></p>',
+    {
+      url: "https://example.test/",
+    },
+  );
+  try {
+    const target = window.document.querySelector("p")!;
+    const image = 'url("https://example.test/a.png" cross-origin(anonymous))';
+    expect(window.CSS.supports("background-image", image)).toBe(true);
+    target.style.setProperty("background-image", image);
+    expect(window.getComputedStyle(target).getPropertyValue("background-image")).toBe(image);
+    expect(window.document.styleSheets[0]?.cssRules[0]?.cssText).toBe(
+      '@import url("theme.css" cross-origin(anonymous));',
+    );
+    target.style.setProperty("width", "calc(15vw + 16vmin - 17vh)");
+    expect(target.style.getPropertyValue("width")).toBe("calc(-17vh + 16vmin + 15vw)");
+  } finally {
+    window.close();
+  }
+});

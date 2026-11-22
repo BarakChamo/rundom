@@ -25,7 +25,7 @@ function supportedDeclaration(property: string, value: CssNode | string): boolea
     parsed = typeof value === "string" ? parse(value, { context: "value" }) : value;
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
-    return false;
+    return typeof value === "string" && specifiedDeclaration(property, value) !== undefined;
   }
   if (property.startsWith("--")) return true;
   const propertyName = property.toLowerCase();
@@ -35,7 +35,7 @@ function supportedDeclaration(property: string, value: CssNode | string): boolea
     cssPropertyDefinitions: ReadonlyMap<string, { legacyAliasOf?: string }>;
   } = require("./css-runtime.cjs");
   const name = cssPropertyDefinitions.get(propertyName)?.legacyAliasOf ?? propertyName;
-  const text = generate(parsed);
+  const text = typeof value === "string" ? value : generate(parsed);
   if (acceptsAnchors(name) && /\banchor(?:-size)?\(/i.test(text) && !/var\(/i.test(text))
     return anchorComponents(name, text) !== undefined;
   if (name === "size") return parseSizeDeclaration(text) !== undefined;
