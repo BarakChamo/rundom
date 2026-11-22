@@ -10,7 +10,9 @@ for project in [os.environ['PROJECT']]:
    for i in range(n):
     f=d/f'con3-{tag}-{i}.json'; files.append(f);logs.append((d/f'con3-{tag}-{i}.log').open('w'))
     env={**os.environ,'CI':'1','TZ':'UTC','TEST_SCOPE':'node'}
-    if provider=='jsdom':
+    if provider in ('happy','turbo'):
+     env.update(NODE_OPTIONS='--import='+str(root/'qualification/provider.mjs'),QUAL_ENV=('happy-dom' if provider=='happy' else str((root/'packages/jsdom/node_modules/@miaskiewicz/turbo-dom/src/environment/vitest.mjs').resolve())))
+    elif provider=='jsdom':
      env.update(NODE_OPTIONS='--import='+str(root/'qualification/provider.mjs'),JSDOM_ENTRY=str((root/'packages/jsdom/node_modules/jsdom/lib/api.js').resolve()))
     else:
      env.update(NODE_OPTIONS='--import='+str(root/'qualification/provider.mjs'),JSDOM_ENTRY=str(root/'packages/jsdom/dist/jsdom.cjs'))

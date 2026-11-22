@@ -2,7 +2,7 @@
 
 RunDOM implements the jsdom API for Node.js test suites. It aims to shorten the edit-and-test loop for coding agents and reduce the memory each worker holds when several agents run checks in parallel.
 
-Use the **[jsdom documentation](https://github.com/jsdom/jsdom#readme)** for setup options, API usage and examples. With this package installed under the name `jsdom`, existing imports can use that name. Identical behavior is the compatibility target. Both parser modes passed all 634 pinned upstream API tests. The broader Svelte runtime and hydration selection still has 90 cases that pass with jsdom and fail with RunDOM.
+Use the **[jsdom documentation](https://github.com/jsdom/jsdom#readme)** for setup options, API usage and examples. With this package installed under the name `jsdom`, existing imports can use that name. Identical behavior is the compatibility target. The development build passed the same 672 API tests as jsdom 31.0.1. Differences remain in Svelte and the Web Platform Tests. [Version-specific compatibility and benchmark results](https://github.com/BarakChamo/rundom/blob/qualification/jsdom-31-0-1/docs/jsdom-31-qualification.md)
 
 ## Node API
 

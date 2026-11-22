@@ -132,6 +132,7 @@ export class JSDOM {
     const transport = typeof resources === "object" ? resources : undefined;
     this.#realm = createWindow({
       ...markup,
+      jsdomCompatibility: true,
       lastModifiedMs: options[sourceLastModified],
       createWebSocket: (context) =>
         createWebSocketClass({

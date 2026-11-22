@@ -8154,6 +8154,17 @@ export function createStyles(input: {
     exposeSheet,
     inlineStyle: publicInlineStyle,
     computedStyle,
+    liveView(node: Raw.Element, read: () => PublicDeclaration | undefined) {
+      let frame: ComputedFrame | undefined;
+      let snapshot: PublicDeclaration | undefined;
+      return views().liveView(() => {
+        if (snapshot && completedFrame(frame, node, input.styleRevision(input.document)))
+          return snapshot;
+        snapshot = read();
+        frame = snapshot ? computedFrames.get(node)?.target : undefined;
+        return snapshot;
+      });
+    },
     focusDisplayCheck,
     removeLinkedSheet(node: Raw.Element): void {
       if (sheets.delete(node)) linkedSheetChanged();

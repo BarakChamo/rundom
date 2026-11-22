@@ -377,10 +377,14 @@ export function createDeclarationViews(input: {
     (target) => inlineTarget(target)._length,
     (target, index) => inlineTarget(target).item(index),
   );
-  let computedValues: WeakMap<object, DeclarationImplementation> | undefined = new WeakMap();
+  type ComputedSource = DeclarationImplementation | (() => CSSStyleProperties | undefined);
+  let computedValues: WeakMap<object, ComputedSource> | undefined = new WeakMap();
   let empty: DeclarationImplementation | undefined;
   function computedValue(view: object): DeclarationImplementation {
-    return computedValues?.get(view) ?? (empty ??= input.emptyComputed());
+    const source = computedValues?.get(view);
+    if (typeof source !== "function") return source ?? (empty ??= input.emptyComputed());
+    const current = source();
+    return current ? declarationImplementation(current) : (empty ??= input.emptyComputed());
   }
   const computedHandler = indexedHandler(
     privateLookup,
@@ -395,7 +399,7 @@ export function createDeclarationViews(input: {
   );
   function publishComputed(
     prototype: object,
-    value: DeclarationImplementation,
+    value: ComputedSource,
   ): CSSStyleProperties {
     const target = Object.create(prototype) as CSSStyleProperties;
     const view = new Proxy<CSSStyleProperties>(target, computedHandler);
@@ -495,6 +499,9 @@ export function createDeclarationViews(input: {
       });
       deferredDeclarations.set(implementation, { read: readPending, materialize });
       return () => publishComputed(CSSStyleProperties.prototype, implementation);
+    },
+    liveView(read: () => CSSStyleProperties | undefined): CSSStyleProperties {
+      return publishComputed(propertyPrototype, read);
     },
     closeComputed(): void {
       computedValues = undefined;

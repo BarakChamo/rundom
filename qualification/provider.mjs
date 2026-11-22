@@ -1,6 +1,7 @@
 import { registerHooks } from 'node:module';
 import { pathToFileURL } from 'node:url';
 registerHooks({resolve(specifier,context,next) {
+  if (specifier==='happy-dom' && process.env.QUAL_ENV==='happy-dom') return next(new URL('../packages/jsdom/node_modules/happy-dom/lib/index.js',import.meta.url).href,context);
   if (specifier==='jsdom' && process.env.JSDOM_ENTRY) return next(context.conditions.includes('require')? process.env.JSDOM_ENTRY:pathToFileURL(process.env.JSDOM_ENTRY.replace(/jsdom\.cjs$/, 'jsdom.js')).href,context);
   if (specifier==='@run-dom/dom' && process.env.DOM_VARIANT) return next(process.env.DOM_VARIANT+'/window.cjs',context);
   return next(specifier,context);

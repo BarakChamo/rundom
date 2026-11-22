@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { JSDOM } from "@run-dom/jsdom";
 
 describe("Computed style state", () => {
-  it("retains independent snapshots while new reads see changed inline and sheet declarations", () => {
+  it("updates retained declarations after inline and stylesheet edits", () => {
     // Given: an inherited stylesheet color and an independently retained computed object.
     const { window } = new JSDOM(
       "<style>main {color:red} p {visibility:hidden}</style><main><p>Text</p></main>",
@@ -13,16 +13,18 @@ describe("Computed style state", () => {
         sheet = window.document.styleSheets[0];
       if (!p || !sheet) throw new Error("Expected styled paragraph");
       const before = window.getComputedStyle(p);
+      expect(before.color).toBe("rgb(255, 0, 0)");
+      expect(before.getPropertyValue("visibility")).toBe("hidden");
       // When: edits change CSSOM declarations and inline inheritance.
       const rule = sheet.cssRules[0];
       if (!(rule instanceof window.CSSStyleRule)) throw new Error("Expected style rule");
       rule.style.color = "blue";
       p.setAttribute("style", "visibility:visible");
       const after = window.getComputedStyle(p);
-      // Then: fresh reads see edits, without mutating earlier returned objects.
+      // Both independently returned declarations expose the new resolved values.
       expect(before).not.toBe(after);
-      expect(before.color).toBe("rgb(255, 0, 0)");
-      expect(before.getPropertyValue("visibility")).toBe("hidden");
+      expect(before.color).toBe("rgb(0, 0, 255)");
+      expect(before.getPropertyValue("visibility")).toBe("visible");
       expect(after.color).toBe("rgb(0, 0, 255)");
       expect(after.getPropertyValue("visibility")).toBe("visible");
     } finally {

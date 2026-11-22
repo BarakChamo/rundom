@@ -20,7 +20,7 @@ console.log(dom.window.document.querySelector("button").textContent); // Apply
 dom.window.close();
 ```
 
-Use the **[jsdom documentation](https://github.com/jsdom/jsdom#readme)** for the API, constructor options and examples. RunDOM aims to match jsdom’s observable behavior. Both parser modes passed all 634 pinned upstream API tests. Some differences remain in broader suites, including 90 cases that passed with jsdom in the Svelte runtime and hydration selection. [Compatibility results](docs/real-project-benchmarks-direct-css.md#compatibility)
+Use the **[jsdom documentation](https://github.com/jsdom/jsdom#readme)** for the API, constructor options and examples. RunDOM aims to match jsdom’s observable behavior. The development build passed the same 672 API tests as jsdom 31.0.1. Differences remain in Svelte and the Web Platform Tests. [Version-specific compatibility and benchmark results](docs/jsdom-31-qualification.md)
 
 ## Measured time and memory
 

@@ -42,19 +42,16 @@ jobs:
           fi
       - name: Preserve pre-fix build and rerun the same concurrency levels
         run: |
-          mkdir -p "$RUNNER_TEMP/starting"
-          git archive 351ce21 packages/dom/src | tar x -C "$RUNNER_TEMP/starting"
-          mv packages/dom/src "$RUNNER_TEMP/src-final"
-          mv "$RUNNER_TEMP/starting/packages/dom/src" packages/dom/src
-          (cd packages/dom && bun run build)
-          mkdir -p packages/dom/out/starting
-          cp packages/dom/dist/*.cjs packages/dom/dist/*.cache packages/dom/out/starting
-          mv packages/dom/src "$RUNNER_TEMP/src-before"
-          mv "$RUNNER_TEMP/src-final" packages/dom/src
-          (cd packages/dom && bun run build)
-          python3 qualification/parallel.py before final jsdom
-          ROUND=2 python3 qualification/parallel.py jsdom final before
-          TRACE_MEMORY=1 python3 qualification/parallel.py before final
+          python3 - <<'PYCONFIG'
+          import os, pathlib
+          project=os.environ['PROJECT']
+          path=pathlib.Path(os.environ['RUNNER_TEMP'])/project/('vitest.config.ts' if project=='antd' else 'vitest.shared.mts')
+          old="environment: 'jsdom'" if project=='antd' else "environment: jsdom ? 'jsdom' : 'node'"
+          new="environment: process.env.QUAL_ENV || 'jsdom'" if project=='antd' else "environment: jsdom ? (process.env.QUAL_ENV || 'jsdom') : 'node'"
+          text=path.read_text();assert text.count(old)==1;path.write_text(text.replace(old,new))
+          PYCONFIG
+          python3 qualification/parallel.py final jsdom happy turbo
+          ROUND=2 python3 qualification/parallel.py turbo happy jsdom final
       - uses: actions/upload-artifact@v4
         if: always()
         with:

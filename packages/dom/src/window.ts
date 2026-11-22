@@ -427,6 +427,7 @@ type SocketConstructor = {
 } & SocketStates;
 
 type WindowSettings = {
+  jsdomCompatibility?: boolean;
   lastModifiedMs?: number | undefined;
   url?: string;
   referrer?: string;
@@ -6760,7 +6761,7 @@ function buildWindow(
         (svg &&
           current.namespaceURI === html.NS.SVG &&
           nonRenderedSVGElements.has(current.tagName)) ||
-        attribute(current, "inert") !== null
+        (!options.jsdomCompatibility && attribute(current, "inert") !== null)
       )
         return false;
 
@@ -19465,11 +19466,15 @@ function buildWindow(
     getComputedStyle(node: Element) {
       const record = element(node);
       if (closed) styles().closeComputed();
-      const scope = styleScope(record);
-      const owner = scope && isDocumentRecord(scope) ? scope : actualOwnerRecord(record);
-      const realm = documentRealms.get(owner);
-      const foreign = realm && realm !== token && realmTreeOperations.get(realm)?.computedStyle;
-      return foreign ? foreign(record, scope) : styles().computedStyle(record, scope);
+      return styles().liveView(record, () => {
+        if (closed) return;
+        const scope = styleScope(record);
+        if (!scope || !isDocumentRecord(treeRoot(record, true))) return;
+        const owner = actualOwnerRecord(record);
+        const realm = documentRealms.get(owner);
+        const foreign = realm && realm !== token && realmTreeOperations.get(realm)?.computedStyle;
+        return foreign ? foreign(record, scope) : styles().computedStyle(record, scope);
+      });
     }
     readonly DocumentFragment = DocumentFragment;
     readonly ShadowRoot = ShadowRoot;
@@ -19623,6 +19628,7 @@ function buildWindow(
   Object.defineProperty(CharacterData.prototype, "previousElementSibling", { enumerable: true });
   Object.defineProperty(CharacterData.prototype, "nextElementSibling", { enumerable: true });
   Object.defineProperty(HTMLIFrameElement.prototype, "getSVGDocument", { enumerable: true });
+  if (options.jsdomCompatibility) Reflect.deleteProperty(HTMLElement.prototype, "inert");
   Object.defineProperty(HTMLElement.prototype, "nonce", { enumerable: true });
   Object.defineProperty(SVGElement.prototype, "nonce", { enumerable: true });
   // These prototypes receive the complete global event handler descriptor table.
