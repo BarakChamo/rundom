@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   repository-check:
-    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only')"
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +18,7 @@ jobs:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile && bun run check
   performance:
-    if: "!contains(github.event.head_commit.message, 'extended suites only')"
+    if: "!contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -86,7 +86,7 @@ jobs:
       fail-fast: false
       matrix:
         provider: [candidate]
-        shard: [0, 1, 2, 3]
+        shard: ${{ fromJSON(contains(github.event.head_commit.message, 'repeat WPT shard two') && '[2]' || '[0, 1, 2, 3]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -122,7 +122,7 @@ jobs:
             ${{ runner.temp }}/wpt.json
             ${{ runner.temp }}/subtests.jsonl
   local-wpt:
-    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only')"
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -161,7 +161,7 @@ jobs:
             ${{ runner.temp }}/local-subtests.jsonl
             ${{ runner.temp }}/local-wpt.json
   frameworks:
-    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only')"
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
