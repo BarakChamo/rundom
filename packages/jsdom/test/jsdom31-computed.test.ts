@@ -347,3 +347,22 @@ it("uses matching declaration grammars for CSS math and URL request modifiers", 
     window.close();
   }
 });
+
+it("keeps precision through computed math and matches slot rules at the assigning slot", () => {
+  const { window } = new JSDOM("<main><i></i><p></p></main>");
+  try {
+    const host = window.document.querySelector("main")!;
+    const target = window.document.querySelector("p")!;
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = "<style>slot::slotted(p) { z-index: sibling-index() }</style><slot></slot>";
+    target.style.setProperty("font-size", "20px");
+    target.style.setProperty("image-resolution", "calc(100dpi + 20dpi * sign(38px - 2em))");
+    const computed = window.getComputedStyle(target);
+    expect(computed.getPropertyValue("image-resolution")).toBe("0.833333dppx");
+    expect(computed.getPropertyValue("z-index")).toBe("2");
+    target.style.setProperty("image-resolution", "96dpi");
+    expect(computed.getPropertyValue("image-resolution")).toBe("1dppx");
+  } finally {
+    window.close();
+  }
+});

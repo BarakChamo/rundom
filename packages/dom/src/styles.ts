@@ -93,6 +93,7 @@ type DeclarationFields = {
 const stylesheetInstances = new WeakSet<object>();
 
 type SelectorEntry = {
+  slot?: (node: Raw.Element, root?: Raw.ParentNode) => boolean;
   pseudo?: { text: string; match: (node: Raw.Element, root?: Raw.ParentNode) => boolean };
   match: (node: Raw.Element, root?: Raw.ParentNode) => boolean;
   specificity: number;
@@ -241,6 +242,9 @@ type PropertyRule = {
   readonly cssText: string;
 };
 // Inheritance keeps unitless line heights as multipliers. Public snapshots expose their used length.
+// Public CSSOM rounds converted dimensions. Keep their original calculation for
+// the later computed-value stage so intermediate rounding cannot alter its result.
+let calculationSources: WeakMap<object, Map<string, string>> | undefined;
 let shorthandSources: WeakMap<object, Map<string, ShorthandSource>> | undefined;
 function setShorthandSource(owner: object, child: string, value: ShorthandSource): void {
   shorthandSources ??= new WeakMap();
@@ -1295,8 +1299,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       styleMutationOwners.set(this, mutationOperations);
     }
     #writeRevision = 0;
+    #precisionRevision = 0;
 
     override _setProperty(property: string, value: string, priority?: string): void {
+      if (calculationSources?.get(this)?.delete(property)) this.#precisionRevision++;
       shorthandSources?.get(this)?.delete(property);
       const requested = requestedStyleWrites.get(this);
       if (requested?.property === property) priority = requested.priority;
@@ -1368,7 +1374,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     #borderColorOrder = 0;
     snapshotBlock(limit = 96, characterLimit = 8192): DeclarationBlock | undefined {
-      if (shorthandSources?.get(this)?.size) return;
+      if (shorthandSources?.get(this)?.size || calculationSources?.get(this)?.size) return;
       if (this._values.size > limit || this._length > limit || this._priorities.size > limit)
         return;
       let characters = 0;
@@ -1483,6 +1489,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const changed = this._onChange;
       if (!changed || this._updating) return write();
       const before = this.cssText;
+      const precisionRevision = this.#precisionRevision;
       this._onChange = undefined;
       let result: T;
       try {
@@ -1491,7 +1498,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         this._onChange = changed;
       }
       const after = this.cssText;
-      if (publish === "always" || after !== before) changed(after);
+      if (publish === "always" || after !== before || precisionRevision !== this.#precisionRevision)
+        changed(after);
       return result;
     }
     override removeProperty(property: string): string {
@@ -1526,6 +1534,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         );
       }
       this.#updateStyle(() => {
+        calculationSources?.delete(this);
         this.#setCSSText(value);
         // Priorities must refer to entries in the finite parsed declaration block.
         for (const name of this._priorities.keys())
@@ -1614,6 +1623,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     #removeProperty(property: string): string {
       const name = property.toLowerCase();
+      if (calculationSources?.get(this)?.delete(name)) this.#precisionRevision++;
       const longhands =
         name === "outline"
           ? outlineLonghands
@@ -1632,6 +1642,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       try {
         super.removeProperty(name);
         for (const child of longhands) {
+          calculationSources?.get(this)?.delete(child);
           shorthandSources?.get(this)?.delete(child);
           super.removeProperty(child);
         }
@@ -1853,7 +1864,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         property === "background-position" &&
         value
       )
-        return canonicalBackgroundPosition(value);
+        return usesTypedValueGrammar(property, value) ? value : canonicalBackgroundPosition(value);
       if (
         this._computed &&
         (property === "background-position" ||
@@ -2083,7 +2094,32 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         !propertyDefinitions.get(name)?.longhands
       ) {
         const serialized = specifiedDeclaration(property.startsWith("--") ? property : name, value);
-        if (serialized !== undefined) this._setProperty(property, serialized, priority);
+        if (serialized !== undefined) {
+          this._setProperty(property, serialized, priority);
+          if (
+            value !== serialized &&
+            /[0-9](?:dpi|dpcm|rad|cm|mm|q|pt)\b/i.test(value) &&
+            /\d\.\d+/.test(serialized)
+          ) {
+            calculationSources ??= new WeakMap();
+            let source = calculationSources.get(this);
+            if (!source) calculationSources.set(this, (source = new Map()));
+            source.set(name, value);
+            this.#precisionRevision++;
+          }
+        }
+        return;
+      }
+      if (
+        usesTypedValueGrammar(name, value) &&
+        (name === "background" || name === "background-position" || name === "border")
+      ) {
+        const parsed = expandedDeclaration(name, value, priority === "important");
+        if (!parsed) return;
+        for (const [child, component] of parsed.entries) {
+          this._setProperty(child, component, priority);
+        }
+        this._setProperty(name, parsed.text, priority);
         return;
       }
       value = normalizePropertyInput(name, value);
@@ -4281,6 +4317,37 @@ function parseRuleSelection({
   prelude.children.forEach((selector) => {
     if (selector.type !== "Selector") return;
     const parts = selector.children.toArray();
+    const last = parts.at(-1);
+    if (last?.type === "PseudoElementSelector" && last.name.toLowerCase() === "slotted") {
+      const argument = last.children?.first;
+      if (
+        argument?.type !== "Selector" ||
+        last.children?.size !== 1 ||
+        argument.children.some(
+          (part) => part.type === "Combinator" || part.type === "PseudoElementSelector",
+        )
+      )
+        return;
+      try {
+        const origin = parts
+          .slice(0, -1)
+          .map((part) => generate(part))
+          .join("");
+        const match = compileSelector({ selector: generate(argument), ...compileOptions });
+        const slot = compileSelector({ selector: origin || "*", ...compileOptions });
+        selectors.push({
+          match,
+          slot,
+          hostOnly: true,
+          specificity: specificity(selector, nestingSpecificity),
+        });
+        serializedSelectors.push(serializeSelectorPart(selector));
+        treeOnly = false;
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+      }
+      return;
+    }
     const detailsIndex = detailsContentIndex(parts);
     const trailingPseudo = pseudoElementName(parts.at(-1));
     let pseudoText = "";
@@ -4308,6 +4375,13 @@ function parseRuleSelection({
     } else if (trailingPseudo) {
       parts.pop();
       pseudoText = `::${trailingPseudo}`;
+      if (trailingPseudo === "marker") {
+        const parent = pseudoElementName(parts.at(-1));
+        if (parent === "before" || parent === "after") {
+          parts.pop();
+          pseudoText = `::${parent}::marker`;
+        }
+      }
     }
     let serialized = parts
       .map((part, index) => {
@@ -5771,6 +5845,7 @@ export function createStyles(input: {
   document: Raw.Document;
   ownerDocument: (root: Raw.ParentNode) => Raw.Document;
   wrapOwner: (node: Raw.Element) => object;
+  assignedSlot: (node: Raw.Element) => Raw.Element | undefined;
   shadowRoot: (node: Raw.Element) => Raw.DocumentFragment | undefined;
   shadowHost: (root: Raw.ParentNode) => Raw.Element | undefined;
   isConnected: (node: Raw.Element) => boolean;
@@ -6893,7 +6968,7 @@ export function createStyles(input: {
       const name = style[index] ?? "";
       entries.push({
         name,
-        value: style.getPropertyValue(name),
+        value: calculationSources?.get(style)?.get(name) ?? style.getPropertyValue(name),
         important: style.getPropertyPriority(name) === "important",
         order: order?.get(name),
       });
@@ -8241,7 +8316,7 @@ export function createStyles(input: {
         for (; index < style._length; index++) {
           const name = style[index] ?? "";
           const important = style.getPropertyPriority(name) === "important";
-          const value = style.getPropertyValue(name);
+          const value = calculationSources?.get(style)?.get(name) ?? style.getPropertyValue(name);
           const order = declarationOrder?.get(name);
           const priorEntry = old?.entries[index];
           const equal =
@@ -8276,6 +8351,7 @@ export function createStyles(input: {
         }
       }
       let sheetRegistrations: Map<string, RegisteredProperty> | undefined;
+      let activeSlot: Raw.Element | undefined;
       function apply(
         sheet: Sheet,
         rules: Rule[],
@@ -8443,6 +8519,7 @@ export function createStyles(input: {
             if (
               match === neverMatchesElement ||
               hostOnly !== hostContext ||
+              (entry.slot ? !activeSlot || !entry.slot(activeSlot, scoped?.root) : !!activeSlot) ||
               (subjectType !== undefined &&
                 subjectType !== (subjectTypeName ??= elementLocalName(element).toLowerCase())) ||
               (subjectKey !== undefined && !elementSubjectKeys().has(subjectKey))
@@ -8507,6 +8584,13 @@ export function createStyles(input: {
       applyScope(scope, false);
       const shadow = input.shadowRoot(element);
       if (shadow) applyScope(shadow, true);
+      const parent = element.parentNode;
+      const slotRoot = parent && tree.isElementNode(parent) && input.shadowRoot(parent);
+      if (slotRoot && (activeSlot = input.assignedSlot(element))) {
+        reusableEligible = false;
+        applyScope(slotRoot, true);
+        activeSlot = undefined;
+      }
       if (!activePseudo) {
         const inline = inlineStyles?.get(element)?.style;
         if (inline) take(inline, 2 ** 52);

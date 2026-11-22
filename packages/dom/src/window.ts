@@ -2556,6 +2556,7 @@ function buildWindow(
       document: source,
       ownerDocument: actualOwnerRecord,
       wrapOwner: wrapElement,
+      assignedSlot,
       shadowRoot: (node) => shadowRoots.get(node),
       shadowHost: (root) => shadowHosts.get(root),
       isConnected: (node) => isDocumentRecord(treeRoot(node, true)),
