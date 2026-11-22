@@ -4,6 +4,7 @@ import {
   fontFeatureValues,
   createDescriptorRuleParser,
   type PositionTry,
+  bindCSSWrapper,
   canonicalSelectorList,
   selectorFeatureSupported,
   grammarLonghands,
@@ -144,6 +145,20 @@ type ConditionRuleView = GroupingRuleView & {
   readonly conditionText: string;
   readonly matches: boolean;
 };
+type MarginData = {
+  readonly type: 9;
+  readonly name: string;
+  readonly cssText: string;
+  readonly style: PublicDeclaration;
+};
+type PageData = {
+  selectorText: string;
+  readonly cssText: string;
+  readonly style: PublicDeclaration;
+  readonly cssRules: ArrayLike<MarginData>;
+  insertRule(text: string, index?: number): number;
+  deleteRule(index: number): void;
+};
 type PageRule = GroupingRuleView & {
   readonly type: 6;
   selectorText: string;
@@ -260,6 +275,7 @@ type QualifiedRule = DeclarationRule &
   GroupingRuleView & { readonly type: 1; selectorText: string };
 type NestingMode = "style" | "scope";
 type StyleRule = (
+  | MarginData
   | StartingStyleRule
   | DeclarationRule
   | NestedDeclarationsRule
@@ -305,6 +321,7 @@ type Rule =
   | { kind: "namespace"; view: NamespaceRule & RuleParents }
   | { kind: "keyframe"; view: KeyframeRule & RuleParents }
   | { kind: "keyframes"; view: KeyframesRule & RuleParents; rules: KeyframeEntry[] }
+  | { kind: "margin"; view: MarginData & RuleParents }
   | { kind: "page"; view: PageRule & RuleParents; rules: Rule[] }
   | { kind: "property"; view: PropertyRule & RuleParents }
   | { kind: "function"; view: FunctionRuleData<RuleList> & { readonly type: 0 } & RuleParents }
@@ -2089,6 +2106,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return;
       }
       if (!property.startsWith("--")) value = canonicalWideKeyword(value);
+      if (property.toLowerCase() === "page" && value.toLowerCase() === "auto") value = "auto";
       const name = property.toLowerCase();
       if (
         value.includes("(") &&
@@ -3201,36 +3219,74 @@ function createRuleInterfaces(
     abstract readonly matches: boolean;
   }
 
-  class CSSPageRule extends CSSGroupingRule<6> implements PageRule {
-    #selectorText: string;
-    constructor(token: symbol, selector: string, style: Declaration, rules: Rule[]) {
-      super(token, 6, rules);
-      this.#selectorText = selector;
-      ruleRecord(this).declaration = style;
+  class CSSMarginRule extends CSSRule<9> {
+    readonly #data: MarginData;
+    constructor(token: symbol, data: MarginData) {
+      super(token, 9);
+      this.#data = data;
+      bindCSSWrapper(data, this);
+    }
+    get name() {
+      return this.#data.name;
+    }
+    get cssText() {
+      return this.#data.cssText;
     }
     get style(): PublicDeclaration {
-      return exposeDeclaration(ruleDeclaration(this));
+      return this.#data.style;
     }
     set style(value: string) {
-      ruleDeclaration(this).cssText = `${value}`;
+      this.#data.style.cssText = value;
     }
-    get selectorText(): string {
-      return this.#selectorText;
+    get [Symbol.toStringTag]() {
+      return "CSSMarginRule";
+    }
+  }
+
+  class CSSPageRule extends CSSGroupingRule<6> implements PageRule {
+    readonly #data: PageData;
+    readonly #rules: Rule[];
+    constructor(token: symbol, parsed: BoundRule<PageData>, rules: Rule[]) {
+      super(token, 6, rules);
+      this.#rules = rules;
+      this.#data = parsed.data;
+      parsed.bind(this);
+      for (const child of Array.from(this.#data.cssRules)) {
+        rules.push({ kind: "margin", view: new CSSMarginRule(key, child) });
+      }
+    }
+    get style(): PublicDeclaration {
+      return this.#data.style;
+    }
+    set style(value: string) {
+      this.#data.style.cssText = value;
+    }
+    get selectorText() {
+      return this.#data.selectorText;
     }
     set selectorText(value: string) {
-      const text = `${value}`.trim();
-      const parsed = /^([a-zA-Z_\-\\][a-zA-Z0-9_\-\\]*)?((?::[a-zA-Z]+)*)$/.exec(text);
-      if (!parsed) return;
-      const pseudos = (parsed[2] ?? "").toLowerCase();
-      if (/^(?::(?:first|left|right|blank))*$/.test(pseudos))
-        this.#selectorText = (parsed[1] ?? "") + pseudos;
+      this.#data.selectorText = value;
     }
-    get cssText(): string {
-      const selector = this.#selectorText ? ` ${this.#selectorText}` : "";
-      const declarations = ruleDeclaration(this).cssText;
-      return `@page${selector} { ${declarations ? declarations + " " : ""}}`;
+    get cssText() {
+      return this.#data.cssText;
     }
-    get [Symbol.toStringTag](): string {
+    override insertRule(text: string, index = 0) {
+      const position = this.#data.insertRule(text, index);
+      const entry: Rule = {
+        kind: "margin",
+        view: new CSSMarginRule(key, this.#data.cssRules[position]!),
+      };
+      this.#rules.splice(position, 0, entry);
+      attach(entry, ruleRecord(this).parentStyleSheet ?? null, this);
+      return position;
+    }
+    override deleteRule(index: number) {
+      const position = +index >>> 0;
+      this.#data.deleteRule(position);
+      const [removed] = this.#rules.splice(position, 1);
+      if (removed) detach(removed);
+    }
+    get [Symbol.toStringTag]() {
       return "CSSPageRule";
     }
   }
@@ -3518,6 +3574,7 @@ function createRuleInterfaces(
     CSSCounterStyleRule,
     CSSKeyframesRule,
     CSSKeyframeRule,
+    CSSMarginRule,
     CSSPageRule,
     CSSLayerStatementRule,
     CSSStartingStyleRule,
@@ -4660,7 +4717,6 @@ function parseSheet(
   statePseudos: Parameters<typeof compileSelector>[0]["statePseudos"],
   interfaces: ReturnType<typeof createRuleInterfaces>,
   declaration: () => StylesheetDeclaration,
-  pageDeclaration: () => Declaration,
   supports: (condition: string) => ReturnType<typeof readSupportsCondition>,
   flatPlans: WeakMap<CssNode, readonly FlatStyleRule[] | null>,
   recentSyntax: Map<string, WeakRef<CssNode>>,
@@ -4848,22 +4904,15 @@ function parseSheet(
       return;
     }
     if (node.type === "Atrule" && node.name === "page" && node.block) {
-      const style = pageDeclaration();
-      for (const child of node.block.children) {
-        if (child.type === "Declaration")
-          style.setProperty(
-            child.property,
-            generate(child.value),
-            child.important ? "important" : "",
-          );
+      const page = interfaces.descriptor<PageData>("CSSPageRule", generate(node));
+      if (page) {
+        const nested: Rule[] = [];
+        target.push({
+          kind: "page",
+          rules: nested,
+          view: new interfaces.CSSPageRule(interfaces.key, page, nested),
+        });
       }
-      const selector = node.prelude ? generate(node.prelude).trim() : "";
-      const nested: Rule[] = [];
-      target.push({
-        kind: "page",
-        rules: nested,
-        view: new interfaces.CSSPageRule(interfaces.key, selector, style, nested),
-      });
       return;
     }
     if (node.type === "Atrule" && node.name === "counter-style" && node.block) {
@@ -5912,7 +5961,11 @@ export function createStyles(input: {
 
   let descriptorParser: ReturnType<typeof createDescriptorRuleParser> | undefined;
   function descriptorRules() {
-    return (descriptorParser ??= createDescriptorRuleParser(input.baseURL, linkedSheetChanged));
+    return (descriptorParser ??= createDescriptorRuleParser(
+      input.baseURL,
+      linkedSheetChanged,
+      () => views().CSSStyleDeclaration.prototype,
+    ));
   }
   const ruleInterfaces = createRuleInterfaces(
     parseRules,
@@ -5976,7 +6029,6 @@ export function createStyles(input: {
       input.statePseudos,
       ruleInterfaces,
       declaration,
-      () => new (declarationInterface().CSSStyleDeclaration)(declarationKey),
       (condition) => readSupportsCondition(condition, supportsSelector),
       flatPlans,
       recentSyntax,
@@ -8503,6 +8555,7 @@ export function createStyles(input: {
             rule.kind === "function" ||
             rule.kind === "font-feature-values" ||
             rule.kind === "position-try" ||
+            rule.kind === "margin" ||
             rule.kind === "page" ||
             rule.kind === "keyframe" ||
             rule.kind === "keyframes" ||
@@ -9281,6 +9334,13 @@ export function createStyles(input: {
     CSSCounterStyleRule: ruleInterfaces.CSSCounterStyleRule,
     CSSKeyframesRule: ruleInterfaces.CSSKeyframesRule,
     CSSKeyframeRule: ruleInterfaces.CSSKeyframeRule,
+    get CSSMarginDescriptors() {
+      return descriptorRules().pageInterfaces().CSSMarginDescriptors;
+    },
+    get CSSPageDescriptors() {
+      return descriptorRules().pageInterfaces().CSSPageDescriptors;
+    },
+    CSSMarginRule: ruleInterfaces.CSSMarginRule,
     CSSPageRule: ruleInterfaces.CSSPageRule,
     CSSLayerStatementRule: ruleInterfaces.CSSLayerStatementRule,
     CSSStartingStyleRule: ruleInterfaces.CSSStartingStyleRule,

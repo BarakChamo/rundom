@@ -382,3 +382,27 @@ it("agrees on selector parsing, serialization and forgiving feature queries", ()
     }
   }
 });
+
+it("updates page margin descriptors through live rule lists", () => {
+  const { window } = new JSDOM('<style>@page { @top-left { content: "first" } }</style>');
+  try {
+    const sheet = window.document.styleSheets[0]!;
+    const page = sheet.cssRules[0];
+    if (!(page instanceof window.CSSPageRule)) throw new Error("Expected a page rule");
+    const rules = page.cssRules;
+    const first = rules[0];
+    if (!(first instanceof window.CSSMarginRule)) throw new Error("Expected a margin rule");
+    expect(first.parentRule).toBe(page);
+    expect(first.parentStyleSheet).toBe(sheet);
+    expect(first.style).toBeInstanceOf(window.CSSStyleDeclaration);
+    expect(page.style).toBeInstanceOf(window.CSSPageDescriptors);
+    page.insertRule('@top-right { content: "next" }', 1);
+    expect(rules.length).toBe(2);
+    page.deleteRule(0);
+    expect(rules.length).toBe(1);
+    expect(first.parentRule).toBe(null);
+    expect(page.cssText).toContain('@top-right { content: "next"; }');
+  } finally {
+    window.close();
+  }
+});

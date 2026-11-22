@@ -19153,6 +19153,15 @@ function buildWindow(
     get CSSKeyframeRule() {
       return styles().CSSKeyframeRule;
     }
+    get CSSMarginDescriptors() {
+      return styles().CSSMarginDescriptors;
+    }
+    get CSSPageDescriptors() {
+      return styles().CSSPageDescriptors;
+    }
+    get CSSMarginRule() {
+      return styles().CSSMarginRule;
+    }
     get CSSPageRule() {
       return styles().CSSPageRule;
     }

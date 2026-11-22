@@ -483,6 +483,15 @@ function bindRule<T>(impl: object): BoundRule<T> {
   };
 }
 
+/** Redirects generated CSSOM parent references to their public RunDOM wrapper. */
+export function bindCSSWrapper(wrapper: object, owner: object): void {
+  const utils: {
+    implForWrapper(wrapper: object): object;
+    wrapperSymbol: symbol;
+  } = require("rundom-css-reference/lib/generated/idl/utils.js");
+  Reflect.set(utils.implForWrapper(wrapper), utils.wrapperSymbol, owner);
+}
+
 export type FunctionRuleData<List> = {
   readonly name: string;
   readonly cssText: string;
@@ -494,7 +503,11 @@ export type FunctionRuleData<List> = {
 };
 
 /** Binds the descriptor grammar to the owning stylesheet's URL and invalidation callbacks. */
-export function createDescriptorRuleParser(baseURL: () => string, changed: () => void) {
+export function createDescriptorRuleParser(
+  baseURL: () => string,
+  changed: () => void,
+  declarationPrototype: () => object,
+) {
   const {
     parseRule,
   }: {
@@ -525,11 +538,38 @@ export function createDescriptorRuleParser(baseURL: () => string, changed: () =>
     );
     idl.install(globals, ["Window"]);
   }
+  function pageInterfaces() {
+    if (!Object.hasOwn(globals, "CSSPageDescriptors")) {
+      for (const name of [
+        "CSSGroupingRule",
+        "CSSRuleList",
+        "CSSMarginRule",
+        "CSSMarginDescriptors",
+        "CSSPageDescriptors",
+      ]) {
+        if (Object.hasOwn(globals, name)) continue;
+        const idl: { install(global: object, names: string[]): void } = require(
+          "rundom-css-reference/lib/generated/idl/" + name + ".js",
+        );
+        idl.install(globals, ["Window"]);
+      }
+      Object.setPrototypeOf(
+        Reflect.get(globals, "CSSStyleDeclaration").prototype,
+        declarationPrototype(),
+      );
+    }
+    return {
+      CSSPageDescriptors: Reflect.get(globals, "CSSPageDescriptors"),
+      CSSMarginDescriptors: Reflect.get(globals, "CSSMarginDescriptors"),
+    };
+  }
   return {
+    pageInterfaces,
     descriptor<T extends object>(
-      binding: "CSSCounterStyleRule" | "CSSViewTransitionRule",
+      binding: "CSSCounterStyleRule" | "CSSViewTransitionRule" | "CSSPageRule",
       text: string,
     ): BoundRule<T> | undefined {
+      if (binding === "CSSPageRule") pageInterfaces();
       if (!Object.hasOwn(globals, binding)) {
         const idl: { install(global: object, names: string[]): void } = require(
           "rundom-css-reference/lib/generated/idl/" + binding + ".js",
