@@ -472,7 +472,7 @@ describe.each([
       const style = window.getComputedStyle(child);
       expect(style.getPropertyValue("opacity")).toBe("1");
       expect(style.getPropertyValue("background-image")).toBe("none");
-      expect(style.getPropertyValue("box-shadow")).toBe("none");
+      expect(style.getPropertyValue("box-shadow")).toBe("currentcolor none");
       expect(style.getPropertyValue("grid-row")).toBe("auto");
       expect(style.getPropertyValue("font-variant")).toBe("small-caps");
       expect(child.style.getPropertyValue("opacity")).toBe("");
@@ -657,7 +657,7 @@ describe.each([
     }
   });
 
-  it("inherits computed background position axes and repeats them across image layers", () => {
+  it("preserves the inherited background position list independently of image layers", () => {
     const { window } = new Constructor(
       '<main style="font-size: 20px; background-position: 1em 2em">' +
         '<p style="background-image: none, none; background-position-x: inherit; background-position-y: bottom"></p></main>',
@@ -666,8 +666,8 @@ describe.each([
       const target = window.document.querySelector("p");
       if (!target) throw new Error("Expected a styled paragraph");
       const style = window.getComputedStyle(target);
-      expect(style.getPropertyValue("background-position-x")).toBe("20px, 20px");
-      expect(style.getPropertyValue("background-position")).toBe("20px 100%, 20px 100%");
+      expect(style.getPropertyValue("background-position-x")).toBe("20px");
+      expect(style.getPropertyValue("background-position")).toBe("20px 100%");
     } finally {
       window.close();
     }
@@ -702,8 +702,7 @@ describe.each([
       const style = window.getComputedStyle(target);
       expect(style.getPropertyValue("background-position")).toBe("10px 20px, 30px 40px");
       expect(style.getPropertyValue("background")).toBe(
-        "none no-repeat scroll 10px 20px / cover padding-box border-box, " +
-          "rgb(255, 0, 0) none repeat-x scroll 30px 40px / contain padding-box border-box",
+        "10px 20px / cover no-repeat, 30px 40px / contain repeat-x rgb(255, 0, 0)",
       );
     } finally {
       window.close();

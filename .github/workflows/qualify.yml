@@ -40,7 +40,7 @@ jobs:
           else
             npm install -g pnpm@12.18.0 && pnpm install --frozen-lockfile
           fi
-      - name: Preserve pre-fix build and rerun the same concurrency levels
+      - name: Compare four DOM providers at one, two and four concurrent commands
         run: |
           python3 - <<'PYCONFIG'
           import os, pathlib
@@ -103,6 +103,44 @@ jobs:
           path: |
             ${{ runner.temp }}/wpt.json
             ${{ runner.temp }}/subtests.jsonl
+  local-wpt:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [candidate, reference]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - run: |
+          git clone --depth 1 --branch v31.0.1 https://github.com/jsdom/jsdom.git .cache/jsdom-reference
+          cd .cache/jsdom-reference
+          npm ci
+          mkdir -p test/web-platform-tests/tests
+          curl -fsSL --retry 3 https://codeload.github.com/web-platform-tests/wpt/tar.gz/2971340498805350babb6c167e0df98eaa380f98 | tar xz --strip-components=1 -C test/web-platform-tests/tests
+          cd test/web-platform-tests/tests
+          python wpt.py make-hosts-file | sudo tee -a /etc/hosts >/dev/null
+      - run: |
+          if [[ "${{ matrix.provider }}" == candidate ]]; then
+            export RUN_DOM_API_PRELOAD=1 NODE_OPTIONS="--import=$PWD/scripts/jsdom-api.mjs"
+          fi
+          python3 qualification/capture-wpt.py
+          export WPT_OBSERVATIONS="$RUNNER_TEMP/local-subtests.jsonl"
+          cd .cache/jsdom-reference
+          node node_modules/mocha/bin/mocha.js test/web-platform-tests/run-tuwpts.js --reporter json --reporter-option output="$RUNNER_TEMP/local-wpt.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-wpt-${{ matrix.provider }}
+          path: |
+            ${{ runner.temp }}/local-subtests.jsonl
+            ${{ runner.temp }}/local-wpt.json
   frameworks:
     runs-on: ubuntu-24.04
     strategy:

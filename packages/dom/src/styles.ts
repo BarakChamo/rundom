@@ -662,7 +662,7 @@ const computedInitialValues = new Map([
   ["background-image", "none"],
   ["background-position-x", "0%"],
   ["background-position-y", "0%"],
-  ["box-shadow", "none"],
+  ["box-shadow", "currentcolor none"],
   ["color-scheme", "normal"],
   ["fill", "rgb(0, 0, 0)"],
   ["flex-basis", "auto"],
@@ -778,6 +778,77 @@ function normalizeFontLineHeight(value: string): string {
     if (!(error instanceof SyntaxError)) throw error;
     return value;
   }
+}
+
+// The color parser validates each whole gradient and resolves its color stops.
+// CSSOM orders the interpolation method after the shape or direction.
+function serializeGradientImages(
+  value: string,
+  context?: { currentColor: string; colorScheme: string },
+): string {
+  const { resolveGradient, utils }: typeof import("@asamuzakjp/css-color") =
+    require("./css-runtime.cjs").cssColor;
+  return utils
+    .splitValue(value, { delimiter: "," })
+    .map((layer) => {
+      const match = /^(?:repeating-)?(?:linear|radial|conic)-gradient\(/i.exec(layer);
+      if (!match) return layer;
+      const options = { format: context ? "computedValue" : "specifiedValue", ...context };
+      const args = utils.splitValue(layer.slice(match[0].length, -1), { delimiter: "," });
+      let source = layer;
+      if (args[0]?.startsWith("in ")) {
+        const header = utils.splitValue(args[0]);
+        const method = header.splice(0, header[3] === "hue" ? 4 : 2);
+        if (header.length) {
+          const { lexer }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+          if (lexer.matchProperty("background-image", layer).error) return layer;
+          args[0] = [...header, ...method].join(" ");
+          source = match[0] + args.join(", ") + ")";
+        }
+      }
+      const gradient = resolveGradient(source, options);
+      if (!gradient || gradient === "none") return layer;
+      const open = gradient.indexOf("(");
+      const parts = utils.splitValue(gradient.slice(open + 1, -1), { delimiter: "," });
+      const first = parts[0];
+      if (!first) return gradient;
+      const words = utils.splitValue(first);
+      const index = words.indexOf("in");
+      if (index >= 0 && words[index + 1]) {
+        const hasHue = words[index + 3] === "hue";
+        const [, space, hue] = words.splice(index, hasHue ? 4 : 2);
+        const sourceStops = args.slice(1);
+        const modern = sourceStops.some((stop) => /^(?:color|lab|lch|oklab|oklch)\(/i.test(stop));
+        const legacy = sourceStops.every((stop) => {
+          const token = utils.splitValue(stop)[0] ?? "";
+          return (
+            /^#|^[+.\-\d]|^(?:rgb|hsl)a?\([^)]*,/i.test(token) ||
+            (/^[a-z]+$/i.test(token) &&
+              token.toLowerCase() !== "currentcolor" &&
+              !systemColor(token, "normal"))
+          );
+        });
+        if (
+          (hue && hue !== "shorter") ||
+          !((space === "srgb" && legacy) || (space === "oklab" && modern))
+        ) {
+          words.push("in", space === "xyz" ? "xyz-d65" : space!);
+          if (hue && hue !== "shorter") words.push(hue, "hue");
+        }
+      }
+      if (context) {
+        const at = words.indexOf("at");
+        if (at >= 0) {
+          const end = words.indexOf("in", at);
+          const position = words.slice(at + 1, end < 0 ? words.length : end);
+          const axes = splitBackgroundPosition(canonicalBackgroundPosition(position.join(" ")));
+          if (axes) words.splice(at + 1, position.length, ...axes.map(computePositionAxis));
+        }
+      }
+      parts[0] = words.join(" ");
+      return gradient.slice(0, open + 1) + parts.filter(Boolean).join(", ") + ")";
+    })
+    .join(", ");
 }
 
 function canonicalBackgroundPosition(value: string): string {
@@ -907,6 +978,8 @@ function normalizePropertyInput(property: string, value: string): string {
   if (property.startsWith("--") || /var\(/i.test(value)) return value;
   const name = property.toLowerCase();
   const text = value.trim();
+  if (name === "background-image" && /-gradient\(/i.test(text))
+    return serializeGradientImages(text);
   if (name === "aspect-ratio" && cssNumericToken.test(text) && Number(text) >= 0)
     return `${Number(text)} / 1`;
   if (cssNumericToken.test(text) && Number(text) === 0) return "0";
@@ -1450,10 +1523,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         } else if (origin !== "padding-box" || clip !== "border-box") output.push(origin, clip);
         const color = read("background-color");
         if (index === count - 1 && color !== "transparent") output.push(color);
-        return (
-          output.join(" ") ||
-          (super.getPropertyValue("background") === "transparent" ? "transparent" : "none")
-        );
+        return output.join(" ") || "none";
       }).join(", ");
     }
     #invalidatePendingBorder(property: string): void {
@@ -1571,42 +1641,38 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           backgroundPositionAxes.every((name) => !super.getPropertyValue(name))
         )
           return value;
-        const count = Math.max(1, cssLayers(super.getPropertyValue("background-image")).length);
-        const axis = (name: string) => {
-          const layers = cssLayers(super.getPropertyValue(name));
-          if (!layers.length) return Array<string>(count).fill("0%");
-          return Array.from(
-            { length: count },
-            (_, index) => layers[index % layers.length]?.join(" ") || "0%",
-          );
-        };
+        const axis = (name: string) => cssLayerValues(super.getPropertyValue(name) || "0%");
         if (property !== "background-position") return axis(property).join(", ");
+        const x = axis("background-position-x");
         const y = axis("background-position-y");
-        return axis("background-position-x")
-          .map((x, index) => `${x} ${y[index]}`)
-          .join(", ");
+        return x.length === y.length ? x.map((v, index) => v + " " + y[index]).join(", ") : "";
       }
       if (property === "background" && this._computed) {
-        const images = cssLayers(this.getPropertyValue("background-image"));
-        const count = Math.max(1, images.length);
-        const positions = cssLayers(this.getPropertyValue("background-position"));
         const layers = [
-          images,
-          cssLayers(super.getPropertyValue("background-repeat")),
-          cssLayers(super.getPropertyValue("background-attachment")),
-          positions,
-          cssLayers(super.getPropertyValue("background-size")),
-          cssLayers(super.getPropertyValue("background-origin")),
-          cssLayers(super.getPropertyValue("background-clip")),
+          cssLayerValues(this.getPropertyValue("background-image")),
+          cssLayerValues(this.getPropertyValue("background-position")),
+          cssLayerValues(super.getPropertyValue("background-size") || "auto"),
+          cssLayerValues(super.getPropertyValue("background-repeat") || "repeat"),
+          cssLayerValues(super.getPropertyValue("background-attachment") || "scroll"),
+          cssLayerValues(super.getPropertyValue("background-origin") || "padding-box"),
+          cssLayerValues(super.getPropertyValue("background-clip") || "border-box"),
         ];
-        const defaults = ["none", "repeat", "scroll", "0% 0%", "auto", "padding-box", "border-box"];
-        const color = this.getPropertyValue("background-color");
+        const count = layers[0]?.length ?? 0;
+        if (layers.some((layer) => layer.length !== count)) return "";
         return Array.from({ length: count }, (_, index) => {
-          const [image, repeat, attachment, position, size, origin, clip] = layers.map(
-            (list, field) => (list.length ? list[index % list.length]?.join(" ") : defaults[field]),
+          const [image, position, size, repeat, attachment, origin, clip] = layers.map(
+            (layer) => layer[index],
           );
-          const prefix = index === count - 1 ? `${color} ` : "";
-          return `${prefix}${image} ${repeat} ${attachment} ${position} / ${size} ${origin} ${clip}`;
+          const parts = [];
+          if (image !== "none") parts.push(image);
+          if (position !== "0% 0%" || size !== "auto") parts.push(position);
+          if (size !== "auto") parts.push("/", size);
+          if (repeat !== "repeat") parts.push(repeat);
+          if (attachment !== "scroll") parts.push(attachment);
+          if (origin !== "padding-box" || clip !== "border-box") parts.push(origin);
+          if (clip !== "border-box") parts.push(clip);
+          if (index === count - 1) parts.push(this.getPropertyValue("background-color"));
+          return parts.join(" ") || "none";
         }).join(", ");
       }
       if (this._computed && boxShorthands.has(property)) {
@@ -6805,6 +6871,12 @@ export function createStyles(input: {
         // importance. Custom tokens only need the declaration's value cleanup.
         const tokens = cssInput(value).trim();
         if (tokens) result._setProperty(name, tokens, "");
+        continue;
+      }
+      if (name === "background-image" && /-gradient\(/i.test(value)) {
+        let images = serializeGradientImages(value, { currentColor: color, colorScheme });
+        if (/url\(/i.test(images)) images = resolveCSSURLs(images, base ?? readBaseURL());
+        result._setProperty(name, images, "");
         continue;
       }
       if (name === "box-shadow") {
