@@ -151,3 +151,27 @@ it("reconstructs grid components and suppresses a font shorthand with nondefault
     window.close();
   }
 });
+
+it("resolves attribute values, conditional branches, cycles and inherited attribute taint", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor("<main data-size='12' data-url='photo.png'><p></p></main>");
+    const parent = window.document.querySelector("main")!;
+    const child = window.document.querySelector("p")!;
+    parent.style.cssText = "--on: yes; --url: attr(data-url); --size: attr(data-size px, 4px)";
+    child.style.cssText =
+      "width: var(--size); --label: if(style(--on: yes): pass; else: fail); background-image: image-set(var(--url)); --cycle: if(style(--cycle: x): a; else: b)";
+    const view = window.getComputedStyle(child);
+    expect(view.getPropertyValue("width")).toBe("12px");
+    expect(view.getPropertyValue("--label")).toBe("pass");
+    expect(view.getPropertyValue("background-image")).toBe("none");
+    expect(view.getPropertyValue("--cycle")).toBe("");
+    child.setAttribute("data-size", "80");
+    parent.setAttribute("data-size", "27");
+    expect(view.getPropertyValue("width")).toBe("27px");
+    parent.removeAttribute("data-size");
+    parent.style.setProperty("--on", "no");
+    expect(view.getPropertyValue("width")).toBe("4px");
+    expect(view.getPropertyValue("--label")).toBe("fail");
+    window.close();
+  }
+});

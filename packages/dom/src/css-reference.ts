@@ -17,7 +17,7 @@ export function longhandDefinition(name: string): Property | undefined {
 
 /** Returns the specified serialization of a valid CSS declaration in an ordinary style rule. */
 function parseDeclaration(name: string, value: string): unknown {
-  if (!longhandDefinition(name)) return;
+  if (!name.startsWith("--") && !longhandDefinition(name)) return;
   const {
     createContext,
   }: {

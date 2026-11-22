@@ -16,6 +16,11 @@ import {
   specifiedMediaQuery,
   type RegisteredProperty,
 } from "./css-reference.js";
+import {
+  substitutionFunction,
+  substitutionFrame,
+  type SubstitutionFrame,
+} from "./css-substitution.js";
 import { ownedString } from "./owned-string.js";
 import { createRequire } from "node:module";
 import { serializePhysicalBorder, isPhysicalBorder } from "./css-border-serialization.js";
@@ -1995,6 +2000,15 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     #setPropertyValue(property: string, value: string, priority: string): void {
       if (!property.startsWith("--")) value = canonicalWideKeyword(value);
       const name = property.toLowerCase();
+      if (
+        value.includes("(") &&
+        substitutionFunction.test(value) &&
+        !propertyDefinitions.get(name)?.longhands
+      ) {
+        const serialized = specifiedDeclaration(property.startsWith("--") ? property : name, value);
+        if (serialized !== undefined) this._setProperty(property, serialized, priority);
+        return;
+      }
       value = normalizePropertyInput(name, value);
       if (!name.startsWith("--") && hasContextlessPercentage(name, value)) return;
       if (!name.startsWith("--") && value.trim() === "") {
@@ -5012,7 +5026,12 @@ function simplifyCSSCalculation(value: string): string {
   return serializeCSSMath(utils.cssCalc(value));
 }
 
+// These dimensions need font metrics or a writing mode from the element's cascade.
+const elementDimension = /^[+-]?(?:\d*\.)?\d+(?:e[+-]?\d+)?(?:r?(?:ex|cap|ch|ic|lh)|[sld]?v[ib])$/i;
+
 function computeNumericValue(value: string, readViewport: () => Viewport): string {
+  if (value.endsWith("ms") && /^[+-]?(?:\d*\.)?\d+(?:e[+-]?\d+)?ms$/i.test(value))
+    return `${Number((Number.parseFloat(value) / 1000).toPrecision(12))}s`;
   const math = /^(?:calc|min|max|clamp)\(/i.test(value);
   const viewportToken = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[sld])?v(?:w|h|min|max)$/i.test(value);
   if ((math || viewportToken) && /[0-9](?:[sld])?v(?:w|h|min|max)\b/i.test(value)) {
@@ -6528,6 +6547,7 @@ export function createStyles(input: {
     return (
       !!value &&
       !variableSyntax.test(value) &&
+      !substitutionFunction.test(value) &&
       cssInput(value).trim() === value &&
       !/^(?:initial|inherit|unset|revert(?:-layer|-rule)?)$/i.test(value)
     );
@@ -6657,6 +6677,7 @@ export function createStyles(input: {
     viewport: Viewport | undefined;
     baseURL: string | undefined;
     focusRevision?: number | undefined;
+    substitution?: SubstitutionFrame;
     siblingColor?: boolean;
     registered?: boolean;
     custom?: CustomProjection;
@@ -7048,6 +7069,7 @@ export function createStyles(input: {
   function winningValueResolver(
     winners: ReadonlyMap<string, ComputedWinner>,
     custom: CustomBlock | undefined,
+    substitution: SubstitutionFrame | undefined,
   ) {
     let resolver: ReturnType<typeof createVariableResolver> | undefined;
     function lookup(name: string): string | undefined {
@@ -7055,6 +7077,8 @@ export function createStyles(input: {
       return typeof entry === "string" ? entry : (entry?.value ?? custom?.values.get(name));
     }
     function resolveValue(name: string, value: string): string | undefined {
+      if (substitution && (substitutionFunction.test(value) || variableSyntax.test(value)))
+        return substitution.read(name) || undefined;
       if (!variableSyntax.test(value)) return value;
       const variable = !name.startsWith("--") && directVariable.exec(value)?.[1];
       const literal = variable ? lookup(variable) : undefined;
@@ -7098,7 +7122,7 @@ export function createStyles(input: {
       }
       return expanded.getPropertyValue(name) || undefined;
     }
-    return { resolveValue, expandPending };
+    return { resolveValue, expandPending, substitution };
   }
 
   type ResolutionValues = {
@@ -7182,6 +7206,17 @@ export function createStyles(input: {
       }
       if (name === "font-size" && computedFontSize !== undefined) {
         result._setProperty(name, `${Number(fontSize.toPrecision(6))}px`, "");
+        continue;
+      }
+      if (
+        resolver.substitution &&
+        !shorthand &&
+        (substitutionFunction.test(specified) ||
+          variableSyntax.test(specified) ||
+          (!isCustomProperty && elementDimension.test(specified)))
+      ) {
+        const computed = resolver.substitution.read(name);
+        if (computed) result._setProperty(name, computed, "");
         continue;
       }
       const substituted =
@@ -7772,7 +7807,8 @@ export function createStyles(input: {
       } = userAgentStyle(element);
       const userAgentDirection = needsDirection ? input.directionality(element) : undefined;
       function sameEnvironment(cached: ComputedFrame): boolean {
-        if (cached.siblingColor || cached.registered || scriptRegistrations) return false;
+        if (cached.substitution || cached.siblingColor || cached.registered || scriptRegistrations)
+          return false;
         const currentViewport = cached.viewport && (viewport ??= input.viewport());
         const sameViewport =
           !cached.viewport ||
@@ -8127,6 +8163,7 @@ export function createStyles(input: {
         // Winner resolution has its own lexical context; cache hits never allocate it.
         const winners = new Map<string, Winner>();
         let hasVariableShorthand = false;
+        let usesSubstitution = false;
 
         // Cached frames return above without allocating winner-expansion closures.
         const consider = (name: string, candidate: Winner): void => {
@@ -8165,6 +8202,9 @@ export function createStyles(input: {
             )
               hasRollback = true;
 
+            usesSubstitution ||=
+              (value.includes("(") && substitutionFunction.test(value)) ||
+              (!name.startsWith("--") && elementDimension.test(value));
             const winner: Winner = { context, weight, proximity, value, base };
             const layer = important ? importantLayer : layerIndex;
             if (layer !== undefined) winner.layer = layer;
@@ -8332,6 +8372,10 @@ export function createStyles(input: {
               else winners.delete(name);
             }
           }
+        const substitutionValues =
+          usesSubstitution || parentFrame?.substitution
+            ? new Map([...winners].map(([name, winner]) => [name, winner.value]))
+            : undefined;
         const computedWinners: Map<string, ComputedWinner> = winners;
         let custom: CustomProjection | undefined;
         const parentProjection = prior && partialAncestors?.get(prior);
@@ -8453,7 +8497,43 @@ export function createStyles(input: {
           color = previous.color;
           continue;
         }
-        const resolver = winningValueResolver(computedWinners, custom?.block);
+        let substitution: SubstitutionFrame | undefined;
+        if (substitutionValues) {
+          const baseURL = () => input.baseURL(input.ownerDocument(element));
+          let inheritedFrame = parentFrame?.substitution;
+          if (
+            !inheritedFrame &&
+            prior &&
+            element.parentNode &&
+            tree.isElementNode(element.parentNode)
+          ) {
+            const inheritedValues = new Map(prior._values);
+            inheritedValues.set("color", color);
+            for (const [name, value] of projected?.block.values ?? [])
+              inheritedValues.set(name, value);
+            inheritedFrame = substitutionFrame(
+              element.parentNode,
+              undefined,
+              inheritedValues,
+              !!input.isXML,
+              baseURL,
+              registrations,
+            );
+          }
+          if (custom) {
+            for (const [name, value] of custom.block.values)
+              if (!substitutionValues.has(name)) substitutionValues.set(name, value);
+          }
+          substitution = substitutionFrame(
+            element,
+            inheritedFrame,
+            substitutionValues,
+            !!input.isXML,
+            baseURL,
+            registrations,
+          );
+        }
+        const resolver = winningValueResolver(computedWinners, custom?.block, substitution);
         const { resolveValue } = resolver;
         const specifiedScheme = winners.get("color-scheme")?.value;
         const scheme =
@@ -8612,6 +8692,7 @@ export function createStyles(input: {
           characters + inputCharacters + (custom?.block.characters ?? 0) * 2 <= 32768;
         frame = {
           ...resolved,
+          ...(substitution && { substitution }),
           ...(siblingColor ? { siblingColor } : {}),
           ...(registrations ? { registered: true } : {}),
           inputs: retainInputs ? inputs : undefined,
