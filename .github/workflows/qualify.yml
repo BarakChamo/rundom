@@ -248,6 +248,7 @@ jobs:
         project: [supabase, freecodecamp, react, drone]
     env:
       PROJECT: ${{ matrix.project }}
+      BALANCED: ${{ contains(github.event.head_commit.message, 'balanced provider runs') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -293,6 +294,10 @@ jobs:
               npm install --legacy-peer-deps --no-audit --no-fund
               cmd=(node node_modules/jest/bin/jest.js CreateRepositoryButton --runInBand --coverage=false --json);;
           esac
+          if [[ "$BALANCED" == true ]]; then
+            source "$root/qualification/balanced-project.sh"
+            exit 0
+          fi
           for provider in candidate reference; do
             if [[ "$provider" == reference ]]; then export JSDOM_ENTRY=$(realpath "$root/packages/jsdom/node_modules/jsdom/lib/api.js"); else export JSDOM_ENTRY="$root/packages/jsdom/dist/jsdom.cjs"; fi
             export NODE_OPTIONS="--import=$root/qualification/provider.mjs"
@@ -306,3 +311,4 @@ jobs:
             ${{ runner.temp }}/result-*.json
             ${{ runner.temp }}/timing-*.txt
             ${{ runner.temp }}/command-*.log
+            ${{ runner.temp }}/provider-*.txt
