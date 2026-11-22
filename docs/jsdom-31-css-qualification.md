@@ -1,5 +1,7 @@
 # CSS compatibility and project benchmarks against jsdom 31.0.1
 
+The subsequent CSS Values qualification covers attribute substitution, conditional values, typed calculations and their effect on real projects. [Updated benchmark and compatibility results](./jsdom-31-css-values-qualification.md)
+
 November 22, 2026. RunDOM commit `2af947b`, jsdom 31.0.1, Happy DOM 21.0.4, TurboDOM 0.7.1. The WPT revision was `2971340498805350babb6c167e0df98eaa380f98`. [Qualification and full runs](https://github.com/BarakChamo/rundom/actions/runs/45029425185) · [Matched four-provider runs](https://github.com/BarakChamo/rundom/actions/runs/45029432086)
 
 ## Compatibility
