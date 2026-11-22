@@ -202,3 +202,54 @@ At four concurrent commands, the following comparisons use identical successful 
 | Material UI Autocomplete | TurboDOM      | -28.7%                       | +737                              |
 
 The shared Ant Design selection contains 116 cases. The shared Material UI selection contains 117 cases across 28 Autocomplete groups. Both full selections require the jsdom outcomes. The release remains gated on compatibility.
+
+## Qualification addendum
+
+The WPT and timing tables above describe runtime 837bd62. The Svelte pass comparison found two named losses in inline-style-directive-spread-dynamic, for DOM rendering and hydration. Mutating color caused RunDOM to serialize a previously authored border radius as four separate declarations. Runtime 80b187b restores CSSOM shorthand serialization on this path. The regression fixture checks the serialized HTML and a later independent corner change against the expected CSSOM values. Commit 401cdb4 uses the typed CSSOM accessors in that fixture. The local repository gate passed all 15 tasks. [Runtime fix](https://github.com/BarakChamo/rundom/commit/80b187b) · [Follow-up qualification](https://github.com/BarakChamo/rundom/actions/runs/45040556519) · [Follow-up matched throughput runs](https://github.com/BarakChamo/rundom/actions/runs/45040562075)
+
+Paired local fixtures covered 11 pinned WPT files for border radius and layer rollback. The CSSOM border-radius serialization assertion recovered. There were 0 named pass regressions and 0 missing observations relative to the preceding packed build.
+
+| Follow-up project | RunDOM                       | jsdom                        | Happy DOM                   | TurboDOM                     | jsdom passes lost |
+| ----------------- | ---------------------------- | ---------------------------- | --------------------------- | ---------------------------- | ----------------- |
+| Vue               | 265/5/1 · 6.19 s · 468 MiB   | 265/5/1 · 9.09 s · 491 MiB   | 251/19/1 · 6.33 s · 470 MiB | 169/32/1 · 4.13 s · 464 MiB  | 0                 |
+| Material UI       | 430/0/39 · 15.05 s · 457 MiB | 430/0/39 · 14.87 s · 408 MiB | 454/8/7 · 13.75 s · 445 MiB | 181/281/7 · 7.78 s · 459 MiB | 0                 |
+
+The follow-up jsdom-local WPT run matched 4,827 of 5,260 named reference passes.
+
+### Supplemental four-provider measurements on 837bd62
+
+Scully generated the sample site and ran the same eight upstream assertions again. This separate run adapted the legacy Jest environment to call VirtualConsole.forwardTo and guard document teardown. All providers used the same project checkout and tests. [Scully adapter run](https://github.com/BarakChamo/rundom/actions/runs/45040390698)
+
+| Project | Provider  | Pass/fail/skip | Wall seconds | Max process MiB | jsdom passes lost by round |
+| ------- | --------- | -------------- | ------------ | --------------- | -------------------------- |
+| scully  | RunDOM    | 8/0/0          | 2.19 / 2.17  | 473 / 473       | 0 / 0                      |
+| scully  | jsdom     | 8/0/0          | 2.32 / 2.33  | 469 / 470       | 0 / 0                      |
+| scully  | Happy DOM | 0/0/0          | 1.43 / 1.37  | 389 / 390       | 8 / 8                      |
+| scully  | TurboDOM  | 8/0/0          | 2.09 / 1.92  | 439 / 449       | 0 / 0                      |
+
+Mozilla Readability ran the full upstream Mocha selection twice per provider. The Happy DOM adapter constructs a Window and writes the source into its document. The TurboDOM adapter calls createEnvironment with the source and URL. TurboDOM’s two valid runs followed the other providers because its runtime required asynchronous module loading. Test failures and early suite termination reduce comparability.
+
+| Readability provider | Passed      | Failed  | Wall seconds  | Maximum process MiB |
+| -------------------- | ----------- | ------- | ------------- | ------------------- |
+| RunDOM               | 1984 / 1984 | 0 / 0   | 20.16 / 11.76 | 739 / 1482          |
+| jsdom                | 1984 / 1984 | 0 / 0   | 53.20 / 42.67 | 915 / 1598          |
+| Happy DOM            | 1975 / 1975 | 9 / 9   | 35.06 / 51.83 | 2914 / 2721         |
+| TurboDOM             | 1361 / 1361 | 87 / 87 | 4.47 / 12.67  | 758 / 497           |
+
+The separate four-command telemetry run sampled each Node process every 250 ms. Process-group RSS is the larger of the two rounds. The remaining columns average the values at each round’s highest aligned Node RSS. Samples older than 375 ms were excluded. Live V8 heap, allocated V8 heap and external memory overlap with RSS and cannot be added to it. [Four-provider memory traces](https://github.com/BarakChamo/rundom/actions/runs/45040282856)
+
+| Project | Provider  | Group peak MiB | Node RSS MiB | Used V8 heap MiB | Allocated V8 heap MiB | External MiB |
+| ------- | --------- | -------------- | ------------ | ---------------- | --------------------- | ------------ |
+| mui     | RunDOM    | 3,723          | 3,550        | 1,232            | 2,005                 | 255          |
+| mui     | jsdom     | 3,588          | 3,395        | 1,090            | 1,971                 | 245          |
+| mui     | Happy DOM | 3,757          | 3,674        | 999              | 2,239                 | 250          |
+| mui     | TurboDOM  | 2,986          | 2,924        | 741              | 1,605                 | 246          |
+
+The follow-up Next.js with-vitest example ran in opposite provider orders on the development host.
+
+| Follow-up Next.js provider | Passed | Wall seconds | Max process MiB |
+| -------------------------- | ------ | ------------ | --------------- |
+| candidate                  | 5 / 5  | 2.44 / 2.14  | 134 / 134       |
+| jsdom                      | 5 / 5  | 3.05 / 2.97  | 165 / 164       |
+| happy                      | 5 / 5  | 2.75 / 2.57  | 118 / 118       |
+| turbo                      | 5 / 5  | 2.19 / 2.52  | 116 / 116       |
