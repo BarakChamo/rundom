@@ -23,7 +23,7 @@ for project in [os.environ['PROJECT']]:
      if provider=='before':env['DOM_VARIANT']=str(root/'packages/dom/out/starting')
     if os.getenv('TRACE_MEMORY'):env['MEMORY_TRACE']=str(d/f'memory-{tag}-{i}')
     cases=['--project','node:@mui/material','packages/mui-material/src/Autocomplete/Autocomplete.test.js'] if project=='mui' else ['components/'+x+'.test.tsx' for x in ['alert/__tests__/index','alert/__tests__/semantic','checkbox/__tests__/checkbox','checkbox/__tests__/group','radio/__tests__/radio','radio/__tests__/group','tag/__tests__/semantic','tag/__tests__/variant']]
-    if common:cases.extend(['--testNamePattern','^(?:'+'|'.join(re.escape(name) for _,name in common)+')$'])
+    if common:cases.extend(['--testNamePattern','(?:'+'|'.join(re.escape(name) for name in json.loads((root/'qualification'/f'pattern-{project}.json').read_text()))+')$'])
     procs.append(subprocess.Popen(['node','node_modules/vitest/vitest.mjs','run',*cases,'--maxWorkers','1','--no-file-parallelism','--no-cache','--no-fsModuleCache','--testTimeout','120000','--reporter=json','--outputFile='+str(f)],cwd=d/project,env=env,start_new_session=True,stdout=logs[-1],stderr=subprocess.STDOUT))
    ids={p.pid for p in procs}
    expired=False
