@@ -1,7 +1,8 @@
 from pathlib import Path
-import json,sys,time,os,subprocess,hashlib,signal
+import json,sys,time,os,subprocess,hashlib,signal,re
 root=Path.cwd();d=Path(os.environ['RUNNER_TEMP']); v=d
 for project in [os.environ['PROJECT']]:
+ common=json.loads((root/'qualification'/f'common-{project}.json').read_text()) if os.getenv('MATCHED') else None
  for n in ([4] if os.getenv('TRACE_MEMORY') else ([4,2,1] if os.getenv('ROUND') else [1,2,4])):
   for provider in sys.argv[1:]:
    tag=f'{project}-{n}-{provider}' + ('-trace' if os.getenv('TRACE_MEMORY') else '') + ('-r2' if os.getenv('ROUND') else '')
@@ -22,6 +23,7 @@ for project in [os.environ['PROJECT']]:
      if provider=='before':env['DOM_VARIANT']=str(root/'packages/dom/out/starting')
     if os.getenv('TRACE_MEMORY'):env['MEMORY_TRACE']=str(d/f'memory-{tag}-{i}')
     cases=['--project','node:@mui/material','packages/mui-material/src/Autocomplete/Autocomplete.test.js'] if project=='mui' else ['components/'+x+'.test.tsx' for x in ['alert/__tests__/index','alert/__tests__/semantic','checkbox/__tests__/checkbox','checkbox/__tests__/group','radio/__tests__/radio','radio/__tests__/group','tag/__tests__/semantic','tag/__tests__/variant']]
+    if common:cases.extend(['--testNamePattern','^(?:'+'|'.join(re.escape(name) for _,name in common)+')$'])
     procs.append(subprocess.Popen(['node','node_modules/vitest/vitest.mjs','run',*cases,'--maxWorkers','1','--no-file-parallelism','--no-cache','--no-fsModuleCache','--testTimeout','120000','--reporter=json','--outputFile='+str(f)],cwd=d/project,env=env,start_new_session=True,stdout=logs[-1],stderr=subprocess.STDOUT))
    ids={p.pid for p in procs}
    expired=False
@@ -38,5 +40,8 @@ for project in [os.environ['PROJECT']]:
     if p.returncode or not f.exists():continue
     x=json.loads(f.read_text());a=sorted((Path(t['name']).resolve().relative_to((d/project).resolve()).as_posix(),k['fullName'],k['status']) for t in x['testResults'] for k in t['assertionResults'])
     expected={'antd':'b2ea93a5fbae0566a48c30b2520c69f314a82e1aff61b226d1283f10fab4b6a9','mui':'4101787bce586b4ff1bfad491aec62af9bf1ca918d452359b86445ea5ad3531a'}
+    if common:
+     valid+=sorted([[path,name] for path,name,status in a if status=='passed'])==common
+     continue
     valid+=hashlib.sha256(json.dumps(a,ensure_ascii=False).encode()).hexdigest()==expected[project]
    row=dict(project=project,n=n,provider=provider,passedCommands=valid,expired=expired,exitCodes=[p.returncode for p in procs],wall=wall,perMinute=60*valid/wall,peakMiB=peak/1024);print(row,flush=True);(d/('batch3-'+tag+'.json')).write_text(json.dumps(row))

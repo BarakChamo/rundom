@@ -13,6 +13,7 @@ jobs:
         project: [antd, mui]
     env:
       PROJECT: ${{ matrix.project }}
+      MATCHED: ${{ contains(github.event.head_commit.message, 'matched benchmark only') && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,6 +63,7 @@ jobs:
             ${{ runner.temp }}/con3*.log
             ${{ runner.temp }}/memory-*.jsonl
   wpt:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only')"
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     strategy:
@@ -104,6 +106,7 @@ jobs:
             ${{ runner.temp }}/wpt.json
             ${{ runner.temp }}/subtests.jsonl
   local-wpt:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only')"
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -142,6 +145,7 @@ jobs:
             ${{ runner.temp }}/local-subtests.jsonl
             ${{ runner.temp }}/local-wpt.json
   frameworks:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only')"
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false

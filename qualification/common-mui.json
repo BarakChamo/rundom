@@ -1,0 +1,1210 @@
+[
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the clearIndicator slot with a component using the slots.clearIndicator prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the clearIndicator slot with an element using the slots.clearIndicator prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the listbox slot with a component using the slots.listbox prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the listbox slot with an element using the slots.listbox prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the paper slot with a component using the slots.paper prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the paper slot with an element using the slots.paper prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the popper slot with a component using the slots.popper prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the popupIndicator slot with a component using the slots.popupIndicator prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the popupIndicator slot with an element using the slots.popupIndicator prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the root slot with a component using the slots.root prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the root slot with an element using the slots.root prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the status slot with a component using the slots.status prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API allows overriding the status slot with an element using the slots.status prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API applies the className to the root component"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API applies the root class to the root component if it has this class"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API merges the class names provided in slotsProps.clearIndicator with the built-in ones"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API merges the class names provided in slotsProps.listbox with the built-in ones"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API merges the class names provided in slotsProps.paper with the built-in ones"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API merges the class names provided in slotsProps.popper with the built-in ones"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API merges the class names provided in slotsProps.popupIndicator with the built-in ones"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API merges the class names provided in slotsProps.root with the built-in ones"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API merges the class names provided in slotsProps.status with the built-in ones"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API ref attaches the ref"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the chip slot's element with the slotProps.chip callback"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the chip slot's element with the slotProps.chip prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the clearIndicator slot's element with the slotProps.clearIndicator callback"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the clearIndicator slot's element with the slotProps.clearIndicator callback using the ownerState"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the clearIndicator slot's element with the slotProps.clearIndicator prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the listbox slot's element with the slotProps.listbox callback"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the listbox slot's element with the slotProps.listbox callback using the ownerState"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the listbox slot's element with the slotProps.listbox prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the paper slot's element with the slotProps.paper callback"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the paper slot's element with the slotProps.paper callback using the ownerState"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the paper slot's element with the slotProps.paper prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the popper slot's element with the slotProps.popper callback"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the popper slot's element with the slotProps.popper callback using the ownerState"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the popper slot's element with the slotProps.popper prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the popupIndicator slot's element with the slotProps.popupIndicator callback"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the popupIndicator slot's element with the slotProps.popupIndicator callback using the ownerState"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the popupIndicator slot's element with the slotProps.popupIndicator prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the root slot's element with the slotProps.root callback"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the root slot's element with the slotProps.root callback using the ownerState"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the root slot's element with the slotProps.root prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the status slot's element with the slotProps.status callback"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the status slot's element with the slotProps.status callback using the ownerState"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> MUI component API sets custom properties on the status slot's element with the slotProps.status prop"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> Popper width should disconnect ResizeObserver when popup closes"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> Popper width should observe anchor element for resize when popup is open"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> WAI-ARIA conforming markup should add and remove aria-activedescendant"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> click input should focus the input when clicking on the open action"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> click input should not focus when tooltip clicked"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> combobox should apply the icon classes"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> combobox should clear the input when blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> combobox should not open popup on right click"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> controlled controls the input value"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> controlled should fire the input change event before the change event"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> deleting a tag immediately after adding it while the listbox is still open should allow it, given that options are objects"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> deleting a tag immediately after adding it while the listbox is still open should allow it, given that options are primitive values"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> enter select multiple value when enter is pressed"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> exit transition should disable pointer events on Popper when closing"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> exit transition should not show stale options from a prior session during exit"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> highlight synchronisation should keep Enter aligned with the restored highlight when reopening the popup in multiple mode"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> highlight synchronisation should keep aria-activedescendant in sync when the highlighted option moves to a new index"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> highlight synchronisation should not update the highlight when multiple open and value change"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> highlight synchronisation should restore the first selected option when reopening the popup with keyboard in multiple mode"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> highlight synchronisation should restore the first selected option when reopening the popup with mouse in multiple mode"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> listbox wrapping behavior prop: disableListWrap focuses the last item when pressing Up when no option is active"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> listbox wrapping behavior prop: disableListWrap keeps focus on the first item if focus is on the first item and pressing Up"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> listbox wrapping behavior prop: disableListWrap keeps focus on the last item if focus is on the last item and pressing Down"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> listbox wrapping behavior prop: includeInputInList considers the textbox the predecessor of the first option when pressing Up"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> listbox wrapping behavior prop: includeInputInList considers the textbox the successor of the last option when pressing Down"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> listbox wrapping behavior selects the first item if on the last item and pressing up by default"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> listbox wrapping behavior wraps around when navigating the list by default"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoComplete add a completion string"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoComplete should add a completion string for the auto highlighted option while typing"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoComplete should not add a completion string when deleting"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoHighlight should auto highlight first option after options order changes with autoHighlight"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoHighlight should auto highlight first option of rest after selecting an option with autoHighlight and filterSelectedOptions"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoHighlight should auto highlight first option when no match with input value with autoHighlight"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoHighlight should keep the current highlight if possible"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoHighlight should keep the highlight on the first item"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoHighlight should set the focus on the first item"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoHighlight should set the focus on the first item when possible"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoHighlight should set the highlight on selected item when dropdown is expanded"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoHighlight should work with filterSelectedOptions too"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should add new value when autoSelect & freeSolo & autoHighlight on blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should add new value when autoSelect & multiple & freeSolo on blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should add new value when autoSelect & multiple on blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should not clear on blur when value does not match any option"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should not select a mouse-hovered option on blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should not select a mouse-hovered option on blur even if already highlighted"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should not select a mouse-hovered option on outside click blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should not select a touch-highlighted option on blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should prefer typed text over a mouse-hovered option on blur with freeSolo"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should select a keyboard-highlighted option on blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: autoSelect should select the first option on blur when autoHighlight is true"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: blurOnSelect [blurOnSelect=\"mouse\"] should only blur the input when an option is clicked"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: blurOnSelect [blurOnSelect=\"touch\"] should only blur the input when an option is touched"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: blurOnSelect [blurOnSelect=true] should blur the input when clicking or touching options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: clearOnBlur should clear on blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: clearOnBlur should not clear on blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: clearOnBlur should not clear on blur with `multiple` enabled"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: clearOnEscape should clear on escape"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: clearOnEscape should clear on escape if rendering single value"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: clearOnEscape should not suppress focus events after clearing with Escape"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: disableClearable should not render the clear button"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: disabled should close the popup when disabled is true"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: disabled should disable the input"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: disabled should disable the popup button"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: disabled should not apply the hasClearIcon class"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: disabled should not crash when autoSelect & freeSolo are set, text is focused & disabled gets truthy"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: disabled should not render the clear button"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: filterOptions does not limit the amount of rendered options when `limit` is not set in `createFilterOptions`"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: filterOptions limits the amount of rendered options when `limit` is set in `createFilterOptions`"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: filterOptions should ignore object keys by default"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: filterSelectedOptions clears the highlight when the highlighted selected option is filtered out"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo pressing twice enter should not call onChange listener twice"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should allow Enter to select after touch-scroll then typing"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should keep the Popper in the DOM when freeSolo, keepMounted, and no options match"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should not delete exiting tag when try to add it twice"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should not fire change event until the IME is confirmed"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should not misclassify scroll as touch after close and reopen"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should not render the Popper when freeSolo and no options match"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should not reset a controlled inputValue on mount"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should not select a touch-highlighted option after scroll on Enter"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should prefer typed text over auto-highlighted match on Enter"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should prevent form submission when committing typed text over auto-highlighted match"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should render endAdornment only when clear icon or popup icon is available"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should render loading text in freeSolo even with no options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should reset input when controlled value changes to null"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should reset input when controlled value changes to null with clearOnBlur=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should respect keepMounted from callback-form slotProps.popper in freeSolo with no matches"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should retain input when controlled multiple value changes with clearOnBlur=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should select a mouse-hovered option on Enter after typing"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should select an option on tap without scroll"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: freeSolo should select the highlighted option on Enter after keyboard navigation"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: fullWidth should have the fullWidth class"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: fullWidth should pass fullWidth as true to renderInput if not provided"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionDisabled should not focus any option when all the options are disabled"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionDisabled should prevent the disabled option to trigger actions but allow focus with disabledItemsFocusable"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionDisabled should skip disabled options at the end of the list when navigating via keyboard"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionDisabled should skip disabled options when navigating via keyboard"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionDisabled should skip the first and last disabled options in the list when navigating via keyboard"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionLabel is considered for falsy values when filtering the list of options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionLabel is not considered for nullish values when filtering the list of options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionLabel preserves the chip label for a raw null option"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionLabel preserves the chip label for a raw undefined option"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionLabel should not throw error when nested options are provided"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionLabel should not update the input value when users is focusing"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionLabel should update the input value when getOptionLabel changes"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue async options in freeSolo mode keeps the input empty after clicking Clear before options arrive"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue async options in freeSolo mode keeps the input empty when the controlled value becomes null before options arrive"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue async options in freeSolo mode preserves a controlled input value when options arrive"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue async options in freeSolo mode preserves edited input \"\" when options arrive after blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue async options in freeSolo mode preserves edited input \"draft\" when options arrive after blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue async options in freeSolo mode resolves an uncontrolled default value when options arrive"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue async options in freeSolo mode resolves the selected label when options arrive with focused=true"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: false labels the chip and includes the nullable option when removing with Backspace"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: false labels the chip and includes the nullable option when removing with delete icon"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: false retains nullable options created by filterOptions for labels and removal"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: false updates labels when options arrive with multiple=false, freeSolo=false, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: false updates labels when options arrive with multiple=false, freeSolo=true, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: false updates labels when options arrive with multiple=false, freeSolo=true, focused=true"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: false updates labels when options arrive with multiple=true, freeSolo=false, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: true labels the chip and includes the nullable option when removing with Backspace"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: true labels the chip and includes the nullable option when removing with delete icon"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: true retains nullable options created by filterOptions for labels and removal"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: true updates labels when options arrive with multiple=false, freeSolo=false, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: true updates labels when options arrive with multiple=false, freeSolo=true, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: true updates labels when options arrive with multiple=false, freeSolo=true, focused=true"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: null custom equality: true updates labels when options arrive with multiple=true, freeSolo=false, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: false labels the chip and includes the nullable option when removing with Backspace"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: false labels the chip and includes the nullable option when removing with delete icon"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: false retains nullable options created by filterOptions for labels and removal"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: false updates labels when options arrive with multiple=false, freeSolo=false, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: false updates labels when options arrive with multiple=false, freeSolo=true, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: false updates labels when options arrive with multiple=false, freeSolo=true, focused=true"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: false updates labels when options arrive with multiple=true, freeSolo=false, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: true labels the chip and includes the nullable option when removing with Backspace"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: true labels the chip and includes the nullable option when removing with delete icon"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: true retains nullable options created by filterOptions for labels and removal"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: true updates labels when options arrive with multiple=false, freeSolo=false, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: true updates labels when options arrive with multiple=false, freeSolo=true, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: true updates labels when options arrive with multiple=false, freeSolo=true, focused=true"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue nullable mapped option: undefined custom equality: true updates labels when options arrive with multiple=true, freeSolo=false, focused=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue options created by filterOptions keeps generated chip labels across searches and exposes the option on removal"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue options created by filterOptions keeps the selected label after closing the popup with controlled=false"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue options created by filterOptions keeps the selected label after closing the popup with controlled=true"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue passes mapped values to renderValue"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue passes the mapped array to renderValue for multiple selections"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue provides the raw option when deleting a mapped chip"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue provides the raw option when deleting a mapped single-value item"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue provides the raw option when removing a focused mapped value with Delete"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue provides the raw option when removing a mapped single value with Delete"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue rebuilds the mapped value lookup when typing rerenders the parent with a fresh inline mapper"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue reuses custom chip resolutions while typing with the popup closed"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue reuses the mapped value lookup while the mapper identity is stable"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue unresolved mapped chips does not expose unresolved numeric or boolean values as chip labels"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue unresolved mapped chips leaves chip labels empty until their options arrive"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue uses custom equality when resolving mapped values to options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue uses freeSolo text for a chip when it collides with a mapped option value"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: getOptionValue uses option labels for mapped values"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: limitTags show 0 item on close when set 0 to limitTags"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: limitTags show all items on focus"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: loading should show a loading message when open"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: multiple can delete one tag after another"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: multiple has no textbox value"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: multiple should clear freeSolo input when moving focus from input to chip with ArrowLeft and not restore it on ArrowRight"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: multiple should move focus to the last chip with ArrowLeft only when caret is at the start when multiple"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: multiple should not call onChange function for duplicate values"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: multiple should not crash"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: multiple should remove only the focused chip when pressing the backspace key"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: multiple should remove only the focused chip when pressing the delete key"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: multiple should remove the last option"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: multiple should use isOptionEqualToValue to deduplicate multiple freeSolo values without getOptionValue"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: noOptionsText should not render the no options text when freeSolo is true and there are no options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: noOptionsText should not render the no options text when loading and there are no options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: noOptionsText should render the custom no options text when there are no options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: noOptionsText should render the no options text when there are no options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onChange provides a reason and details on blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onChange provides a reason and details on clear"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onChange provides a reason and details on option creation"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onChange provides a reason and details on option removing"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onChange provides a reason and details on option selection"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onHighlightChange should not trigger event when default value is passed"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onHighlightChange should pass to onHighlightChange the correct value after filtering"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onHighlightChange should reset the highlight when the options change and onHighlightChange should not be called"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onHighlightChange should support keyboard event"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onHighlightChange should support mouse event"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onInputChange provides a reason on blur"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onInputChange provides a reason on clear"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onInputChange provides a reason on create option"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onInputChange provides a reason on input change"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onInputChange provides a reason on remove option"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onInputChange provides a reason on select option"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: onInputChange provides a reason on select reset"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: openOnFocus should suppress focus events when clearing with the clear button"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: options should keep focus on selected option and not reset to top option when options updated"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: options should keep focus on selected option when options updates and when options are provided as objects"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: options should keep focus when multiple options are selected and not reset to top option when options updated"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: options should keep focus when multiple options are selected by not resetting to the top option when options are updated and when options are provided as objects"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: options should not select undefined"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: options should reset the highlight when previously highlighted option doesn't exists in new options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: options should reset the highlight when the input changed"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: options should work if options are the default data structure"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: readOnly should focus on input when clicked"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: readOnly should not apply the hasClearIcon class"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: readOnly should not be able to delete the tag using Backspace when using renderValue"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: readOnly should not be able to delete the tag when multiple=true"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: readOnly should not open the popup"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: readOnly should not render the clear button"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderOption should pass getOptionLabel default value through ownerState when no custom getOptionLabel prop provided"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderOption should pass getOptionLabel through ownerState in renderOption callback"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) navigates between the tag and input"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) should allow zero number (0) as a value to render"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) should clear freeSolo input when moving focus to the rendered value with ArrowLeft and not restore it on ArrowRight"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) should delete using Backspace key with empty input text"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) should delete using Delete key with empty input text"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) should move focus to the rendered value with ArrowLeft only when caret is at the start"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) should not throw error on pressing ArrowLeft key with input text but no value in single value rendering"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) should not throw error on pressing ArrowLeft key with no value in single value rendering"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) should render only a single value, given that options are primitive values"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) should render only a single value, given that options as objects"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: renderValue (single selection) should show input caret when focusing input after chip navigation"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: resetHighlightOnMouseLeave clears a mouse-created highlight when the mouse leaves the listbox"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: resetHighlightOnMouseLeave clears the mouse-created highlight when slotProps.listbox.onMouseLeave is provided"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: resetHighlightOnMouseLeave keeps a keyboard-created highlight when the mouse leaves the listbox"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: resetHighlightOnMouseLeave keeps the mouse-created highlight when the prop uses its default value"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: resetHighlightOnMouseLeave selects the typed free solo value on Enter after clearing a mouse-created highlight"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: resetHighlightOnMouseLeave starts keyboard navigation from the first option after clearing a mouse-created highlight"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> prop: slotProps should keep AutocompletePopper mounted if keepMounted is true in popper props"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should apply the expanded class when listbox having no options is opened"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should apply the expanded class when listbox having options is opened"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should be customizable in the theme"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should have an elevation of 8 by default that can be overridden"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should not open the autocomplete popup when deleting chips"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should not override internal listbox ref when external listbox ref is provided by testing if highlighting works"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should not throw error when accessing ownerState in styleOverrides"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should render the chips with slots.chip and merge the className"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should reset scrollTop when deleting input adds matching options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should specify option key for duplicate options"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should toggle the autocomplete popup when clicking the popup indicator"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> should trigger a form expectedly"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> warnings warn if getOptionLabel do not return a string"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> warnings warn if groups options are not sorted"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> warnings warn if isOptionEqualToValue match multiple values for a given option"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> warnings warn if the type of the defaultValue is wrong"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> warnings warn if the type of the value is wrong"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> warnings warns if isOptionEqualToValue matches multiple freeSolo values without getOptionValue"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup closed does not clear the textbox on Escape"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup closed does not open on clear"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup closed opens on ArrowDown when focus is on the textbox and `openOnFocus` without moving focus"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup closed opens on ArrowUp when focus is on the textbox and `openOnFocus` without moving focus"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup closed opens when the textbox is focused when `openOnFocus`"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup closed should not focus the input when clicking helper text"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup closed should open popup when clicked on the root element"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup open closes the popup if Escape is pressed"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup open does not close the popup when option selected if Control is pressed"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup open does not close the popup when option selected if Meta is pressed"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup open moves focus to the first option on ArrowDown"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup open moves focus to the last option on ArrowUp"
+  ],
+  [
+    "packages/mui-material/src/Autocomplete/Autocomplete.test.js",
+    "<Autocomplete /> when popup open should ignore keydown event until the IME is confirmed"
+  ]
+]
