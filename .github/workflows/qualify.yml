@@ -6,6 +6,7 @@ permissions:
   contents: read
 jobs:
   performance:
+    if: "!contains(github.event.head_commit.message, 'extended suites only')"
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -63,7 +64,7 @@ jobs:
             ${{ runner.temp }}/con3*.log
             ${{ runner.temp }}/memory-*.jsonl
   wpt:
-    if: "!contains(github.event.head_commit.message, 'matched benchmark only')"
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only')"
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     strategy:
@@ -106,7 +107,7 @@ jobs:
             ${{ runner.temp }}/wpt.json
             ${{ runner.temp }}/subtests.jsonl
   local-wpt:
-    if: "!contains(github.event.head_commit.message, 'matched benchmark only')"
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only')"
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -145,7 +146,7 @@ jobs:
             ${{ runner.temp }}/local-subtests.jsonl
             ${{ runner.temp }}/local-wpt.json
   frameworks:
-    if: "!contains(github.event.head_commit.message, 'matched benchmark only')"
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only')"
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -222,3 +223,71 @@ jobs:
           path: |
             ${{ runner.temp }}/result-*.json
             ${{ runner.temp }}/timing-*.txt
+  extended:
+    if: contains(github.event.head_commit.message, 'extended suites only')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [supabase, freecodecamp, react, drone]
+    env:
+      PROJECT: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - run: |
+          root="$PWD"
+          case "$PROJECT" in
+            supabase) repo=supabase/supabase;rev=7ef7d9f648ae8947adcbeb1ad674b044b68f50dd;;
+            freecodecamp) repo=freeCodeCamp/freeCodeCamp;rev=7fce48a0f6b78fcd93d907fc86475e6286bde34e;;
+            react) repo=facebook/react;rev=df6aa4ec76cff5b3adde531c6fe8c36099e0469b;;
+            drone) repo=drone/drone;rev=85bc2b9cd180a9e2cd2c6a6860c94b22f5eeaca2;;
+          esac
+          dir="$RUNNER_TEMP/workload"; mkdir "$dir"; cd "$dir"
+          curl -fsSL --retry 3 "https://codeload.github.com/$repo/tar.gz/$rev" | tar xz --strip-components=1
+          case "$PROJECT" in
+            supabase|freecodecamp)
+              npm install -g "pnpm@$(node -p 'require("./package.json").packageManager.split("@")[1].split("+")[0]')"
+              if [[ "$PROJECT" == supabase ]]; then
+                pnpm --filter 'ui...' install --frozen-lockfile
+                cd packages/ui
+                cmd=(pnpm exec vitest run --maxWorkers=1 --no-file-parallelism --no-cache --reporter=json)
+              else
+                pnpm --filter '@freecodecamp/client...' install --frozen-lockfile
+                pnpm --filter @freecodecamp/shared build
+                pnpm --filter @freecodecamp/challenge-builder build
+                [ ! -e sample.env ] || cp sample.env .env
+                cd client
+                pnpm create:env
+                mapfile -t cases < <(find . -type f \( -iname 'flash.test.tsx' -o -iname '*two*button*cta*.test.tsx' -o -iname '*two*button*cta*.test.jsx' \))
+                test "${#cases[@]}" -eq 2
+                cmd=(pnpm exec vitest run --project react "${cases[@]}" --maxWorkers=1 --no-file-parallelism --no-cache --reporter=json)
+              fi;;
+            react)
+              yarn install --frozen-lockfile --ignore-engines
+              cmd=(node scripts/jest/jest-cli.js CSSPropertyOperations DOMPropertyOperations --runInBand --json);;
+            drone)
+              cd web
+              npm install --legacy-peer-deps --no-audit --no-fund
+              cmd=(node node_modules/jest/bin/jest.js CreateRepositoryButton --runInBand --coverage=false --json);;
+          esac
+          for provider in candidate reference; do
+            if [[ "$provider" == reference ]]; then export JSDOM_ENTRY=$(realpath "$root/packages/jsdom/node_modules/jsdom/lib/api.js"); else export JSDOM_ENTRY="$root/packages/jsdom/dist/jsdom.cjs"; fi
+            export NODE_OPTIONS="--import=$root/qualification/provider.mjs"
+            /usr/bin/time -f '%e %M' -o "$RUNNER_TEMP/timing-$provider.txt" "${cmd[@]}" "--outputFile=$RUNNER_TEMP/result-$provider.json" >"$RUNNER_TEMP/command-$provider.log" 2>&1 || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extended-${{ matrix.project }}
+          path: |
+            ${{ runner.temp }}/result-*.json
+            ${{ runner.temp }}/timing-*.txt
+            ${{ runner.temp }}/command-*.log
