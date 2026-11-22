@@ -33,5 +33,14 @@ const properties = Object.entries(Object.getOwnPropertyDescriptors(basePrototype
       name !== "cssText" && !name.startsWith("_") && descriptor.get && descriptor.set,
   )
   .map(([name]) => name);
+// New CSSOM IDL attributes can precede support in the cssstyle parser.
+const { JSDOM } = createRequire(import.meta.url)("rundom-css-reference");
+const { window } = new JSDOM();
+for (const [name, descriptor] of Object.entries(
+  Object.getOwnPropertyDescriptors(window.CSSStyleProperties.prototype),
+)) {
+  if (descriptor.get && descriptor.set && !properties.includes(name)) properties.push(name);
+}
+window.close();
 writeFileSync("dist/css-property-names.cjs", `module.exports = ${JSON.stringify(properties)};\n`);
 copyFileSync("src/css-runtime-loader.cjs", "dist/css-runtime.cjs");

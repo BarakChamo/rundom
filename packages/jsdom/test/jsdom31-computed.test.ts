@@ -86,17 +86,35 @@ it("matches every enumerated value for an unstyled paragraph", () => {
 it("applies device media queries to live shorthand components inside resized frames", () => {
   for (const Constructor of [Reference, JSDOM]) {
     const { window } = new Constructor("<iframe style='width:300px'></iframe>");
-    const frame = (window.document.querySelector("iframe") as HTMLIFrameElement).contentWindow!;
+    const element = window.document.querySelector("iframe");
+    if (!(element instanceof window.HTMLIFrameElement) || !element.contentWindow)
+      throw new Error("Expected a child Window");
+    const frame = element.contentWindow as typeof window;
     const sheet = frame.document.createElement("style");
     sheet.textContent =
       "body { text-decoration: underline; position-area: span-inline-start span-block-end }";
-    frame.document.head.append(sheet);
-    const live = frame.getComputedStyle(frame.document.body);
-    sheet.media = "(min-width: 1000px) and (color)";
-    expect(live.textDecorationLine).toBe("underline");
+    frame.document.head!.append(sheet);
+    const live = frame.getComputedStyle(frame.document.body!);
+    sheet.setAttribute("media", "(min-width: 1000px) and (color)");
+    expect(live.getPropertyValue("text-decoration-line")).toBe("underline");
     expect(live.getPropertyValue("position-area")).toBe("span-end span-start");
-    sheet.media = "not (unknown)";
-    expect(live.textDecorationLine).toBe("none");
+    sheet.setAttribute("media", "not (unknown)");
+    expect(live.getPropertyValue("text-decoration-line")).toBe("none");
+    window.close();
+  }
+});
+
+it("keeps overlapping gap shorthands coherent after a longhand edit", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor("<p></p>");
+    const style = window.document.querySelector("p")!.style;
+    style.setProperty("rule", "5px solid red");
+    expect(style.cssText).toBe("rule: 5px solid red;");
+    style.setProperty("row-rule-color", "blue");
+    expect(style.getPropertyValue("row-rule")).toBe("5px solid blue");
+    expect(style.getPropertyValue("column-rule")).toBe("5px solid red");
+    style.removeProperty("rule");
+    expect(style.length).toBe(0);
     window.close();
   }
 });

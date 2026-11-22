@@ -47,11 +47,18 @@ function declarationImplementation(view: object): DeclarationImplementation {
   if (!implementation) throw new TypeError("Illegal invocation");
   return implementation;
 }
-function readNamedProperty(style: DeclarationImplementation, name: string): unknown {
+function readNamedProperty(
+  style: DeclarationImplementation,
+  name: string,
+  property: string,
+): unknown {
   const existing = Reflect.get(style, name);
   if (existing !== undefined) return existing;
   const read = Reflect.get(style, "_readGenericProperty");
-  return typeof read === "function" ? Reflect.apply(read, style, [name]) : undefined;
+  return (
+    (typeof read === "function" ? Reflect.apply(read, style, [name]) : undefined) ??
+    style.getPropertyValue(property)
+  );
 }
 function receiver(value: unknown): DeclarationImplementation {
   if ((typeof value !== "object" || value === null) && typeof value !== "function")
@@ -134,7 +141,7 @@ function indexedHandler(
     },
     has(target, key) {
       const index = indexOf(key);
-      return index === undefined ? lookup.has(target, key) : index < length(target);
+      return index === undefined ? lookup.has(target, key) : item(target, index) !== undefined;
     },
     getPrototypeOf: lookup.getPrototypeOf,
     setPrototypeOf: lookup.setPrototypeOf,
@@ -147,8 +154,9 @@ function indexedHandler(
     getOwnPropertyDescriptor(target, key) {
       const index = indexOf(key);
       if (index === undefined) return Reflect.getOwnPropertyDescriptor(target, key);
-      return index < length(target)
-        ? { value: item(target, index), writable: false, enumerable: true, configurable: true }
+      const value = item(target, index);
+      return value !== undefined
+        ? { value, writable: false, enumerable: true, configurable: true }
         : undefined;
     },
     set(target, key, value, proxy) {
@@ -273,8 +281,8 @@ export function createDeclarationViews(input: {
         const style = receiver(this);
         const deferred = deferredDeclarations.get(style);
         return deferred
-          ? (deferred.read(property) ?? readNamedProperty(deferred.materialize(), name))
-          : readNamedProperty(style, name);
+          ? (deferred.read(property) ?? readNamedProperty(deferred.materialize(), name, property))
+          : readNamedProperty(style, name, property);
       },
       set(value: unknown) {
         const style = receiver(this);
@@ -402,6 +410,7 @@ export function createDeclarationViews(input: {
   );
   type ComputedSource = DeclarationImplementation | (() => CSSStyleProperties | undefined);
   let computedValues: WeakMap<object, ComputedSource> | undefined = new WeakMap();
+  const connectedLiveSources = new WeakMap<() => CSSStyleProperties | undefined, () => boolean>();
   let empty: DeclarationImplementation | undefined;
   function computedValue(view: object): DeclarationImplementation {
     const source = computedValues?.get(view);
@@ -434,6 +443,11 @@ export function createDeclarationViews(input: {
         : indexedLength(value, inheritedIndices.get(value));
     },
     (target, index) => {
+      const source = computedValues?.get(target);
+      if (typeof source === "function") {
+        const name = computedLonghands()[index];
+        if (name !== undefined) return connectedLiveSources.get(source)?.() ? name : undefined;
+      }
       const value = computedValue(target);
       return typeof computedValues?.get(target) === "function"
         ? computedNames(value)[index]
@@ -540,7 +554,11 @@ export function createDeclarationViews(input: {
       deferredDeclarations.set(implementation, { read: readPending, materialize });
       return () => publishComputed(CSSStyleProperties.prototype, implementation);
     },
-    liveView(read: () => CSSStyleProperties | undefined): CSSStyleProperties {
+    liveView(
+      read: () => CSSStyleProperties | undefined,
+      connected: () => boolean,
+    ): CSSStyleProperties {
+      connectedLiveSources.set(read, connected);
       return publishComputed(propertyPrototype, read);
     },
     closeComputed(): void {

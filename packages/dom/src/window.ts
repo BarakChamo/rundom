@@ -19075,6 +19075,9 @@ function buildWindow(
     get CSSPropertyRule() {
       return styles().CSSPropertyRule;
     }
+    get CSSFontFeatureValuesRule() {
+      return styles().CSSFontFeatureValuesRule;
+    }
     get CSSFontFaceRule() {
       return styles().CSSFontFaceRule;
     }

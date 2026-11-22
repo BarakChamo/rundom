@@ -1,6 +1,10 @@
 // Parses author stylesheets and resolves declarations against private DOM state.
 import {
   expandedDeclaration,
+  fontFeatureValues,
+  gapLonghands,
+  serializeGapShorthand,
+  serializeGapBlock,
   defaultMediaQuery,
   computedPositionArea,
   longhandDefinition,
@@ -188,6 +192,7 @@ type NestedDeclarationsRule = {
   readonly style: PublicDeclaration;
   readonly cssText: string;
 };
+type FontFeatureValuesRule = { readonly type: 14; fontFamily: string; readonly cssText: string };
 type PropertyRule = {
   readonly type: 0;
   readonly names: readonly string[];
@@ -208,6 +213,7 @@ type StyleRule = (
   | NestedDeclarationsRule
   | QualifiedRule
   | PropertyRule
+  | FontFeatureValuesRule
   | ImportRule
   | MediaRule
   | SupportsRule
@@ -246,6 +252,10 @@ type Rule =
   | { kind: "page"; view: PageRule & RuleParents; rules: Rule[] }
   | { kind: "property"; view: PropertyRule & RuleParents }
   | { kind: "counter-style"; view: CounterStyleRule & RuleParents }
+  | {
+      kind: "font-feature-values";
+      view: FontFeatureValuesRule & RuleParents;
+    }
   | { kind: "layer-statement"; view: LayerStatementRule & RuleParents }
   | { kind: "layer-block"; view: LayerBlockRule & RuleParents; rules: Rule[] }
   | { kind: "media"; view: MediaRule & RuleParents; rules: Rule[] }
@@ -1288,6 +1298,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     override get cssText(): string {
       let text = super.cssText;
+      if (/(?:^|; )(?:column|row)-rule-(?:width|style|color|inset)[-:]/.test(text))
+        text = serializeGapBlock(text);
       if (
         this._values.has("background") &&
         this._values.get("background-blend-mode") === "normal" &&
@@ -1485,7 +1497,9 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     #removeProperty(property: string): string {
       const name = property.toLowerCase();
       const longhands =
-        name === "outline" ? outlineLonghands : shorthandLonghands(name, propertyDefinitions);
+        name === "outline"
+          ? outlineLonghands
+          : (gapLonghands(name) ?? shorthandLonghands(name, propertyDefinitions));
       if (this._readonly) return super.removeProperty(property);
       if (name.startsWith("background-") && super.getPropertyValue(name))
         super.removeProperty("background");
@@ -1599,6 +1613,16 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         if (inherited) return inherited.get(property) ?? this._values.get(property) ?? "";
       }
       property = canonicalProperty(property);
+      const gap = gapLonghands(property);
+      if (gap && /var\(/i.test(super.getPropertyValue(property)))
+        return super.getPropertyValue(property);
+      if (gap)
+        return serializeGapShorthand(
+          property,
+          gap,
+          (child) => this.getPropertyValue(child),
+          (child) => super.getPropertyPriority(child),
+        );
       const value = super.getPropertyValue(property);
       if (!value && !this._computed && /^(?:margin|inset)(?:-block|-inline)?$/.test(property)) {
         const children = propertyDefinitions.get(property)?.longhands;
@@ -1899,6 +1923,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         if (name.startsWith("background-")) super.removeProperty("background");
         if (
           name === "outline" ||
+          gapLonghands(name) ||
           isPhysicalBorder(name) ||
           propertyDefinitions.get(name)?.longhands?.length
         )
@@ -1924,6 +1949,13 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           for (const [index, child] of longhands.entries())
             this._setProperty(child, expanded[index]!, priority);
         } else this._setProperty(name, components.join(" "), priority);
+        return;
+      }
+      if (gapLonghands(name) && !/var\(/i.test(value)) {
+        const declaration = expandedDeclaration(name, value);
+        if (!declaration) return;
+        for (const [child, component] of declaration.entries)
+          this._setProperty(child, component, priority);
         return;
       }
       if ((name === "font" || name === "text-decoration") && !/var\(/i.test(value)) {
@@ -2421,6 +2453,25 @@ function createRuleInterfaces(
   }
   for (const name of ["type", "parentRule", "parentStyleSheet"]) {
     Object.defineProperty(CSSRule.prototype, name, { enumerable: true });
+  }
+  class CSSFontFeatureValuesRule extends CSSRule<14> {
+    #features: NonNullable<ReturnType<typeof fontFeatureValues>>;
+    constructor(token: symbol, features: NonNullable<ReturnType<typeof fontFeatureValues>>) {
+      super(token, 14);
+      this.#features = features;
+    }
+    get fontFamily(): string {
+      return this.#features.fontFamily;
+    }
+    set fontFamily(value: string) {
+      this.#features.fontFamily = cssInput(value);
+    }
+    get cssText(): string {
+      return this.#features.cssText;
+    }
+    get [Symbol.toStringTag](): string {
+      return "CSSFontFeatureValuesRule";
+    }
   }
   class CSSFontFaceRule extends CSSRule<5> implements DeclarationRule {
     constructor(token: symbol, declaration: Declaration) {
@@ -3135,6 +3186,7 @@ function createRuleInterfaces(
     CSSStyleRule,
     CSSNestedDeclarations,
     CSSFontFaceRule,
+    CSSFontFeatureValuesRule,
     CSSPropertyRule,
     CSSNamespaceRule,
     CSSCounterStyleRule,
@@ -4634,6 +4686,15 @@ function parseSheet(
           initialValue,
         }),
       });
+      return;
+    }
+    if (node.type === "Atrule" && node.name === "font-feature-values" && node.block) {
+      const features = fontFeatureValues(generate(node));
+      if (features)
+        target.push({
+          kind: "font-feature-values",
+          view: new interfaces.CSSFontFeatureValuesRule(interfaces.key, features),
+        });
       return;
     }
     if (node.type === "Atrule" && node.name === "font-face" && node.block) {
@@ -7812,6 +7873,7 @@ export function createStyles(input: {
             rule.kind === "layer-statement" ||
             rule.kind === "namespace" ||
             rule.kind === "counter-style" ||
+            rule.kind === "font-feature-values" ||
             rule.kind === "page" ||
             rule.kind === "keyframe" ||
             rule.kind === "keyframes" ||
@@ -8465,6 +8527,7 @@ export function createStyles(input: {
     CSSGroupingRule: ruleInterfaces.CSSGroupingRule,
     CSSConditionRule: ruleInterfaces.CSSConditionRule,
     CSSFontFaceRule: ruleInterfaces.CSSFontFaceRule,
+    CSSFontFeatureValuesRule: ruleInterfaces.CSSFontFeatureValuesRule,
     CSSPropertyRule: ruleInterfaces.CSSPropertyRule,
     CSSNamespaceRule: ruleInterfaces.CSSNamespaceRule,
     CSSCounterStyleRule: ruleInterfaces.CSSCounterStyleRule,
@@ -8492,13 +8555,16 @@ export function createStyles(input: {
     liveView(node: Raw.Element, read: () => PublicDeclaration | undefined) {
       let frame: ComputedFrame | undefined;
       let snapshot: PublicDeclaration | undefined;
-      return views().liveView(() => {
-        if (snapshot && completedFrame(frame, node, input.styleRevision(input.document)))
+      return views().liveView(
+        () => {
+          if (snapshot && completedFrame(frame, node, input.styleRevision(input.document)))
+            return snapshot;
+          snapshot = read();
+          frame = snapshot ? computedFrames.get(node)?.target : undefined;
           return snapshot;
-        snapshot = read();
-        frame = snapshot ? computedFrames.get(node)?.target : undefined;
-        return snapshot;
-      });
+        },
+        () => input.isConnected(node),
+      );
     },
     focusDisplayCheck,
     removeLinkedSheet(node: Raw.Element): void {

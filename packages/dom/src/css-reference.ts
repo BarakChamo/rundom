@@ -54,6 +54,35 @@ export function specifiedDeclaration(name: string, value: string): string | unde
   return serializeDeclarationValue(parsed);
 }
 
+function detachedDeclaration(declarations: readonly unknown[]) {
+  const {
+    implementation: Declaration,
+  }: {
+    implementation: new (
+      global: object,
+      args: never[],
+      options: object,
+    ) => { readonly cssText: string; getPropertyValue(property: string): string };
+  } = require("rundom-css-reference/lib/jsdom/living/css/CSSStyleDeclaration-impl.js");
+  return new Declaration(globalThis, [], { baseURL: "about:blank", declarations });
+}
+
+/** Serializes CSS blocks containing overlapping gap decoration shorthands. */
+export function serializeGapBlock(text: string): string {
+  const {
+    parseDeclarations,
+  }: {
+    parseDeclarations(text: string, context: object): unknown[];
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    createContext,
+  }: {
+    createContext(owner: object): object;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/context.js");
+  context ??= createContext({ _globalObject: globalThis });
+  return detachedDeclaration(parseDeclarations(text, context)).cssText;
+}
+
 /** Expands a shorthand and serializes it from all of its longhands in declaration order. */
 export function expandedDeclaration(
   name: string,
@@ -64,17 +93,8 @@ export function expandedDeclaration(
   const expand: (
     declaration: unknown,
   ) => { name: string }[] = require("rundom-css-reference/lib/jsdom/living/css/parse/shorthand.js");
-  const {
-    implementation: Declaration,
-  }: {
-    implementation: new (
-      global: object,
-      args: never[],
-      options: object,
-    ) => { getPropertyValue(property: string): string };
-  } = require("rundom-css-reference/lib/jsdom/living/css/CSSStyleDeclaration-impl.js");
   const declarations = expand(parsed);
-  const style = new Declaration(globalThis, [], { baseURL: "about:blank", declarations });
+  const style = detachedDeclaration(declarations);
   return {
     text: style.getPropertyValue(name),
     entries: declarations.map(({ name }) => [name, style.getPropertyValue(name)]),
@@ -216,4 +236,60 @@ export function computedPositionArea(value: string): string {
     computed: true,
     value: getComputedValue("position-area", undefined, specified.value),
   });
+}
+
+/** Gap decoration shorthands share components across both axes. */
+export function gapLonghands(name: string): readonly string[] | undefined {
+  if (!/^(?:(?:row|column)-)?rule(?:-|$)/.test(name)) return;
+  const shorthands: ReadonlyMap<
+    string,
+    readonly [readonly string[]]
+  > = require("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js");
+  return shorthands.get(name)?.[0];
+}
+
+export function serializeGapShorthand(
+  name: string,
+  children: readonly string[],
+  read: (name: string) => string,
+  priority: (name: string) => string,
+): string {
+  const declarations = [];
+  const importance = priority(children[0]!);
+  for (const child of children) {
+    const text = read(child);
+    if (!text || priority(child) !== importance) return "";
+    const parsed = parseDeclaration(child, text);
+    if (!parsed) return "";
+    declarations.push(parsed);
+  }
+  const {
+    serializeDeclarationValue,
+  }: {
+    serializeDeclarationValue(declaration: object): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  return serializeDeclarationValue({ name, shorthand: true, value: declarations });
+}
+
+/** Keeps the nested, ordered OpenType feature maps local to their CSS rule. */
+export function fontFeatureValues(
+  text: string,
+): { cssText: string; fontFamily: string } | undefined {
+  const {
+    parseStyleSheetSyntax,
+  }: {
+    parseStyleSheetSyntax(text: string): { name: string }[];
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const rules = parseStyleSheetSyntax(text);
+  if (rules.length !== 1 || rules[0]?.name !== "font-feature-values") return;
+  const {
+    implementation: FontFeatures,
+  }: {
+    implementation: new (
+      global: object,
+      args: never[],
+      syntax: object,
+    ) => { cssText: string; fontFamily: string };
+  } = require("rundom-css-reference/lib/jsdom/living/css/CSSFontFeatureValuesRule-impl.js");
+  return new FontFeatures(globalThis, [], rules[0]);
 }
