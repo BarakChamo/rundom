@@ -1,25 +1,25 @@
 {
   "reference": "jsdom 31.0.1",
-  "candidate": "ae137ee",
+  "candidate": "c27dc83",
   "priorCandidate": "2af947b",
   "comparisons": {
     "Upstream WPT": {
-      "casesRecovered": 2358,
-      "casesRegressed": 27,
+      "casesRecovered": 2470,
+      "casesRegressed": 25,
       "regressionsByFile": {
-        "css/css-pseudo/parsing/marker-supported-properties.html": 5,
         "css/css-pseudo/parsing/marker-supported-properties-in-animation.html": 5,
+        "css/css-pseudo/parsing/marker-supported-properties.html": 5,
         "css/css-values/minmax-length-computed.html": 4,
-        "css/css-values/signs-abs-computed.html": 3,
-        "css/css-display/display-math-on-pseudo-elements-001.html": 3,
         "css/css-shadow/slotted-parsing.html": 3,
+        "css/css-display/display-math-on-pseudo-elements-001.html": 3,
         "css/css-backgrounds/animations/box-shadow-interpolation.html": 2,
         "css/cssom/getComputedStyle-pseudo.html": 1,
-        "css/cssom/serialize-custom-props.html": 1
+        "css/cssom/serialize-custom-props.html": 1,
+        "css/css-values/signs-abs-computed.html": 1
       }
     },
     "jsdom-local WPT": {
-      "casesRecovered": 174,
+      "casesRecovered": 209,
       "casesRegressed": 0,
       "regressionsByFile": {}
     }
@@ -4162,149 +4162,6 @@
           },
           {
             "name": "Property columns value 'auto 2'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-values/calc-size/calc-size-parsing.html": {
-        "failing": 23,
-        "assertions": [
-          {
-            "name": "e.style['flex-basis'] = \"calc-size(any, 50px)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex-basis'] = \"calc-size(auto, size)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex-basis'] = \"calc-size(max-content, size)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['flex-basis'] = \"calc-size(min-content, size)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['height'] = \"calc(12% + calc-size(any, 31%))\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['height'] = \"calc-size(auto, size)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['height'] = \"calc-size(max-content, size)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['max-height'] = \"calc-size(auto, size)\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['max-width'] = \"calc-size(auto, size)\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc(calc-size(auto, size) + calc-size(auto, size))\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc(calc-size(auto, size))\" should not set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(0px, 0px)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(30px, 25em)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(any, 25em)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(any, 40%)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(any, 50px + 30%)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(auto, size)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(calc-size(2in, 30px), 25em)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(calc-size(any, 30px), 25em)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(calc-size(any, 30px), size)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(calc-size(min-content, 30px), 25em)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(calc-size(min-content, size), size)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['width'] = \"calc-size(max-content, size)\" should set the property value",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -8738,107 +8595,6 @@
           }
         ]
       },
-      "css/css-values/minmax-angle-computed.html": {
-        "failing": 16,
-        "assertions": [
-          {
-            "name": "max(0.25turn, min(270deg, 3.14rad)) should be used-value-equivalent to 3.14rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "max(1.58rad, 90deg) should be used-value-equivalent to 1.58rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "max(1grad) should be used-value-equivalent to 1grad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "max(1grad, 2grad) should be used-value-equivalent to 2grad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "max(1rad) should be used-value-equivalent to 1rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "max(1rad, 2rad) should be used-value-equivalent to 2rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "max(1turn) should be used-value-equivalent to 1turn",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "max(1turn, 2turn) should be used-value-equivalent to 2turn",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "min(1.57rad, 95deg) should be used-value-equivalent to 1.57rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "min(1grad) should be used-value-equivalent to 1grad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "min(1grad, 2grad) should be used-value-equivalent to 1grad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "min(1rad) should be used-value-equivalent to 1rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "min(1rad, 2rad) should be used-value-equivalent to 1rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "min(1turn) should be used-value-equivalent to 1turn",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "min(1turn, 2turn) should be used-value-equivalent to 1turn",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "min(270deg, max(0.25turn, 3.14rad)) should be used-value-equivalent to 3.14rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-values/urls/url-request-modifiers-computed.sub.html": {
         "failing": 16,
         "assertions": [
@@ -9878,95 +9634,6 @@
           },
           {
             "name": "e.style['columns'] = \"auto auto\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-values/ident-function-computed.html": {
-        "failing": 14,
-        "assertions": [
-          {
-            "name": "Property view-transition-name value 'ident(\"--prop\" calc(1 + 2))'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(\"my\" \"ident\")'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(\"my\" ident)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(\"myident\" 3)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(\"myident\" 42)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(\"myident\")'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(-- myident)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(3 \"myident\")'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(5px)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(my \"ident\")'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(my 3 3 3 3 ident)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(my ident)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(myident)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property view-transition-name value 'ident(rgb(1, 2, 3))'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -13316,124 +12983,6 @@
           }
         ]
       },
-      "css/css-values/round-mod-rem-computed.html": {
-        "failing": 9,
-        "assertions": [
-          {
-            "name": "mod(10grad,6grad) should be used-value-equivalent to 4grad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "mod(10rad,6rad) should be used-value-equivalent to 4rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "mod(10turn,6turn) should be used-value-equivalent to 4turn",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "rem(10grad,6grad) should be used-value-equivalent to 4grad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "rem(10rad,6rad) should be used-value-equivalent to 4rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "rem(10turn,6turn) should be used-value-equivalent to 4turn",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "round(10grad,6grad) should be used-value-equivalent to 12grad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "round(10rad,6rad) should be used-value-equivalent to 12rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "round(10turn,6turn) should be used-value-equivalent to 12turn",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-values/signs-abs-computed.html": {
-        "failing": 9,
-        "assertions": [
-          {
-            "name": "abs(-1grad) should be used-value-equivalent to 1grad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "abs(-1rad) should be used-value-equivalent to 1rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "abs(-1turn) should be used-value-equivalent to 1turn",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "abs(1grad) should be used-value-equivalent to 1grad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "abs(1rad) should be used-value-equivalent to 1rad",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "abs(1turn) should be used-value-equivalent to 1turn",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "calc(100dpi + 20dpi * sign(38px - 2em)) should be used-value-equivalent to 80dpi",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": true
-          },
-          {
-            "name": "calc(100dpi + 20dpi * sign(40px - 2em)) should be used-value-equivalent to 100dpi",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": true
-          },
-          {
-            "name": "calc(100dpi + 20dpi * sign(42px - 2em)) should be used-value-equivalent to 120dpi",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": true
-          }
-        ]
-      },
       "css/cssom/getComputedStyle-pseudo-with-argument.html": {
         "failing": 9,
         "assertions": [
@@ -13546,59 +13095,6 @@
           },
           {
             "name": "\":has(*|*)\" should be a valid selector",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-grid/parsing/grid-area-valid.html": {
-        "failing": 8,
-        "assertions": [
-          {
-            "name": "e.style['grid-column-end'] = \"2 SpAn\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['grid-column-end'] = \"AuTo\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['grid-column-end'] = \"\u03c0_ +5\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['grid-column-start'] = \"SpAn i 2\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['grid-column-start'] = \"Z -44\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['grid-column-start'] = \"span calc(sibling-index() - 2)\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['grid-row-end'] = \"2 i span\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['grid-row-start'] = \"-19\" should set the property value",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -13817,59 +13313,6 @@
           }
         ]
       },
-      "css/css-transforms/parsing/rotate-parsing-computed.html": {
-        "failing": 8,
-        "assertions": [
-          {
-            "name": "Property rotate value '0 0 0 400grad'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property rotate value '100 200 300 400grad'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property rotate value '400grad 100 200 300'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property rotate value '400grad x'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property rotate value '400grad y'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property rotate value '400grad'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property rotate value 'x 400grad'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property rotate value 'y 400grad'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-ui/parsing/canonical-order-outline-sub-properties-001.html": {
         "failing": 8,
         "assertions": [
@@ -14023,59 +13466,6 @@
           },
           {
             "name": "min(1pt + 1%) should be used-value-equivalent to calc(1pt + 1%)",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-values/tree-counting/sibling-function-invalidation.html": {
-        "failing": 8,
-        "assertions": [
-          {
-            "name": "::after sibling-count() and sibling-index() after removal",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "::after sibling-count() and sibling-index() initially",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "::before sibling-count() and sibling-index() after removal",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "::before sibling-count() and sibling-index() initially",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "::first-letter sibling-count() and sibling-index() after removal",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "::first-letter sibling-count() and sibling-index() initially",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "::first-line sibling-count() and sibling-index() after removal",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "::first-line sibling-count() and sibling-index() initially",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -14623,6 +14013,53 @@
           }
         ]
       },
+      "css/css-grid/parsing/grid-area-valid.html": {
+        "failing": 7,
+        "assertions": [
+          {
+            "name": "e.style['grid-column-end'] = \"2 SpAn\" should set the property value",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "e.style['grid-column-end'] = \"AuTo\" should set the property value",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "e.style['grid-column-end'] = \"\u03c0_ +5\" should set the property value",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "e.style['grid-column-start'] = \"SpAn i 2\" should set the property value",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "e.style['grid-column-start'] = \"Z -44\" should set the property value",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "e.style['grid-row-end'] = \"2 i span\" should set the property value",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "e.style['grid-row-start'] = \"-19\" should set the property value",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          }
+        ]
+      },
       "css/css-grid/parsing/grid-template-areas-invalid.html": {
         "failing": 7,
         "assertions": [
@@ -14905,94 +14342,47 @@
           }
         ]
       },
-      "css/css-values/hypot-pow-sqrt-computed.html": {
+      "css/css-transforms/parsing/rotate-parsing-computed.html": {
         "failing": 7,
         "assertions": [
           {
-            "name": "calc(1px * sqrt(sibling-index())) should be used-value-equivalent to 2px",
+            "name": "Property rotate value '0 0 0 400grad'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "hypot(1grad) should be used-value-equivalent to 1grad",
+            "name": "Property rotate value '100 200 300 400grad'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "hypot(1rad) should be used-value-equivalent to 1rad",
+            "name": "Property rotate value '400grad 100 200 300'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "hypot(1turn) should be used-value-equivalent to 1turn",
+            "name": "Property rotate value '400grad x'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "hypot(3, sibling-index()) should be used-value-equivalent to 5",
+            "name": "Property rotate value '400grad y'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "sqrt(pow(sibling-index(), 2)) should be used-value-equivalent to 4",
+            "name": "Property rotate value 'x 400grad'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
           },
           {
-            "name": "sqrt(sibling-index()) should be used-value-equivalent to 2",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-values/ident-function-substitution.html": {
-        "failing": 7,
-        "assertions": [
-          {
-            "name": "a math function over sibling-index() in the ident() argument",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "an argument that is not <ident-arg>+ makes ident() invalid at computed-value time",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "an ident() with no attr() involved does not taint the property it names",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "ident() in the ident() argument",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "ident() substituting a value the property does not accept",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "sibling-index() in the ident() argument",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "var() in the ident() argument",
+            "name": "Property rotate value 'y 400grad'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -15872,47 +15262,6 @@
           },
           {
             "name": "e.style['flex'] = \"calc(10 + (sign(20cqw - 10px) * 5)) calc(10 + (sign(20cqw - 10px) * 5)) 1px\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-grid/parsing/grid-area-computed.html": {
-        "failing": 6,
-        "assertions": [
-          {
-            "name": "Property grid-column-end value '\\31st'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property grid-column-start value 'span 1 i'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property grid-row-start value '-19'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property grid-row-start value 'calc(1.1) -a-'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property grid-row-start value 'span calc(-1)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property grid-row-start value 'span calc(sibling-index() - 2)'",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -17878,41 +17227,6 @@
           }
         ]
       },
-      "css/css-values/tree-counting/calc-sibling-function.html": {
-        "failing": 5,
-        "assertions": [
-          {
-            "name": "basic sibling-count() test",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "basic sibling-index() test",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "sibling-index() and sibling-count() on nested pseudo-element",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "sibling-index() and sibling-count() on pseudo-element",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "sibling-index() in calc() with percentage",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-values/urls/url-request-modifiers-font-face-parsing.html": {
         "failing": 5,
         "assertions": [
@@ -18919,6 +18233,35 @@
           }
         ]
       },
+      "css/css-grid/parsing/grid-area-computed.html": {
+        "failing": 4,
+        "assertions": [
+          {
+            "name": "Property grid-column-start value 'span 1 i'",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "Property grid-row-start value '-19'",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "Property grid-row-start value 'calc(1.1) -a-'",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "Property grid-row-start value 'span calc(-1)'",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          }
+        ]
+      },
       "css/css-grid/parsing/grid-template-areas-one-cell.html": {
         "failing": 4,
         "assertions": [
@@ -19557,35 +18900,6 @@
           }
         ]
       },
-      "css/css-variables/var-ident-function.html": {
-        "failing": 4,
-        "assertions": [
-          {
-            "name": "Referencing a custom property with ident()",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "ident() causing lookup of invalid custom property, fallback",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "ident() causing lookup of invalid custom property, fallback, CSS-wide keyword",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "ident() is substituted on custom properties",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/cssom/getComputedStyle-detached-subtree.html": {
         "failing": 4,
         "assertions": [
@@ -20203,29 +19517,6 @@
           }
         ]
       },
-      "css/css-fonts/font-variation-settings-calc.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "Property font-variation-settings value '\"wght\" calc(10)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property font-variation-settings value '\"wght\" sibling-index()'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Property font-variation-settings value '\"wght\" sign(2px)'",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-fonts/variations/font-parse-numeric-stretch-style-weight.html": {
         "failing": 3,
         "assertions": [
@@ -20779,8 +20070,8 @@
         ]
       },
       "css/css-page/page-rule-declarations-003.html": {
-        "failing": 1,
         "missing": 2,
+        "failing": 1,
         "assertions": [
           {
             "name": "CSS Paged Media: parsing @page selectors",
@@ -21187,52 +20478,6 @@
           },
           {
             "name": "e.style['transition'] = \"all 1s\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-values/tree-counting/calc-sibling-function-in-shadow-dom.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "Direct shadow root children have correct sibling-index() and sibling-count()",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Host children have sibling-index() and sibling-count() based on the DOM tree order",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Shadow children have sibling-index() and sibling-count() based on the DOM tree order",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-values/tree-counting/sibling-function-if-style-query.html": {
-        "failing": 3,
-        "assertions": [
-          {
-            "name": "sibling-count() in an if() style() comparison",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "sibling-index() in an if() style() comparison",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "sibling-index() inside mod() in an if() style() comparison",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -22016,6 +21261,23 @@
           }
         ]
       },
+      "css/css-fonts/font-variation-settings-calc.html": {
+        "failing": 2,
+        "assertions": [
+          {
+            "name": "Property font-variation-settings value '\"wght\" calc(10)'",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "Property font-variation-settings value '\"wght\" sign(2px)'",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          }
+        ]
+      },
       "css/css-fonts/parsing/font-size-computed.html": {
         "failing": 2,
         "assertions": [
@@ -22775,40 +22037,6 @@
           },
           {
             "name": "'min(1%, 2%, 3%) 0px' as a specified value should serialize as 'min(1%, 2%, 3%) 0px'.",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-values/tree-counting/calc-sibling-function-parsing.html": {
-        "failing": 2,
-        "assertions": [
-          {
-            "name": "e.style['z-index'] = \"calc(sibling-count())\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "e.style['z-index'] = \"calc(sibling-index())\" should set the property value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-values/tree-counting/trig-functions-with-runtime-angle-arguments.html": {
-        "failing": 2,
-        "assertions": [
-          {
-            "name": "rotate property: first element gets correct cos(30deg) value",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "rotate property: last element gets correct cos(150deg) value",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
@@ -25224,6 +24452,39 @@
           }
         ]
       },
+      "css/css-values/signs-abs-computed.html": {
+        "failing": 1,
+        "assertions": [
+          {
+            "name": "calc(100dpi + 20dpi * sign(38px - 2em)) should be used-value-equivalent to 80dpi",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": true
+          }
+        ]
+      },
+      "css/css-values/tree-counting/calc-sibling-function-in-shadow-dom.html": {
+        "failing": 1,
+        "assertions": [
+          {
+            "name": "Host children have sibling-index() and sibling-count() based on the DOM tree order",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          }
+        ]
+      },
+      "css/css-values/tree-counting/calc-sibling-function.html": {
+        "failing": 1,
+        "assertions": [
+          {
+            "name": "sibling-index() and sibling-count() on nested pseudo-element",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          }
+        ]
+      },
       "css/css-values/tree-counting/trig-functions-in-gradient-position.html": {
         "failing": 1,
         "assertions": [
@@ -27248,167 +26509,6 @@
       }
     },
     "jsdom-local WPT": {
-      "css/css-conditional/container-unit-writing-modes.html": {
-        "failing": 26,
-        "assertions": [
-          {
-            "name": "cqb selects each eligible axis across a horizontal-tb inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqb selects each eligible axis across a vertical-rl inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqb uses a horizontal-tb size container for a vertical-rl target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqb uses a vertical-rl size container for a horizontal-tb target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqb without an eligible container uses the target's small viewport axis",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqh selects each eligible axis across a horizontal-tb inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqh selects each eligible axis across a vertical-rl inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqh uses a horizontal-tb size container for a vertical-rl target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqh uses a vertical-rl size container for a horizontal-tb target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqi selects each eligible axis across a horizontal-tb inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqi selects each eligible axis across a vertical-rl inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqi uses a horizontal-tb size container for a vertical-rl target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqi uses a vertical-rl size container for a horizontal-tb target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqi without an eligible container uses the target's small viewport axis",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqmax selects each eligible axis across a horizontal-tb inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqmax selects each eligible axis across a vertical-rl inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqmax uses a horizontal-tb size container for a vertical-rl target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqmax uses a vertical-rl size container for a horizontal-tb target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqmin selects each eligible axis across a horizontal-tb inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqmin selects each eligible axis across a vertical-rl inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqmin uses a horizontal-tb size container for a vertical-rl target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqmin uses a vertical-rl size container for a horizontal-tb target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqw selects each eligible axis across a horizontal-tb inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqw selects each eligible axis across a vertical-rl inline-size container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqw uses a horizontal-tb size container for a vertical-rl target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqw uses a vertical-rl size container for a horizontal-tb target",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "html/semantics/scripting-1/the-script-element/parser-blocking.html": {
         "failing": 20,
         "harnessLoss": 1,
@@ -28864,47 +27964,6 @@
           }
         ]
       },
-      "css/css-conditional/container-unit-viewport-fallback.html": {
-        "failing": 6,
-        "assertions": [
-          {
-            "name": "cqb falls back to svb without a size query container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqh falls back to svh without a size query container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqi falls back to svi without a size query container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqmax falls back to svmax without a size query container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqmin falls back to svmin without a size query container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "cqw falls back to svw without a size query container",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/css-mixins/functions/function-universal-defaults.html": {
         "failing": 6,
         "assertions": [
@@ -29751,35 +28810,6 @@
           }
         ]
       },
-      "css/css-variables/substitution-contexts.html": {
-        "failing": 4,
-        "assertions": [
-          {
-            "name": "A var() name can itself contain a substitution",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "CSS-wide keywords produced by substitution are applied to the custom property",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "Undefined environment variables substitute their fallback or become invalid",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "ident() substitutes on custom properties and an invalid variable name uses its fallback",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
       "css/cssom/computed-style-live-eligibility.html": {
         "failing": 4,
         "assertions": [
@@ -30399,6 +29429,29 @@
           }
         ]
       },
+      "css/css-variables/substitution-contexts.html": {
+        "failing": 3,
+        "assertions": [
+          {
+            "name": "A var() name can itself contain a substitution",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "CSS-wide keywords produced by substitution are applied to the custom property",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          },
+          {
+            "name": "Undefined environment variables substitute their fallback or become invalid",
+            "occurrence": 1,
+            "status": "fail",
+            "passedPreviousBuild": false
+          }
+        ]
+      },
       "css/cssom/CSSStyleDeclaration-shorthand-invalidation.html": {
         "failing": 3,
         "assertions": [
@@ -30823,23 +29876,6 @@
           },
           {
             "name": "Computed opacity converts percentages and clamps to the allowed range",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          }
-        ]
-      },
-      "css/css-values/ident-function-escaping.html": {
-        "failing": 2,
-        "assertions": [
-          {
-            "name": "A generated identifier containing a space remains one identifier",
-            "occurrence": 1,
-            "status": "fail",
-            "passedPreviousBuild": false
-          },
-          {
-            "name": "A generated identifier starting with a digit remains an identifier",
             "occurrence": 1,
             "status": "fail",
             "passedPreviousBuild": false
