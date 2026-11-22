@@ -406,3 +406,24 @@ it("updates page margin descriptors through live rule lists", () => {
     window.close();
   }
 });
+
+it("shares CSS random draws across functions and keeps element keys after a style change", () => {
+  const { window } = new JSDOM('<div style="--u:url(#foo);cursor:var(--u),pointer"></div>');
+  const node = window.document.querySelector("div")!;
+  node.style.setProperty("width", "random(element-scoped, 0px, 500px)");
+  node.style.setProperty(
+    "margin-left",
+    "random-item(element-scoped, 0px, 100px, 200px, 300px, 400px)",
+  );
+  node.style.setProperty("padding-left", "random-item(fixed 0.8, 0px, 100px, 200px, 300px, 400px)");
+  const style = window.getComputedStyle(node);
+  const width = Number.parseFloat(style.getPropertyValue("width"));
+  expect(style.getPropertyValue("margin-left")).toBe(
+    Math.min(400, Math.floor(width / 100) * 100) + "px",
+  );
+  expect(style.getPropertyValue("padding-left")).toBe("400px");
+  expect(style.getPropertyValue("cursor")).toBe('url("#foo"), pointer');
+  node.style.color = "green";
+  expect(style.getPropertyValue("width")).toBe(width + "px");
+  window.close();
+});

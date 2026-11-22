@@ -6,7 +6,7 @@ import type { DefaultTreeAdapterTypes as Raw } from "parse5";
 import type { RegisteredProperty } from "./css-reference.js";
 
 const require = createRequire(import.meta.url);
-export const substitutionFunction = /(?:^|[^\w-])(?:attr|ident|if)\(/i;
+export const substitutionFunction = /(?:^|[^\w-])(?:attr|ident|if|random(?:-item)?)\(/i;
 
 type EvaluationDocument = {
   _parentDocument: null;
@@ -119,6 +119,20 @@ export function substitutionFrame(
   };
 }
 
+type RandomState = {
+  randomValues: Map<string, number>;
+  elementRandomValues: WeakMap<object, Map<string, number>>;
+};
+const randomBases = new WeakMap<Raw.Node, Map<string, number>>();
+
+function basesFor(node: Raw.Node): Map<string, number> {
+  let values = randomBases.get(node);
+  if (!values) randomBases.set(node, (values = new Map()));
+  return values;
+}
+
+type Component = { name?: string; start: number; end: number; value?: unknown };
+
 function buildSubstitutionFrame(
   raw: Raw.Element,
   parent: SubstitutionFrame | undefined,
@@ -134,6 +148,7 @@ function buildSubstitutionFrame(
     getResolvedPropertyValue(name: string, element: object): string;
   } = require("rundom-css-reference/lib/jsdom/living/css/resolve.js");
   const parser: {
+    parseGrammar(input: string, type: string, context: object): unknown;
     parseDestructuredDeclaration(
       name: string,
       value: string,
@@ -227,13 +242,91 @@ function buildSubstitutionFrame(
     },
   };
   document.documentElement ??= element;
+  let boundRandom = false;
+  function bindRandom() {
+    const state: {
+      getCSSState(global: object): RandomState;
+      getRandomBaseValue(global: object, key: object): number;
+    } = require("rundom-css-reference/lib/jsdom/living/css/state.js");
+    if (!boundRandom) {
+      let root: Raw.Node = raw;
+      while ("parentNode" in root && root.parentNode) root = root.parentNode;
+      const cache = state.getCSSState(globals);
+      cache.randomValues = basesFor(root);
+      cache.elementRandomValues.set(element, basesFor(raw));
+      boundRandom = true;
+    }
+    return state;
+  }
+
+  function parseWinner(name: string, text: string, important: boolean): unknown {
+    if (!/\brandom(?:-item)?\(/i.test(text))
+      return parser.parseDestructuredDeclaration(name, text, important, element);
+    const random = bindRandom();
+    if (text.includes("random-item(")) {
+      const parsed = parser.parseDestructuredDeclaration(name, text, important, element) as {
+        value?: unknown;
+      };
+      const replacements: { start: number; end: number; text: string }[] = [];
+      let index = 0;
+      function visit(node: unknown): void {
+        if (Array.isArray(node)) {
+          for (const child of node) visit(child);
+          return;
+        }
+        if (!node || typeof node !== "object") return;
+        const part = node as Component;
+        if (part.name !== "random-item" || !Array.isArray(part.value)) {
+          visit(part.value);
+          return;
+        }
+        const [keyTokens, , items] = part.value as [Component[], unknown, Component[][]];
+        if (!keyTokens?.length || !items?.length) return;
+        let key = text.slice(keyTokens[0]!.start, keyTokens.at(-1)!.end);
+        key = key.replace(
+          /^var\(\s*(--[\w-]+)\s*\)$/,
+          (original, variable: string) => values.get(variable) ?? original,
+        );
+        const tokens = parser.parseGrammar(key, "<random-key>", element);
+        if (!Array.isArray(tokens)) return;
+        const [identifier, local, scope] = tokens;
+        const draw =
+          identifier?.value === "fixed"
+            ? Number(local?.value?.value ?? local?.value)
+            : random.getRandomBaseValue(globals, {
+                element: local?.value === "element-scoped" ? element : undefined,
+                identifier: identifier?.value ?? null,
+                scope: scope?.value
+                  ? JSON.stringify([
+                      name,
+                      "random-item",
+                      scope.value === "property-index-scoped" ? index : null,
+                    ])
+                  : null,
+              });
+        ++index;
+        if (!Number.isFinite(draw)) return;
+        const item =
+          items[Math.min(items.length - 1, Math.max(0, Math.floor(draw * items.length)))]!;
+        replacements.push({
+          start: part.start,
+          end: part.end,
+          text: item.length ? text.slice(item[0]!.start, item.at(-1)!.end) : "",
+        });
+      }
+      visit(parsed?.value);
+      for (const part of replacements.reverse())
+        text = text.slice(0, part.start) + part.text + text.slice(part.end);
+    }
+    return parser.parseDestructuredDeclaration(name, text, important, element);
+  }
   const declarations = new Map<string, unknown>();
   const expanded = new Map<string, ReadonlyMap<string, unknown>>();
   function expandShorthand(name: string, text: string, important: boolean) {
     const key = name + (important ? "!" : "\0") + text;
     let components = expanded.get(key);
     if (!components) {
-      const parsed = parser.parseDestructuredDeclaration(name, text, important, element);
+      const parsed = parseWinner(name, text, important);
       if (isFailure(parsed)) return;
       const expand: (declaration: unknown) => {
         name: string;
@@ -250,7 +343,7 @@ function buildSubstitutionFrame(
       if (component) declarations.set(name, component);
       continue;
     }
-    const parsed = parser.parseDestructuredDeclaration(name, text, false, element);
+    const parsed = parseWinner(name, text, false);
     if (!isFailure(parsed)) declarations.set(name, parsed);
   }
   // Initialize upstream's cycle guard and caches, then supply the already-matched cascade.
@@ -289,7 +382,7 @@ function buildSubstitutionFrame(
           continue;
         }
         if (!deferred.has(name)) continue;
-        const declaration = parser.parseDestructuredDeclaration(name, value, important, element);
+        const declaration = parseWinner(name, value, important);
         if (!isFailure(declaration)) {
           block.set(name, declaration);
           declarations.delete(name);

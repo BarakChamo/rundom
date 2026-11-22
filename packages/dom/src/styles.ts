@@ -5411,6 +5411,7 @@ function usesTypedValueGrammar(name: string, text: string): boolean {
     text.includes("(") &&
     (/url\(\s*["'][^"']*["']\s+[-_a-z]/i.test(text) ||
       /(?:linear|radial|conic)-gradient\(/i.test(text) ||
+      (name === "cursor" && /(?:var|url)\(/i.test(text)) ||
       name === "clip-path" ||
       name === "opacity" ||
       /\bcalc\(/i.test(text) ||
