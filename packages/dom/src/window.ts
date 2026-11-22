@@ -8721,11 +8721,10 @@ function buildWindow(
     }
     get tabIndex(): number {
       const node = element(this);
-      if (attribute(node, "tabindex") !== null) return reflectedLong(node, "tabindex", 0);
-      return defaultTabStops.has(node.tagName) ||
-        (node.tagName === "summary" && summaryDetails(node) !== null)
-        ? 0
-        : -1;
+      const focusableByDefault =
+        defaultTabStops.has(node.tagName) ||
+        (node.tagName === "summary" && summaryDetails(node) !== null);
+      return reflectedLong(node, "tabindex", focusableByDefault ? 0 : -1);
     }
     set tabIndex(value: number) {
       this.setAttribute("tabindex", String(Number(value) | 0));

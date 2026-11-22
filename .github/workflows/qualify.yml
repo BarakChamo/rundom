@@ -188,13 +188,37 @@ jobs:
             mui) cases=(--project node:@mui/material); for f in Button Checkbox Dialog Select TextField; do cases+=("packages/mui-material/src/$f/$f.test.js"); done;;
           esac
           status=0
-          for provider in candidate reference; do
-            if [[ "$provider" == reference ]]; then export JSDOM_ENTRY=$(realpath "$root/packages/jsdom/node_modules/jsdom/lib/api.js"); else export JSDOM_ENTRY="$root/packages/jsdom/dist/jsdom.cjs"; fi
-            NODE_OPTIONS="--import=$root/qualification/provider.mjs" node node_modules/vitest/vitest.mjs run "${cases[@]}" --maxWorkers 1 --no-file-parallelism --no-cache --reporter=json "--outputFile=$RUNNER_TEMP/result-$provider.json" || status=1
+          for provider in candidate reference happy turbo; do
+            export QUAL_ENV=jsdom
+            unset JSDOM_ENTRY
+            case "$provider" in
+              candidate) export JSDOM_ENTRY="$root/packages/jsdom/dist/jsdom.cjs";;
+              reference) export JSDOM_ENTRY=$(realpath "$root/packages/jsdom/node_modules/jsdom/lib/api.js");;
+              happy) export QUAL_ENV=happy-dom;;
+              turbo) export QUAL_ENV=$(realpath "$root/packages/jsdom/node_modules/@miaskiewicz/turbo-dom/src/environment/vitest.mjs");;
+            esac
+            python3 - <<'PYENV'
+          import os,pathlib
+          project=os.environ["PROJECT"];env=os.environ["QUAL_ENV"]
+          if project=="svelte":
+            for case in ["motion","runtime-runes","runtime-legacy"]:
+              path=pathlib.Path("packages/svelte/tests")/case/"test.ts"
+              lines=path.read_text().splitlines(keepends=True);assert lines[0].startswith("// @vitest-environment ")
+              lines[0]="// @vitest-environment "+env+"\n";path.write_text("".join(lines))
+          else:
+            path=pathlib.Path("vitest.config.ts" if project=="vue" else "vitest.shared.mts")
+            text=path.read_text()
+            if project=="vue": text=text.replace("environment: 'jsdom'", "environment: process.env.QUAL_ENV || 'jsdom'")
+            else: text=text.replace("environment: jsdom ? 'jsdom' : 'node'", "environment: jsdom ? (process.env.QUAL_ENV || 'jsdom') : 'node'")
+            assert "process.env.QUAL_ENV" in text;path.write_text(text)
+          PYENV
+            NODE_OPTIONS="--import=$root/qualification/provider.mjs" /usr/bin/time -f '%e %M' -o "$RUNNER_TEMP/timing-$provider.txt" timeout 360 node node_modules/vitest/vitest.mjs run "${cases[@]}" --maxWorkers 1 --no-file-parallelism --no-cache --reporter=json "--outputFile=$RUNNER_TEMP/result-$provider.json" || status=1
           done
           exit "$status"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ${{ matrix.project }}
-          path: ${{ runner.temp }}/result-*.json
+          path: |
+            ${{ runner.temp }}/result-*.json
+            ${{ runner.temp }}/timing-*.txt

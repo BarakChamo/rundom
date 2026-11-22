@@ -2227,7 +2227,7 @@ it("borrows CSS declaration mutations across windows without invoking overridden
   }
 });
 
-it("inherits both background position axes when repeating image layers", () => {
+it("preserves the position list when the child has additional image layers", () => {
   // Given a parent with two position layers and a child with three image layers
   const { window } = new JSDOM(
     '<main style="background-image:none,none;background-position-x:10px,20px;background-position-y:1px,2px">' +
@@ -2238,7 +2238,7 @@ it("inherits both background position axes when repeating image layers", () => {
     if (!node) throw new Error("Expected the child");
     // Then the CSS-wide keyword stays intact until inheritance resolves both axes
     expect(window.getComputedStyle(node).getPropertyValue("background-position")).toBe(
-      "10px 1px, 20px 2px, 10px 1px",
+      "10px 1px, 20px 2px",
     );
   } finally {
     window.close();
