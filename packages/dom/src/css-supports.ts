@@ -1,4 +1,5 @@
 // Evaluates CSS feature queries using the same syntax and selector parsers as stylesheets.
+import { acceptsAnchors, anchorComponents } from "./css-anchor.js";
 import { ownedString } from "./owned-string.js";
 import { createRequire } from "node:module";
 import { parseSizeDeclaration } from "./css-sizing.js";
@@ -34,6 +35,8 @@ function supportedDeclaration(property: string, value: CssNode | string): boolea
   } = require("./css-runtime.cjs");
   const name = cssPropertyDefinitions.get(propertyName)?.legacyAliasOf ?? propertyName;
   const text = generate(parsed);
+  if (acceptsAnchors(name) && /\banchor(?:-size)?\(/i.test(text) && !/var\(/i.test(text))
+    return anchorComponents(name, text) !== undefined;
   if (name === "size") return parseSizeDeclaration(text) !== undefined;
   if (hasContextlessPercentage(name, text)) return false;
   // Use the same patched grammar as CSSStyleDeclaration without initializing its prototype.

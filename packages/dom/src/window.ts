@@ -3959,7 +3959,7 @@ function buildWindow(
   // Shadow and template contents have separate roots and collection snapshots.
   function containsSheetOwner(root: Raw.ChildNode): boolean {
     if (!tree.isElementNode(root)) return false;
-    if (htmlChildNamed(root, "style", "link")) return true;
+    if (isSheetOwner(root)) return true;
     if (packedLeafText(root) !== undefined || !root.childNodes.length) return false;
     return (
       firstQueryDescendant({
@@ -16932,19 +16932,6 @@ function buildWindow(
         insertNodeRecord(parent, fragment, next, false);
         return;
       }
-      if (!writtenDocument && readyState === "complete") {
-        if (!markup) return;
-        // Preserve jsdom's completed-document replacement contract; explicit open uses streaming.
-        replaceChildren(source, []);
-        didBindBody = false;
-        didScanStyles = false;
-        didScanFrames = false;
-        parseMarkup(markup, {
-          scriptingEnabled: options.runScripts === "dangerously",
-          sourceCodeLocationInfo: false,
-        });
-        return;
-      }
       if (!writtenDocument) Document.prototype.open.call(this);
       const session = writtenDocument;
       if (!session) throw new Error("An open document must have a write session");
@@ -20578,9 +20565,7 @@ function buildWindow(
       readyState = "complete";
       document.dispatchEvent(new Event("readystatechange"));
       if (!current()) return;
-      document.dispatchEvent(events.trusted(new Event("load")));
-      if (!current()) return;
-      // Window receives its own load dispatch with the legacy Document target.
+      // Dispatch at Window with the legacy Document target.
       window.dispatchEvent(events.trusted(new Event("load"), document));
       if (current() && !pageShowing && !options.detachedDocument) {
         pageShowing = true;
@@ -20707,7 +20692,10 @@ function buildWindow(
             (node) => tree.isElementNode(node) || tree.isDocumentTypeNode(node),
           )
         )
-          return;
+          throw new DOMException(
+            `Invalid insertion of ${name} node in #document node.`,
+            "HierarchyRequestError",
+          );
         adapter.setDocumentType(document, name, publicId, systemId);
         advanceRevision();
       },

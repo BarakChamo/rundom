@@ -186,7 +186,9 @@ describe.each([
       // When/Then: deletion is normalized and a missing entry leaves the list unchanged.
       sheet.media.deleteMedium("SCREEN");
       expect(sheet.media.mediaText).toBe("print");
-      expect(() => sheet.media.deleteMedium("screen")).toThrow("not found");
+      expect(() => sheet.media.deleteMedium("screen")).toThrow(
+        "Cannot delete a medium that is not in the media list.",
+      );
       expect(sheet.media.mediaText).toBe("print");
     } finally {
       w.close();

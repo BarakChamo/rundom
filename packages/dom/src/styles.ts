@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { serializePhysicalBorder, isPhysicalBorder } from "./css-border-serialization.js";
 import { InlineDeclaration, parseInlineBlock } from "./inline-declaration.js";
 import { parseSizeDeclaration } from "./css-sizing.js";
+import { acceptsAnchors, anchorComponents } from "./css-anchor.js";
 import { hasContextlessPercentage, serializeCSSMath } from "./css-numeric.js";
 import {
   createDeclarationViews,
@@ -181,6 +182,9 @@ type PropertyRule = {
   readonly initialValue: string | null;
   readonly cssText: string;
 };
+// Inheritance keeps unitless line heights as multipliers. Public snapshots expose their used length.
+const unitlessLineHeights = new WeakMap<object, string>();
+const publicLineHeights = new WeakMap<object, string>();
 type QualifiedRule = DeclarationRule &
   GroupingRuleView & { readonly type: 1; selectorText: string };
 type NestingMode = "style" | "scope";
@@ -1457,6 +1461,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
     }
     override getPropertyValue(property: string): string {
+      if (property === "line-height") {
+        const resolved = publicLineHeights.get(this);
+        if (resolved !== undefined) return resolved;
+      }
       if (property === "color") {
         const foreground = completedForegrounds.get(this);
         if (foreground !== undefined) return foreground;
@@ -1467,6 +1475,22 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       property = canonicalProperty(property);
       const value = super.getPropertyValue(property);
+      if (!value && !this._computed && /^(?:margin|inset)(?:-block|-inline)?$/.test(property)) {
+        const children = propertyDefinitions.get(property)?.longhands;
+        if (children?.length) {
+          const parts = children.map((name) => super.getPropertyValue(name));
+          const priority = super.getPropertyPriority(children[0]!);
+          if (
+            parts.every(Boolean) &&
+            children.every((name) => super.getPropertyPriority(name) === priority)
+          ) {
+            if (parts.length === 4 && parts[3] === parts[1]) parts.pop();
+            if (parts.length === 3 && parts[2] === parts[0]) parts.pop();
+            if (parts.length === 2 && parts[1] === parts[0]) parts.pop();
+            return parts.join(" ");
+          }
+        }
+      }
       if (!this._computed && property === "background") {
         const background = this.#specifiedBackground();
         if (background !== undefined) return background;
@@ -1736,6 +1760,24 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           super.setProperty(name, "", priority);
         return;
       }
+      if (
+        /\banchor(?:-size)?\(/i.test(value) &&
+        acceptsAnchors(name) &&
+        !variableSyntax.test(value)
+      ) {
+        const components = anchorComponents(name, value);
+        if (!components) return;
+        const [first, second = first, third = first, fourth = second] = components;
+        if (!first) return;
+        const longhands = propertyDefinitions.get(name)?.longhands;
+        if (longhands?.length === 2 || longhands?.length === 4) {
+          this.#removeProperty(name);
+          const expanded = [first, second, third, fourth];
+          for (const [index, child] of longhands.entries())
+            this._setProperty(child, expanded[index]!, priority);
+        } else this._setProperty(name, components.join(" "), priority);
+        return;
+      }
       if (name === "size") {
         const parsed = parseSizeDeclaration(value);
         if (parsed !== undefined) this._setProperty(name, parsed, priority);
@@ -1971,6 +2013,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
   ) {
     // Completed frames are immutable; bind context ownership once, never cache a public view.
     const context = Object.create(source) as CSSStyleProperties;
+    const lineHeight = unitlessLineHeights.get(source);
+    if (lineHeight !== undefined) publicLineHeights.set(context, lineHeight);
     context._global = source._global;
     context._computed = true;
     context._readonly = true;
@@ -4346,7 +4390,13 @@ function parseSheet(
         const value = generate(desc.value);
         switch (desc.property.toLowerCase()) {
           case "syntax": {
-            const parsed = parse(value, { context: "value" });
+            let parsed: CssNode;
+            try {
+              parsed = parse(value, { context: "value" });
+            } catch (error) {
+              if (!(error instanceof SyntaxError)) throw error;
+              break;
+            }
             const token =
               parsed.type === "Value" && parsed.children.size === 1 ? parsed.children.first : null;
             if (token?.type === "String") syntax = token.value;
@@ -5296,7 +5346,7 @@ export function createStyles(input: {
       if (!entry || extra) return;
       if (!state.queries.includes(entry))
         throw new input.DOMException(
-          `"${medium}" was not found in the media list.`,
+          `Cannot delete a medium that is not in the media list.`,
           "NotFoundError",
         );
       this.mediaText = state.queries.filter((query) => query !== entry).join(", ");
@@ -6822,6 +6872,17 @@ export function createStyles(input: {
             ? replaceSystemColors(computed, colorScheme)
             : computed,
       );
+    }
+    const lineHeight = result._values.get("line-height");
+    if (lineHeight) {
+      const percentage = lineHeight.endsWith("%");
+      const multiplier = Number(percentage ? lineHeight.slice(0, -1) : lineHeight);
+      if (Number.isFinite(multiplier)) {
+        const pixels =
+          Number(((fontSize * multiplier) / (percentage ? 100 : 1)).toPrecision(12)) + "px";
+        if (percentage) result._setProperty("line-height", pixels, "");
+        else unitlessLineHeights.set(result, pixels);
+      }
     }
     if (property !== undefined) return result;
     if (placements && placementIndex < placements.length)

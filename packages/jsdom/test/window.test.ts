@@ -1203,7 +1203,8 @@ describe.each([
       expect(document.getElementById("original")).toBeNull();
       expect(document.getElementById("replacement")?.textContent).toBe("new");
       expect(document.body?.id).toBe("executed");
-      expect(document.readyState).toBe("complete");
+      expect(document.readyState).toBe("loading");
+      document.close();
     } finally {
       window.close();
     }
@@ -1492,7 +1493,7 @@ describe.each([
     );
   });
 
-  it("dispatches separate trusted document and window load events", async () => {
+  it("dispatches a trusted Window load event with the legacy Document target", async () => {
     // Given a new document and listeners at both ends of the document-to-window event path
     const { window } = new Constructor("<p>loaded</p>");
     const { document } = window;
@@ -1525,16 +1526,9 @@ describe.each([
         );
       });
 
-      // Then each listener receives its own at-target dispatch with the document as target
-      expect(Object.is(handlerTarget, document)).toBe(true);
+      // Document is the legacy event target. Only the Window listener receives the event.
+      expect(handlerTarget).toBeNull();
       expect(calls).toEqual([
-        {
-          documentTarget: true,
-          windowListener: false,
-          pathLength: 1,
-          trusted: true,
-          readyState: "complete",
-        },
         {
           documentTarget: true,
           windowListener: true,

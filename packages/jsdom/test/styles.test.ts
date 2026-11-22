@@ -312,7 +312,7 @@ describe("Window stylesheets", () => {
       const second = document.querySelector("main")!;
       const list = document.styleSheets;
       expect(window.getComputedStyle(target).color).toBe("rgb(0, 0, 255)");
-      document.body.append(first);
+      document.body!.append(first);
       expect(window.getComputedStyle(target).color).toBe("rgb(255, 0, 0)");
       target.append(first.firstChild!.firstChild!);
       expect(window.getComputedStyle(target).color).toBe("rgb(0, 0, 255)");

@@ -341,9 +341,15 @@ export function createDeclarationViews(input: {
     implementation: DeclarationImplementation,
     options: { fresh?: boolean } = {},
   ): CSSStyleProperties {
-    const owner = !options.fresh && viewFactories.get(implementation);
+    if (options.fresh) {
+      const prototype = properties.has(implementation)
+        ? CSSStyleProperties.prototype
+        : pageDeclarationPrototype();
+      return publishComputed(prototype, implementation);
+    }
+    const owner = viewFactories.get(implementation);
     if (owner && owner !== expose) return owner(implementation, options);
-    const previous = !options.fresh && ordinaryViews.get(implementation);
+    const previous = ordinaryViews.get(implementation);
     if (previous) return previous;
     // This is an owned allocation with all observable members supplied by the public prototype/proxy.
     const target = Object.create(
@@ -357,7 +363,7 @@ export function createDeclarationViews(input: {
       );
     const view = new Proxy<CSSStyleProperties>(target, handler);
     implementations.set(view, implementation);
-    if (!options.fresh) ordinaryViews.set(implementation, view);
+    ordinaryViews.set(implementation, view);
     return view;
   }
   const inlineTargets = new WeakMap<object, InlineImplementation>();

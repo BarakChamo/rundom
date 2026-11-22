@@ -6,7 +6,6 @@ permissions:
   contents: read
 jobs:
   performance:
-    if: false
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -43,12 +42,15 @@ jobs:
           fi
       - name: Preserve pre-fix build and rerun the same concurrency levels
         run: |
-          cp packages/dom/src/window.ts "$RUNNER_TEMP/window.after"
-          git show 351ce21:packages/dom/src/window.ts > packages/dom/src/window.ts
+          mkdir -p "$RUNNER_TEMP/starting"
+          git archive 351ce21 packages/dom/src | tar x -C "$RUNNER_TEMP/starting"
+          mv packages/dom/src "$RUNNER_TEMP/src-final"
+          mv "$RUNNER_TEMP/starting/packages/dom/src" packages/dom/src
           (cd packages/dom && bun run build)
           mkdir -p packages/dom/out/starting
           cp packages/dom/dist/*.cjs packages/dom/dist/*.cache packages/dom/out/starting
-          cp "$RUNNER_TEMP/window.after" packages/dom/src/window.ts
+          mv packages/dom/src "$RUNNER_TEMP/src-before"
+          mv "$RUNNER_TEMP/src-final" packages/dom/src
           (cd packages/dom && bun run build)
           python3 qualification/parallel.py before final jsdom
           ROUND=2 python3 qualification/parallel.py jsdom final before
@@ -63,13 +65,12 @@ jobs:
             ${{ runner.temp }}/con3*.log
             ${{ runner.temp }}/memory-*.jsonl
   wpt:
-    if: false
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
-        provider: [candidate, reference]
+        provider: [candidate]
         shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
