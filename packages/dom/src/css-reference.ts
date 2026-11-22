@@ -267,8 +267,11 @@ export function computedPositionArea(value: string): string {
 /** The grammar supplies the component list for overlapping CSS shorthands. */
 export function grammarLonghands(name: string): readonly string[] | undefined {
   if (
+    name !== "all" &&
     name !== "font" &&
-    !/^(?:(?:(?:row|column)-)?rule|grid|corner|animation-range|font-variant)(?:-|$)/.test(name)
+    !/^(?:(?:(?:row|column)-)?rule|grid|corner|animation|font-variant|white-space|text-wrap|text-spacing|font-synthesis|mask|columns|column-rule|position-try|offset)(?:-|$)/.test(
+      name,
+    )
   )
     return;
   const shorthands: ReadonlyMap<
@@ -341,6 +344,35 @@ export type PositionTry = {
   readonly style: PositionTryStyle;
 };
 
+export type FontFaceData = {
+  cssText: string;
+  style: PositionTryStyle & { readonly parentRule: object | null };
+};
+export type BoundRule<T> = { data: T; bind(owner: object): void };
+
+function bindRule<T>(impl: object): BoundRule<T> {
+  const utils: {
+    wrapperForImpl(impl: object): T;
+    wrapperSymbol: symbol;
+  } = require("rundom-css-reference/lib/generated/idl/utils.js");
+  return {
+    data: utils.wrapperForImpl(impl),
+    bind(owner) {
+      Reflect.set(impl, utils.wrapperSymbol, owner);
+    },
+  };
+}
+
+export type FunctionRuleData<List> = {
+  readonly name: string;
+  readonly cssText: string;
+  readonly cssRules: List;
+  readonly returnType: string;
+  getParameters(): { name: string; type: string; defaultValue?: string }[];
+  insertRule(rule: string, index?: number): number;
+  deleteRule(index: number): void;
+};
+
 /** Binds the descriptor grammar to the owning stylesheet's URL and invalidation callbacks. */
 export function createDescriptorRuleParser(baseURL: () => string, changed: () => void) {
   const {
@@ -374,6 +406,54 @@ export function createDescriptorRuleParser(baseURL: () => string, changed: () =>
     idl.install(globals, ["Window"]);
   }
   return {
+    fontFaceDescriptors() {
+      if (!Object.hasOwn(globals, "CSSFontFaceRule")) {
+        for (const name of ["CSSFontFaceDescriptors", "CSSFontFaceRule"]) {
+          const idl: { install(global: object, names: string[]): void } = require(
+            "rundom-css-reference/lib/generated/idl/" + name + ".js",
+          );
+          idl.install(globals, ["Window"]);
+        }
+      }
+      return (globals as typeof globals & { CSSFontFaceDescriptors: Function })
+        .CSSFontFaceDescriptors;
+    },
+    fontFace(text: string) {
+      this.fontFaceDescriptors();
+      const impl = parseRule(text, globals);
+      if (!("style" in impl)) return;
+      return bindRule<FontFaceData>(impl);
+    },
+    functionInterfaces() {
+      if (!Object.hasOwn(globals, "CSSFunctionRule")) {
+        for (const name of [
+          "CSSRuleList",
+          "CSSGroupingRule",
+          "CSSConditionRule",
+          "CSSSupportsRule",
+          "CSSMediaRule",
+          "CSSContainerRule",
+          "CSSFunctionRule",
+          "CSSFunctionDeclarations",
+          "CSSFunctionDescriptors",
+        ]) {
+          const idl: { install(global: object, names: string[]): void } = require(
+            "rundom-css-reference/lib/generated/idl/" + name + ".js",
+          );
+          idl.install(globals, ["Window"]);
+        }
+      }
+      return globals as typeof globals & {
+        CSSFunctionDescriptors: Function;
+        CSSFunctionDeclarations: Function;
+      };
+    },
+    functionRule<List>(text: string) {
+      this.functionInterfaces();
+      const impl = parseRule(text, globals);
+      if (!("getParameters" in impl)) return;
+      return bindRule<FunctionRuleData<List>>(impl);
+    },
     position(text: string) {
       const rule = parseRule(text, globals);
       if (!("style" in rule)) return;

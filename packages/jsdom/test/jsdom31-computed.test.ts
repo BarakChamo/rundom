@@ -263,3 +263,24 @@ it("resolves each container axis at the nearest eligible ancestor and reads sibl
     window.close();
   }
 });
+
+it("retains the descriptor grammar and parent rule of parsed font faces and CSS functions", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor(
+      "<style>@font-face { font-family: Demo; src: local(Demo) } @function --step(--n) {result: 1px}</style>",
+    );
+    const rules = window.document.styleSheets[0]!.cssRules;
+    const face = rules[0]!;
+    const descriptors = Reflect.get(face, "style");
+    expect(descriptors.parentRule).toBe(face);
+    expect(descriptors.getPropertyValue("src")).toBe("local(Demo)");
+    const fn = rules[1]!;
+    expect(Reflect.get(fn, "name")).toBe("--step");
+    const block = Reflect.get(fn, "cssRules")[0];
+    expect(block.parentRule).toBe(fn);
+    expect(block.style.result).toBe("1px");
+    block.style.result = "2px";
+    expect(fn.cssText).toContain("result: 2px");
+    window.close();
+  }
+});

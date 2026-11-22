@@ -5,6 +5,9 @@ import {
   createDescriptorRuleParser,
   type PositionTry,
   grammarLonghands,
+  type FunctionRuleData,
+  type BoundRule,
+  type FontFaceData,
   serializeShorthand,
   serializeDeclarationBlock,
   type ShorthandSource,
@@ -244,6 +247,8 @@ type StyleRule = (
   | QualifiedRule
   | PropertyRule
   | FontFeatureValuesRule
+  | (FontFaceData & { readonly type: 5 })
+  | (FunctionRuleData<RuleList> & { readonly type: 0 })
   | PositionTryRule
   | ImportRule
   | MediaRule
@@ -282,6 +287,8 @@ type Rule =
   | { kind: "keyframes"; view: KeyframesRule & RuleParents; rules: KeyframeEntry[] }
   | { kind: "page"; view: PageRule & RuleParents; rules: Rule[] }
   | { kind: "property"; view: PropertyRule & RuleParents }
+  | { kind: "function"; view: FunctionRuleData<RuleList> & { readonly type: 0 } & RuleParents }
+  | { kind: "font-face"; view: FontFaceData & { readonly type: 5 } & RuleParents }
   | { kind: "position-try"; view: PositionTryRule & RuleParents }
   | { kind: "counter-style"; view: CounterStyleRule & RuleParents }
   | {
@@ -2233,7 +2240,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         value &&
         !property.startsWith("--") &&
         !propertyDefinitions.get(name)?.longhands &&
-        (/^(?:font-family$|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
+        (/^(?:font-palette$|clip-path$|text-autospace$|text-spacing-|text-transform$|font-variation-settings$|font-synthesis-|font-family$|will-change$|content$|offset-path$|mask-|border-image-|white-space-|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
           name,
         ) ||
           (name.startsWith("grid-template-") && value.includes("calc(")))
@@ -2448,6 +2455,10 @@ function createRuleInterfaces(
   ) => RuleSelection | undefined,
   namespacesForSheet: (sheet: Sheet | null) => Map<string, string> | undefined,
   exposeDeclaration: (style: Declaration) => PublicDeclaration,
+  parseFontFace: (text: string) => BoundRule<FontFaceData> | undefined,
+  parseFunction: (
+    text: string,
+  ) => { data: FunctionRuleData<RuleList>; bind(owner: object): void } | undefined,
   parsePosition: (text: string) => PositionTry | undefined,
   positionDescriptors: ReturnType<typeof createDeclarationViews>["positionDescriptors"],
 ) {
@@ -2613,16 +2624,21 @@ function createRuleInterfaces(
       return "CSSFontFeatureValuesRule";
     }
   }
-  class CSSFontFaceRule extends CSSRule<5> implements DeclarationRule {
-    constructor(token: symbol, declaration: Declaration) {
+  class CSSFontFaceRule extends CSSRule<5> {
+    #data: FontFaceData;
+    constructor(token: symbol, parsed: BoundRule<FontFaceData>) {
       super(token, 5);
-      ruleRecord(this).declaration = declaration;
+      this.#data = parsed.data;
+      parsed.bind(this);
     }
-    get style(): PublicDeclaration {
-      return exposeDeclaration(ruleDeclaration(this));
+    get style() {
+      return this.#data.style;
     }
-    get cssText(): string {
-      return `@font-face { ${this.style.cssText}${this.style.length ? " " : ""}}`;
+    get cssText() {
+      return this.#data.cssText;
+    }
+    get [Symbol.toStringTag]() {
+      return "CSSFontFaceRule";
     }
   }
   class CSSPropertyRule extends CSSRule<0> implements PropertyRule {
@@ -3104,6 +3120,38 @@ function createRuleInterfaces(
     }
   }
 
+  class CSSFunctionRule extends CSSGroupingRule<0> {
+    #data: FunctionRuleData<RuleList>;
+    constructor(token: symbol, parsed: NonNullable<ReturnType<typeof parseFunction>>) {
+      super(token, 0, []);
+      this.#data = parsed.data;
+      parsed.bind(this);
+    }
+    get name() {
+      return this.#data.name;
+    }
+    get returnType() {
+      return this.#data.returnType;
+    }
+    getParameters() {
+      return this.#data.getParameters();
+    }
+    get cssText() {
+      return this.#data.cssText;
+    }
+    override get cssRules() {
+      return this.#data.cssRules;
+    }
+    override insertRule(...args: [string, number?]) {
+      return this.#data.insertRule(...args);
+    }
+    override deleteRule(...args: [number]) {
+      return this.#data.deleteRule(...args);
+    }
+    get [Symbol.toStringTag]() {
+      return "CSSFunctionRule";
+    }
+  }
   class CSSStartingStyleRule extends CSSGroupingRule<0> {
     constructor(token: symbol, rules: Rule[]) {
       super(token, 0, rules);
@@ -3341,6 +3389,9 @@ function createRuleInterfaces(
     CSSFontFaceRule,
     CSSFontFeatureValuesRule,
     CSSPositionTryRule,
+    parseFontFace,
+    parseFunction,
+    CSSFunctionRule,
     parsePosition,
     CSSPropertyRule,
     CSSNamespaceRule,
@@ -4876,6 +4927,15 @@ function parseSheet(
         });
       return;
     }
+    if (node.type === "Atrule" && node.name === "function" && node.block) {
+      const parsed = interfaces.parseFunction(generate(node));
+      if (parsed)
+        target.push({
+          kind: "function",
+          view: new interfaces.CSSFunctionRule(interfaces.key, parsed),
+        });
+      return;
+    }
     if (node.type === "Atrule" && node.name === "font-feature-values" && node.block) {
       const features = fontFeatureValues(generate(node));
       if (features)
@@ -4886,15 +4946,12 @@ function parseSheet(
       return;
     }
     if (node.type === "Atrule" && node.name === "font-face" && node.block) {
-      const style = declaration();
-      for (const child of node.block.children) {
-        if (child.type === "Declaration") style.setProperty(child.property, generate(child.value));
-      }
-      target.push({
-        kind: "declaration",
-        selectors: [],
-        view: new interfaces.CSSFontFaceRule(interfaces.key, style),
-      });
+      const parsed = interfaces.parseFontFace(generate(node));
+      if (parsed)
+        target.push({
+          kind: "font-face",
+          view: new interfaces.CSSFontFaceRule(interfaces.key, parsed),
+        });
       return;
     }
     if (node.type !== "Rule") return;
@@ -5085,10 +5142,14 @@ function usesTypedValueGrammar(name: string, text: string): boolean {
   return (
     !name.startsWith("--") &&
     text.includes("(") &&
-    (name === "filter" ||
+    (name === "clip-path" ||
+      name === "opacity" ||
+      (name === "color" && /\bcalc\(/i.test(text)) ||
+      name === "mask-image" ||
+      name === "filter" ||
       name === "backdrop-filter" ||
       (name === "transform" && /[0-9](?:grad|rad|turn)\b/i.test(text)) ||
-      /(?:^|[^\w-])(?:calc-size|sibling-count|sibling-index|image|image-set|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
+      /(?:^|[^\w-])(?:alpha|palette-mix|light-dark|calc-size|sibling-count|sibling-index|image|image-set|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
         text,
       ) ||
       ((name === "transform" || /[/*]|\b(?:nan|infinity)\b/i.test(text)) && /calc\(/i.test(text)))
@@ -5646,6 +5707,8 @@ export function createStyles(input: {
       }),
     namespacesForSheet,
     (style) => views().expose(style),
+    (text) => descriptorRules().fontFace(text),
+    (text) => descriptorRules().functionRule<RuleList>(text),
     (text) => descriptorRules().position(text),
     (style, parent) => views().positionDescriptors(style, parent),
   );
@@ -7316,7 +7379,18 @@ export function createStyles(input: {
         continue;
       }
       if (isCustomProperty && /^(?:initial|inherit|unset|revert-layer)$/i.test(value)) continue;
-      const initialValue = computedInitialValues.get(name);
+      if (name === "opacity" || name.endsWith("-opacity")) {
+        const fraction = value.endsWith("%") ? Number(value.slice(0, -1)) / 100 : Number(value);
+        if (Number.isFinite(fraction)) {
+          result._setProperty(name, String(Math.max(0, Math.min(1, fraction))), "");
+          continue;
+        }
+      }
+      const initialValue =
+        computedInitialValues.get(name) ??
+        (!isCustomProperty && /^(?:initial|inherit|unset)$/i.test(value)
+          ? longhandDefinition(name)?.initial
+          : undefined);
       if (initialValue !== undefined) {
         const keyword = value.toLowerCase();
         if (keyword === "initial") continue;
@@ -8186,6 +8260,8 @@ export function createStyles(input: {
             rule.kind === "layer-statement" ||
             rule.kind === "namespace" ||
             rule.kind === "counter-style" ||
+            rule.kind === "font-face" ||
+            rule.kind === "function" ||
             rule.kind === "font-feature-values" ||
             rule.kind === "position-try" ||
             rule.kind === "page" ||
@@ -8736,6 +8812,8 @@ export function createStyles(input: {
         const colorKeyword = resolvedColor?.toLowerCase();
         if (userAgentColor && (colorKeyword === "revert" || colorKeyword === "revert-layer"))
           color = resolveColor(userAgentColor, { currentColor: color, colorScheme });
+        else if (substitution && specifiedColor && usesTypedValueGrammar("color", specifiedColor))
+          color = substitution.read("color");
         else
           color = computedTextColor(
             resolvedColor,
@@ -8919,6 +8997,16 @@ export function createStyles(input: {
     CSSConditionRule: ruleInterfaces.CSSConditionRule,
     CSSFontFaceRule: ruleInterfaces.CSSFontFaceRule,
     CSSFontFeatureValuesRule: ruleInterfaces.CSSFontFeatureValuesRule,
+    get CSSFontFaceDescriptors() {
+      return descriptorRules().fontFaceDescriptors();
+    },
+    CSSFunctionRule: ruleInterfaces.CSSFunctionRule,
+    get CSSFunctionDeclarations() {
+      return descriptorRules().functionInterfaces().CSSFunctionDeclarations;
+    },
+    get CSSFunctionDescriptors() {
+      return descriptorRules().functionInterfaces().CSSFunctionDescriptors;
+    },
     CSSPositionTryRule: ruleInterfaces.CSSPositionTryRule,
     get CSSPositionTryDescriptors() {
       return views().CSSPositionTryDescriptors;
