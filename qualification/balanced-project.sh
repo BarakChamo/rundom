@@ -10,6 +10,21 @@ case "$PROJECT" in
     export NODE_PATH="$PWD/node_modules:$RUNNER_TEMP/environments/node_modules"
     ;;
 esac
+case "$PROJECT" in
+  supabase|freecodecamp)
+    config=vitest.config.ts
+    [[ "$PROJECT" != freecodecamp ]] || config=vitest.config.js
+    python3 - "$config" <<'CONFIG'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+original = "environment: 'jsdom'"
+assert original in text
+path.write_text(text.replace(original, "environment: process.env.QUAL_ENV || 'jsdom'"))
+CONFIG
+    ;;
+esac
 for round in 1 2; do
   providers=(candidate reference happy turbo)
   if [[ "$round" == 2 ]]; then providers=(turbo happy reference candidate); fi
@@ -25,8 +40,8 @@ for round in 1 2; do
     if [[ -n "$jest_env" ]]; then
       options+=(--no-cache)
       case "$provider" in
-        happy) options+=(--env "$jest_env");;
-        turbo) options+=(--env "$root/packages/jsdom/node_modules/@miaskiewicz/turbo-dom/src/environment/jest.cjs");;
+        happy) options+=(--testEnvironment "$jest_env");;
+        turbo) options+=(--testEnvironment "$root/packages/jsdom/node_modules/@miaskiewicz/turbo-dom/src/environment/jest.cjs");;
       esac
     elif [[ -n "${QUAL_ENV:-}" ]]; then
       options+=(--environment "$QUAL_ENV")
