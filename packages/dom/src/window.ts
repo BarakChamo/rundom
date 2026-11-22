@@ -3955,6 +3955,24 @@ function buildWindow(
     return namesChanged;
   }
 
+  // Sheet order depends only on style and link elements in the ordinary tree.
+  // Shadow and template contents have separate roots and collection snapshots.
+  function containsSheetOwner(root: Raw.ChildNode): boolean {
+    if (!tree.isElementNode(root)) return false;
+    if (htmlChildNamed(root, "style", "link")) return true;
+    if (packedLeafText(root) !== undefined || !root.childNodes.length) return false;
+    return (
+      firstQueryDescendant({
+        root,
+        matches: isSheetOwner,
+        skipPackedText: true,
+      }) !== undefined
+    );
+  }
+  function isSheetOwner(node: Raw.Element): boolean {
+    return htmlChildNamed(node, "style", "link");
+  }
+
   function replaceChildren(
     target: Raw.ParentNode,
     children: Raw.ChildNode[],
@@ -3977,7 +3995,7 @@ function buildWindow(
       disconnect(child);
     }
     target.childNodes = children;
-    invalidateStyleSource(target);
+    const sourceChanged = invalidateStyleSource(target);
     rangeIndex()?.inserted(target, 0, children.length);
     const destination =
       (exposedTemplateHosts || hasCustomElements || hasAdoptedStylesheets()) && ownerRecord(target);
@@ -4007,6 +4025,11 @@ function buildWindow(
     }
     advanceRevision({
       namesChanged,
+      stylesheetMembershipChanged:
+        !styleBinding ||
+        sourceChanged ||
+        removed.some(containsSheetOwner) ||
+        children.some(containsSheetOwner),
       // Cleanup may have repopulated keys before a foreign rename; only resource-free edits preserve them.
       idsChanged: canReenter,
     });
@@ -4128,7 +4151,10 @@ function buildWindow(
   function detachWithRecord(node: Raw.ChildNode, notify = true): void {
     const target = node.parentNode;
     if (!target) return;
-    invalidateStyleSource(target);
+    if (invalidateStyleSource(target)) {
+      stylesheetDiscoveryRevision++;
+      styleBinding?.invalidateSheetMembership();
+    }
     clearParserFormOwners(node);
     clearRemovedModals(node);
     retainRemovedSubtree(node, target);
@@ -4477,7 +4503,7 @@ function buildWindow(
     } else {
       for (const member of added) tree.appendChild(target, member);
     }
-    invalidateStyleSource(target);
+    const sourceChanged = invalidateStyleSource(target);
     for (const child of added) invalidateDocumentIdsIn(child);
     // The old first member and its replacement occupied the same slot. A reentrant
     // edit or an index eviction invalidates that proof before it can be published.
@@ -4491,6 +4517,11 @@ function buildWindow(
     }
     advanceRevision({
       namesChanged: added.some(containsDocumentNames) || removed.some(containsDocumentNames),
+      stylesheetMembershipChanged:
+        !styleBinding ||
+        sourceChanged ||
+        added.some(containsSheetOwner) ||
+        removed.some(containsSheetOwner),
       idsChanged: false,
     });
     queueMutation({
@@ -4520,7 +4551,11 @@ function buildWindow(
     const reactions = hasCustomElements ? customDisconnectReactions([node]) : undefined;
     detachWithRecord(node);
     disconnectResourcesIn(node);
-    advanceRevision({ namesChanged: containsDocumentNames(node), idsChanged: false });
+    advanceRevision({
+      namesChanged: containsDocumentNames(node),
+      idsChanged: false,
+      stylesheetMembershipChanged: !styleBinding || containsSheetOwner(node),
+    });
     reactions?.forEach((react) => react());
     if (formerParent) refreshCustomFormLifecycle([formerParent, node]);
   }

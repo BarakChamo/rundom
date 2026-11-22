@@ -2,9 +2,9 @@ from pathlib import Path
 import json,sys,time,os,subprocess,hashlib
 root=Path.cwd();d=Path(os.environ['RUNNER_TEMP']); v=d
 for project in [os.environ['PROJECT']]:
- for n in ([4] if os.getenv('TRACE_MEMORY') else [1,2,4]):
+ for n in ([4] if os.getenv('TRACE_MEMORY') else ([4,2,1] if os.getenv('ROUND') else [1,2,4])):
   for provider in sys.argv[1:]:
-   tag=f'{project}-{n}-{provider}' + ('-trace' if os.getenv('TRACE_MEMORY') else '')
+   tag=f'{project}-{n}-{provider}' + ('-trace' if os.getenv('TRACE_MEMORY') else '') + ('-r2' if os.getenv('ROUND') else '')
    if (d/('batch3-'+tag+'.json')).exists():continue
    procs=[];files=[];logs=[];peak=0;start=time.monotonic()
    for i in range(n):

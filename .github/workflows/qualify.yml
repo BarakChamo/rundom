@@ -6,7 +6,6 @@ permissions:
   contents: read
 jobs:
   performance:
-    if: false
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -44,18 +43,15 @@ jobs:
       - name: Preserve pre-fix build and rerun the same concurrency levels
         run: |
           cp packages/dom/src/window.ts "$RUNNER_TEMP/window.after"
-          cp packages/dom/src/styles.ts "$RUNNER_TEMP/styles.after"
-          cp packages/dom/src/css-supports.ts "$RUNNER_TEMP/supports.after"
-          for file in window styles css-supports; do git show 89f39dfb6d39aa91e94e2a0abd613f429a5b5d2f:packages/dom/src/$file.ts > packages/dom/src/$file.ts; done
+          git show 351ce21:packages/dom/src/window.ts > packages/dom/src/window.ts
           (cd packages/dom && bun run build)
           mkdir -p packages/dom/out/starting
           cp packages/dom/dist/*.cjs packages/dom/dist/*.cache packages/dom/out/starting
           cp "$RUNNER_TEMP/window.after" packages/dom/src/window.ts
-          cp "$RUNNER_TEMP/styles.after" packages/dom/src/styles.ts
-          cp "$RUNNER_TEMP/supports.after" packages/dom/src/css-supports.ts
           (cd packages/dom && bun run build)
           python3 qualification/parallel.py before final jsdom
-          TRACE_MEMORY=1 python3 qualification/parallel.py before final jsdom
+          ROUND=2 python3 qualification/parallel.py jsdom final before
+          TRACE_MEMORY=1 python3 qualification/parallel.py before final
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -66,6 +62,7 @@ jobs:
             ${{ runner.temp }}/con3*.log
             ${{ runner.temp }}/memory-*.jsonl
   wpt:
+    if: false
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     strategy:

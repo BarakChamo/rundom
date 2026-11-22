@@ -104,7 +104,6 @@ describe("Window stylesheets", () => {
       sheet.insertRule("main { --gap: 25px !important }");
       const updated = window.getComputedStyle(target);
       target.remove();
-      window.close();
 
       // Then: both declarations retain their own values and enumeration.
       expect(original.getPropertyValue("visibility")).toBe("hidden");
@@ -113,6 +112,9 @@ describe("Window stylesheets", () => {
       expect(Array.from(original)).toContain("width");
       expect(updated.getPropertyValue("width")).toBe("125px");
       expect(updated.getPropertyValue("--gap")).toBe("25px");
+      window.close();
+      expect(original.length).toBe(0);
+      expect(updated.getPropertyValue("--gap")).toBe("");
     } finally {
       window.close();
     }
@@ -294,6 +296,28 @@ describe("Window stylesheets", () => {
       expect(snapshot.getPropertyValue("--b-27")).toBe("27px");
       expect(snapshot.getPropertyValue("width")).toBe("27px");
       expect(window.getComputedStyle(first).getPropertyValue("width")).toBe("99px");
+    } finally {
+      window.close();
+    }
+  });
+
+  it("updates sheet order and source when moving nested owners and text", () => {
+    const { window } = new JSDOM(
+      "<section><style>p { color: red }</style></section><main><style>p { color: blue }</style></main><p></p>",
+    );
+    try {
+      const { document } = window;
+      const target = document.querySelector("p")!;
+      const first = document.querySelector("section")!;
+      const second = document.querySelector("main")!;
+      const list = document.styleSheets;
+      expect(window.getComputedStyle(target).color).toBe("rgb(0, 0, 255)");
+      document.body.append(first);
+      expect(window.getComputedStyle(target).color).toBe("rgb(255, 0, 0)");
+      target.append(first.firstChild!.firstChild!);
+      expect(window.getComputedStyle(target).color).toBe("rgb(0, 0, 255)");
+      second.replaceChildren(document.createTextNode("removed"));
+      expect(list.length).toBe(1);
     } finally {
       window.close();
     }
