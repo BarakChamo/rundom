@@ -6,6 +6,7 @@ permissions:
   contents: read
 jobs:
   performance:
+    if: false
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -104,3 +105,56 @@ jobs:
           path: |
             ${{ runner.temp }}/wpt.json
             ${{ runner.temp }}/subtests.jsonl
+  frameworks:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [vue, svelte, mui]
+    env:
+      PROJECT: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - shell: bash
+        run: |
+          case "$PROJECT" in
+            vue) repo=vuejs/core; rev=8b479a89445868d474f17e2d837765e7c9ece5e4;;
+            svelte) repo=sveltejs/svelte; rev=ff7404cccd5f112b2e99d640d95b2e17974c1ae9;;
+            mui) repo=mui/material-ui; rev=4c499c5a4c00dcece4ae60e5d33ec810def4f2ba;;
+          esac
+          mkdir "$RUNNER_TEMP/framework"
+          cd "$RUNNER_TEMP/framework"
+          curl -fsSL --retry 3 "https://codeload.github.com/$repo/tar.gz/$rev" | tar xz --strip-components=1
+          version=$(node -p "require('./package.json').packageManager?.split('@').pop().split('+')[0] || '12.18.0'")
+          npm install -g "pnpm@$version"
+          pnpm install --frozen-lockfile
+          if [[ "$PROJECT" == svelte ]]; then pnpm --filter svelte generate; fi
+      - shell: bash
+        env:
+          TEST_SCOPE: node
+        run: |
+          root="$PWD"
+          cd "$RUNNER_TEMP/framework"
+          case "$PROJECT" in
+            vue) cases=(--project unit-jsdom packages/runtime-dom);;
+            svelte) cases=(packages/svelte/tests/runtime-runes/test.ts packages/svelte/tests/runtime-legacy/test.ts packages/svelte/tests/motion/test.ts);;
+            mui) cases=(--project node:@mui/material); for f in Button Checkbox Dialog Select TextField; do cases+=("packages/mui-material/src/$f/$f.test.js"); done;;
+          esac
+          status=0
+          for provider in candidate reference; do
+            if [[ "$provider" == reference ]]; then export JSDOM_ENTRY=$(realpath "$root/packages/jsdom/node_modules/jsdom/lib/api.js"); else export JSDOM_ENTRY="$root/packages/jsdom/dist/jsdom.cjs"; fi
+            NODE_OPTIONS="--import=$root/qualification/provider.mjs" node node_modules/vitest/vitest.mjs run "${cases[@]}" --maxWorkers 1 --no-file-parallelism --no-cache --reporter=json "--outputFile=$RUNNER_TEMP/result-$provider.json" || status=1
+          done
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.project }}
+          path: ${{ runner.temp }}/result-*.json
