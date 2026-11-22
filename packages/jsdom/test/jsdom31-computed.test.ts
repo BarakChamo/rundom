@@ -31,3 +31,20 @@ it("enumerates the reference longhands and sorted custom properties across mutat
   });
   expect(results[1]).toEqual(results[0]);
 });
+
+it("reads longhand initial values through computed declarations only", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor("<p></p>");
+    const node = window.document.querySelector("p")!;
+    const style = window.getComputedStyle(node);
+    for (const [name, value] of [
+      ["accent-color", "auto"],
+      ["align-items", "normal"],
+      ["animation-delay-start", "0s"],
+    ] as const) {
+      expect(style.getPropertyValue(name)).toBe(value);
+      expect(node.style.getPropertyValue(name)).toBe("");
+    }
+    window.close();
+  }
+});

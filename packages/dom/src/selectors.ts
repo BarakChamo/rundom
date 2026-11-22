@@ -24,6 +24,12 @@ const elementlessPseudos = new Set([
   "slotted",
   "cue",
   "cue-region",
+  "view-transition",
+  "view-transition-group",
+  "view-transition-group-children",
+  "view-transition-image-pair",
+  "view-transition-new",
+  "view-transition-old",
 ]);
 
 function parent(node: Raw.Node): Raw.ParentNode | null {

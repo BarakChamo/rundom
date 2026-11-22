@@ -1,4 +1,5 @@
 // Parses author stylesheets and resolves declarations against private DOM state.
+import { longhandDefinition, specifiedDeclaration } from "./css-reference.js";
 import { ownedString } from "./owned-string.js";
 import { createRequire } from "node:module";
 import { serializePhysicalBorder, isPhysicalBorder } from "./css-border-serialization.js";
@@ -21,7 +22,12 @@ import {
 import { defaultTreeAdapter as tree, html, type DefaultTreeAdapterTypes as Raw } from "parse5";
 import type { CssNode, Selector, Value, WalkOptionsNoVisit } from "css-tree";
 import { createCSSNamespace, readSupportsCondition } from "./css-supports.js";
-import { relativeColorValue, replaceSystemColors, specifiedColorFunction, systemColor } from "./css-colors.js";
+import {
+  functionalColorValue,
+  replaceSystemColors,
+  specifiedColorFunction,
+  systemColor,
+} from "./css-colors.js";
 import { parseSelectorList, customStateIdentifier } from "./selector-syntax.js";
 import { compileSelector, compileSimpleSubject, compileTreeSelector } from "./selectors.js";
 import { queryDependsOnTreeOrFocus, queryDependsOnlyOnTree } from "./query-index.js";
@@ -657,6 +663,7 @@ function computePositionAxis(value: string): string {
 const computedInitialValues = new Map([
   ["background-color", "rgba(0, 0, 0, 0)"],
   ["display", "inline"],
+  ["continue", "normal"],
   ["content-visibility", "visible"],
   ["border-image", "none"],
   ["background-image", "none"],
@@ -668,7 +675,7 @@ const computedInitialValues = new Map([
   ["flex-basis", "auto"],
   ["flex-grow", "0"],
   ["flex-shrink", "1"],
-  ["font-family", "depends on user agent"],
+  ["font-family", "monospace"],
   ["font-size", "16px"],
   ["font-style", "normal"],
   ["font-variant", "normal"],
@@ -688,7 +695,7 @@ const computedInitialValues = new Map([
   ["outline-color", "currentcolor"],
   ["stroke", "none"],
   ["visibility", "visible"],
-  ...[...boxLonghands].map((name): [string, string] => [name, "0"]),
+  ...[...boxLonghands].map((name): [string, string] => [name, "0px"]),
 ]);
 
 function splitOutline(value: string): ReadonlyMap<string, string> | undefined {
@@ -1767,7 +1774,25 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
             })
           : currentColor;
       }
-      return value || computedInitialValues.get(property) || "";
+      if (value) return value;
+      const initial =
+        computedInitialValues.get(property) ?? longhandDefinition(property)?.initial ?? "";
+      if (
+        (initial === "currentcolor" && property !== "box-shadow-color") ||
+        (initial === "auto" && property === "caret-color")
+      )
+        return completedForegrounds.get(this) ?? super.getPropertyValue("color");
+      if (property === "animation-duration" && initial === "auto") return "0s";
+      if (property.endsWith("-width") && initial === "medium") {
+        if (property.startsWith("border-")) {
+          const style = super.getPropertyValue(property.slice(0, -5) + "style");
+          if (!style || style === "none" || style === "hidden") return "0px";
+        }
+        return "3px";
+      }
+      if (property.endsWith("-color") && (initial === "white" || initial === "black"))
+        return initial === "white" ? "rgb(255, 255, 255)" : "rgb(0, 0, 0)";
+      return initial;
     }
     #setOutlineLonghand(name: string, value: string, priority: string): void {
       const normalized = priority.toLowerCase();
@@ -1994,6 +2019,19 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         );
         return;
       }
+      if (
+        value &&
+        !property.startsWith("--") &&
+        !propertyDefinitions.get(name)?.longhands &&
+        (/^(?:position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
+          name,
+        ) ||
+          (name.startsWith("grid-template-") && value.includes("calc(")))
+      ) {
+        const serialized = specifiedDeclaration(name, value);
+        if (serialized !== undefined) this._setProperty(name, serialized, priority);
+        return;
+      }
       if (value && !property.startsWith("--")) {
         try {
           if (parsePropertyValue(name, value) === undefined) {
@@ -2001,7 +2039,12 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
               propertyDefinitions.has(name) && !propertyDefinitions.get(name)?.longhands
                 ? unresolvedMathValue(name, value)
                 : undefined;
-            if (unresolved !== undefined) this._setProperty(name, unresolved, priority);
+            const serialized =
+              unresolved ??
+              (!propertyDefinitions.get(name)?.longhands
+                ? specifiedDeclaration(name, value)
+                : undefined);
+            if (serialized !== undefined) this._setProperty(name, serialized, priority);
             return;
           }
         } catch (error) {
@@ -4562,6 +4605,12 @@ const blockElements = new Set(
     " ",
   ),
 );
+const uaBlockMargins = new Set("blockquote figure listing p plaintext pre xmp".split(" "));
+const uaIsolates = new Set(
+  "address blockquote center div figure figcaption footer form header hr legend listing main p plaintext pre summary xmp article aside h1 h2 h3 h4 h5 h6 hgroup nav search section table caption colgroup col thead tbody tfoot tr td th dir dd dl dt menu ol ul li bdi output".split(
+    " ",
+  ),
+);
 const nonRenderedElements = new Set(
   "area base basefont datalist head link meta noembed noframes param rp script style template title".split(
     " ",
@@ -4932,12 +4981,12 @@ function resolveColor(
   options: { currentColor: string; colorScheme: string; fallback?: string | undefined },
 ): string {
   const { currentColor, colorScheme, fallback } = options;
-  const relative = relativeColorValue(value, currentColor, colorScheme);
-  if (relative !== undefined) return relative;
   const system = systemColor(value, colorScheme);
   if (system) return system;
   const rgb = value.startsWith("#") ? serializeHexColor(value) : serializeRGB(value);
   if (rgb !== undefined) return rgb;
+  const functional = functionalColorValue(value, currentColor, colorScheme);
+  if (functional !== undefined) return functional;
   const { resolve }: typeof import("@asamuzakjp/css-color") = require("./css-runtime.cjs").cssColor;
   return (
     resolve(replaceSystemColors(value, colorScheme), {
@@ -6297,6 +6346,7 @@ export function createStyles(input: {
     viewport: Viewport | undefined;
     baseURL: string | undefined;
     focusRevision?: number | undefined;
+    siblingColor?: boolean;
     custom?: CustomProjection;
     units: number;
     characters: number;
@@ -6502,6 +6552,11 @@ export function createStyles(input: {
               : undefined,
       () => {
         const style = declaration();
+        if (isHTML && uaIsolates.has(tag)) style._setProperty("unicode-bidi", "isolate", "");
+        if (isHTML && uaBlockMargins.has(tag)) {
+          for (const side of ["top", "bottom", "block-start", "block-end"])
+            style._setProperty("margin-" + side, initialFontSize + "px", "");
+        }
         if (isHTML && tag === "mark")
           style._setProperty("background-color", "rgb(255, 255, 0)", "");
         if (button || field)
@@ -6971,6 +7026,36 @@ export function createStyles(input: {
     if (property !== undefined) return result;
     if (placements && placementIndex < placements.length)
       result._setProperty(` ${placementIndex}`, "1", "");
+    if (
+      winners.has("margin-block-start") ||
+      winners.has("margin-block-end") ||
+      winners.has("margin-inline-start") ||
+      winners.has("margin-inline-end")
+    ) {
+      const sides = physicalBorderSides(
+        result.getPropertyValue("writing-mode"),
+        result.getPropertyValue("direction") === "rtl",
+      );
+      for (const [index, axis] of [
+        "block-start",
+        "block-end",
+        "inline-start",
+        "inline-end",
+      ].entries()) {
+        const logical = "margin-" + axis;
+        const physical = "margin-" + sides[index];
+        const logicalWinner = objectWinner(winners.get(logical));
+        const physicalWinner = objectWinner(winners.get(physical));
+        if (!logicalWinner && !physicalWinner) continue;
+        const logicalWins =
+          logicalWinner && (!physicalWinner || outranks(logicalWinner, physicalWinner));
+        result._setProperty(
+          logicalWins ? physical : logical,
+          result.getPropertyValue(logicalWins ? logical : physical),
+          "",
+        );
+      }
+    }
     if (borderColorSourceOrder.has(result)) {
       const writingMode = result.getPropertyValue("writing-mode");
       const rtl =
@@ -7375,6 +7460,7 @@ export function createStyles(input: {
       } = userAgentStyle(element);
       const userAgentDirection = needsDirection ? input.directionality(element) : undefined;
       function sameEnvironment(cached: ComputedFrame): boolean {
+        if (cached.siblingColor) return false;
         const currentViewport = cached.viewport && (viewport ??= input.viewport());
         const sameViewport =
           !cached.viewport ||
@@ -7804,6 +7890,12 @@ export function createStyles(input: {
             consider(name, winner);
           }
         };
+        if (isHTML && uaIsolates.has(tag))
+          winners.set("unicode-bidi", { context: -1, weight: 0, value: "isolate" });
+        if (isHTML && uaBlockMargins.has(tag)) {
+          for (const side of ["block-start", "block-end"])
+            winners.set("margin-" + side, { context: -1, weight: 0, value: "1em" });
+        }
         if (userAgentColor) winners.set("color", { context: -1, weight: 0, value: userAgentColor });
         if (isHTML && tag === "mark") {
           winners.set("background-color", { context: -1, weight: 0, value: "rgb(255, 255, 0)" });
@@ -8030,8 +8122,21 @@ export function createStyles(input: {
               : scheme;
         if (!prior) color = systemColor("canvastext", colorScheme) ?? initialColor;
         const specifiedColor = winners.get("color")?.value;
-        const resolvedColor =
+        let resolvedColor =
           specifiedColor === undefined ? undefined : resolveValue("color", specifiedColor);
+        const siblingColor =
+          resolvedColor !== undefined && /sibling-(?:index|count)\(/i.test(resolvedColor);
+        if (siblingColor && resolvedColor) {
+          const siblings = element.parentNode?.childNodes.filter(tree.isElementNode) ?? [element];
+          // Color syntax has already been validated and contains no string tokens.
+          resolvedColor = resolvedColor.replace(
+            /\bsibling-(index|count)\(\s*\)/gi,
+            (_, kind: string) =>
+              String(
+                kind.toLowerCase() === "count" ? siblings.length : siblings.indexOf(element) + 1,
+              ),
+          );
+        }
         const colorKeyword = resolvedColor?.toLowerCase();
         if (userAgentColor && (colorKeyword === "revert" || colorKeyword === "revert-layer"))
           color = resolveColor(userAgentColor, { currentColor: color, colorScheme });
@@ -8159,6 +8264,7 @@ export function createStyles(input: {
           characters + inputCharacters + (custom?.block.characters ?? 0) * 2 <= 32768;
         frame = {
           ...resolved,
+          ...(siblingColor ? { siblingColor } : {}),
           inputs: retainInputs ? inputs : undefined,
           userAgentDirection,
           userAgentHiddenInput: hiddenInput,

@@ -58,6 +58,22 @@ export function normalizeSelector(source: string): string {
 /** Parses selector syntax, discarding malformed branches only inside :is() and :where(). */
 export function parseSelectorList(source: string): CssNode {
   const css: typeof import("css-tree") & Tokenizer = require("./css-runtime.cjs").cssTree;
+  // CSSTree recognizes pseudo tokens but does not constrain a pseudo-element's
+  // arguments or what can follow it. Validate transition selectors before matching.
+  if (/::view-transition/i.test(source) && !source.includes("|")) {
+    const {
+      parseGrammar,
+    }: {
+      parseGrammar: (text: string, grammar: string) => unknown;
+    } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+    const {
+      isFailure,
+    }: {
+      isFailure: (result: unknown) => boolean;
+    } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+    if (isFailure(parseGrammar(source, "<complex-selector-list>")))
+      throw new SyntaxError("Invalid view-transition pseudo-element selector");
+  }
   if (!/:(?:is|where)\(/i.test(source) && !source.includes("\\"))
     return css.parse(source, { context: "selectorList" });
   const roots: Region[] = [];

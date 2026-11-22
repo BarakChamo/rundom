@@ -6,10 +6,19 @@ const requireCSS = createRequire(import.meta.url);
 let standardNames: readonly string[] | undefined;
 function computedLonghands(): readonly string[] {
   if (standardNames) return standardNames;
-  const properties: Record<string, unknown> = requireCSS("rundom-css-reference/lib/generated/css-property-definitions.js");
-  const shorthands: ReadonlyMap<string, unknown> = requireCSS("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js");
-  const names = Object.keys(properties).filter(name => name !== "--*" && !shorthands.has(name)).sort();
-  standardNames = [...names.filter(name => !name.startsWith("-")), ...names.filter(name => name.startsWith("-"))];
+  const properties: Record<string, unknown> = requireCSS(
+    "rundom-css-reference/lib/generated/css-property-definitions.js",
+  );
+  const shorthands: ReadonlyMap<string, unknown> = requireCSS(
+    "rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js",
+  );
+  const names = Object.keys(properties)
+    .filter((name) => name !== "--*" && !shorthands.has(name))
+    .sort();
+  standardNames = [
+    ...names.filter((name) => !name.startsWith("-")),
+    ...names.filter((name) => name.startsWith("-")),
+  ];
   return standardNames;
 }
 
@@ -420,11 +429,15 @@ export function createDeclarationViews(input: {
     privateLookup,
     (target) => {
       const value = computedValue(target);
-      return typeof computedValues?.get(target) === "function" ? computedNames(value).length : indexedLength(value, inheritedIndices.get(value));
+      return typeof computedValues?.get(target) === "function"
+        ? computedNames(value).length
+        : indexedLength(value, inheritedIndices.get(value));
     },
     (target, index) => {
       const value = computedValue(target);
-      return typeof computedValues?.get(target) === "function" ? computedNames(value)[index] : indexedItem(value, index, inheritedIndices.get(value));
+      return typeof computedValues?.get(target) === "function"
+        ? computedNames(value)[index]
+        : indexedItem(value, index, inheritedIndices.get(value));
     },
   );
   function publishComputed(prototype: object, value: ComputedSource): CSSStyleProperties {
