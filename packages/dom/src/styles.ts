@@ -4,6 +4,8 @@ import {
   fontFeatureValues,
   createDescriptorRuleParser,
   type PositionTry,
+  canonicalSelectorList,
+  selectorFeatureSupported,
   grammarLonghands,
   importResource,
   parseContainerConditions,
@@ -4173,6 +4175,11 @@ function parseRuleSelection({
     !validPseudoSelectorList(selectorText, namespaces)
   )
     return;
+  let canonicalText: string | undefined;
+  if (!nesting && selectorText.includes(":")) {
+    canonicalText = canonicalSelectorList(selectorText, namespaces);
+    if (canonicalText === undefined) return;
+  }
   // State-independent functional selectors and pseudo-elements can share the
   // same compiled matchers across Windows. Unknown or escaped pseudos stay local.
   if (!nesting && !namespaces?.size) {
@@ -4181,7 +4188,7 @@ function parseRuleSelection({
     if (pure) {
       const [ids, classes, types] = pure.specificity;
       return {
-        text: pure.text,
+        text: canonicalText ?? pure.text,
         entries: [
           {
             match: neverMatchesElement,
@@ -4536,7 +4543,7 @@ function parseRuleSelection({
     }
   }
   const selection = {
-    text: serializedText,
+    text: canonicalText ?? serializedText,
     entries: selectors,
     containsNesting,
     ...(treeOnly && !containsNesting && { treeDependent: true }),
@@ -5880,6 +5887,8 @@ export function createStyles(input: {
   writeInlineStyle: (node: Raw.Element, text: string) => void;
 }) {
   function supportsSelector(selector: string): boolean {
+    if (selector.includes(":") && !selector.includes("::details-content"))
+      return selectorFeatureSupported(selector);
     return (
       parseRuleSelection({
         text: selector,

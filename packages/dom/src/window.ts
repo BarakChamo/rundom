@@ -60,6 +60,7 @@ import {
   type XHRTransport,
   type SynchronousXHRTransport,
 } from "./xhr.js";
+import { validPseudoSelectorList } from "./css-reference.js";
 import { compileSelector, hasClass, simpleSubjectAttribute } from "./selectors.js";
 import { parseNativeInactiveHTML } from "./native-parser.js";
 import { parseLiteralDocument } from "./inactive-parser.js";
@@ -3384,6 +3385,11 @@ function buildWindow(
         ...(dependsOnScope && scope ? { scope } : {}),
       });
     // Untrusted selectors cannot grow retained strings without a fixed bound.
+    if (
+      /(?:^|[^\\]):(?:host|state|not)\b|::(?:slotted|part)\b/i.test(query) &&
+      !validPseudoSelectorList(query)
+    )
+      throw new DOMException("Invalid selector", "SyntaxError");
     if (selector.length <= 4096 && (!dependsOnScope || scope)) {
       if (cache.size >= 256) cache.clear();
       cache.set(selector, compiled);

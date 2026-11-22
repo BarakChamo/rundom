@@ -366,3 +366,19 @@ it("keeps precision through computed math and matches slot rules at the assignin
     window.close();
   }
 });
+
+it("agrees on selector parsing, serialization and forgiving feature queries", () => {
+  for (const Constructor of [JSDOM, Reference]) {
+    const { window } = new Constructor("<style></style>");
+    try {
+      const sheet = window.document.styleSheets[0]!;
+      expect(() => sheet.insertRule(":heading(2n) {}")).toThrow();
+      sheet.insertRule("*|*:not(*) {}");
+      expect(Reflect.get(sheet.cssRules[0]!, "selectorText")).toBe(":not(*)");
+      expect(window.CSS.supports("selector(:is(.valid, :unknown))")).toBe(false);
+      expect(window.document.querySelector(":host(:is(.a,.b))")).toBe(null);
+    } finally {
+      window.close();
+    }
+  }
+});

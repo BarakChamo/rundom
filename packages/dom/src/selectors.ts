@@ -527,6 +527,10 @@ function adaptSelector(
         );
         return;
       }
+      if (name === "host" || name === "host-context") {
+        item.data = register(() => false);
+        return;
+      }
       if (name === "heading") {
         if (node.children === null) {
           item.data = register(pseudos["run-dom-heading"] ?? (() => false));

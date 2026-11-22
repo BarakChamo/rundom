@@ -278,7 +278,14 @@ export function parseContainerConditions(
   return { text: serializeComponentValue(ast), conditions: Object.freeze(conditions) };
 }
 
-export function validPseudoSelectorList(text: string, namespaces?: ReadonlyMap<string, string>) {
+const canonicalSelectors = new Map<string, string | null>();
+export function canonicalSelectorList(
+  text: string,
+  namespaces?: ReadonlyMap<string, string>,
+): string | undefined {
+  const shared = !namespaces?.size && text.length <= 1024;
+  const cached = shared ? canonicalSelectors.get(text) : undefined;
+  if (cached !== undefined) return cached ?? undefined;
   const {
     parseGrammar,
   }: {
@@ -291,7 +298,47 @@ export function validPseudoSelectorList(text: string, namespaces?: ReadonlyMap<s
   } = require("rundom-css-reference/lib/jsdom/living/css/parse/context.js");
   const context = createVirtualContext(globalThis, "@style");
   if (namespaces) for (const [prefix, uri] of namespaces) context.namespaces.set(prefix, uri);
-  return Array.isArray(parseGrammar(text, "<selector-list>", context));
+  const parsed = parseGrammar(text, "<selector-list>", context);
+  const {
+    serializeNativeSelector,
+  }: {
+    serializeNativeSelector(value: unknown, context: object): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/utils/serialize-selectors.js");
+  const result = Array.isArray(parsed)
+    ? serializeNativeSelector(parsed, { selectorNamespaces: context.namespaces })
+    : undefined;
+  if (shared) {
+    if (canonicalSelectors.size >= 256) canonicalSelectors.clear();
+    canonicalSelectors.set(text, result ?? null);
+  }
+  return result;
+}
+
+/** Evaluates selector feature support, including discarded branches in forgiving lists. */
+export function selectorFeatureSupported(selector: string): boolean {
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string, global: object): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    isFailure,
+  }: {
+    isFailure(value: unknown): boolean;
+  } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+  const evaluate: (
+    condition: unknown,
+    global: object,
+  ) => boolean = require("rundom-css-reference/lib/jsdom/living/css/match/support.js");
+  const condition = parseGrammar(`(selector(${selector}))`, "<supports-condition>", globalThis);
+  return !isFailure(condition) && evaluate(condition, globalThis);
+}
+
+export function validPseudoSelectorList(
+  text: string,
+  namespaces?: ReadonlyMap<string, string>,
+): boolean {
+  return canonicalSelectorList(text, namespaces) !== undefined;
 }
 
 /** Parses one query and precomputes its result for the default headless device. */
