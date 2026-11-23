@@ -25,6 +25,47 @@ describe.each([
   { name: "RunDOM", Constructor: JSDOM },
   { name: "jsdom", Constructor: reference.JSDOM },
 ])("$name document completion lifetime", ({ Constructor }) => {
+  it("preserves a blocking script's insertion point during load and nested writes", async () => {
+    const { window } = new Constructor(
+      `<body><i id="before"></i>
+      <script src="data:text/javascript,void%200" onload="document.open();document.write('&lt;script&gt;window.nested=1&lt;/script&gt;&lt;p id=x&gt;x&lt;/p&gt;');window.seen=window.nested===1 &amp;&amp; !!document.querySelector('#x');document.close()"></script><b id="after"></b>`,
+      { runScripts: "dangerously", resources: "usable" },
+    );
+    try {
+      await new Promise<void>((resolve) =>
+        window.addEventListener("load", () => resolve(), { once: true }),
+      );
+      expect(Reflect.get(window, "seen")).toBe(true);
+      expect(Array.from(window.document.querySelectorAll("[id]"), (n) => n?.id)).toEqual([
+        "before",
+        "x",
+        "after",
+      ]);
+    } finally {
+      window.close();
+    }
+  });
+
+  it("erases handlers in the replaced tree and leaves detached listeners active", () => {
+    const { window } = new Constructor("<div></div>");
+    try {
+      const old = window.document.querySelector("div")!;
+      const detached = window.document.createElement("span");
+      const calls: string[] = [];
+      for (const [target, name] of [
+        [old, "old"],
+        [detached, "detached"],
+        [window, "window"],
+      ] as const)
+        target.addEventListener("ping", () => calls.push(name));
+      window.document.open();
+      for (const target of [old, detached, window]) target.dispatchEvent(new window.Event("ping"));
+      expect(calls).toEqual(["detached"]);
+    } finally {
+      window.close();
+    }
+  });
+
   it("fires FileReader loadend in the same task even when load destroys its document", async () => {
     // Given: the parent retains the reader while a load listener removes its frame.
     const { window: w } = new Constructor("", { runScripts: "dangerously", resources: "usable" });

@@ -1,4 +1,5 @@
 // Owns Window-local DOM interfaces backed by the same tree that parse5 builds.
+import { parserScriptInput, type ScriptSteps } from "./parser-script-input.js";
 import { ownedString } from "./owned-string.js";
 import {
   enqueueCustomReaction,
@@ -2369,6 +2370,7 @@ function buildWindow(
   const windowOrigin = options.inheritedOrigin ?? url.origin;
   const initialDocumentURL = url.href;
   const referrer = options.referrer === undefined ? "" : new URL(options.referrer).href;
+  let scriptInput: ReturnType<typeof parserScriptInput> | undefined;
   let currentScript: Raw.Element | null = null;
   let readyState: "loading" | "interactive" | "complete" = "loading";
   let pageShowing = false;
@@ -2734,8 +2736,9 @@ function buildWindow(
     return true;
   }
 
+  let erasedInlineHandlers: WeakSet<Raw.Element> | undefined;
   function initializeHandlers(handle: Element, record: Raw.Element): void {
-    if (options.runScripts !== "dangerously") return;
+    if (options.runScripts !== "dangerously" || erasedInlineHandlers?.delete(record)) return;
     for (const attr of record.attrs) {
       if (attr.namespace) continue;
       if (updateReflectedWindowAttribute(record, attr.name, attr.value)) continue;
@@ -16943,7 +16946,35 @@ function buildWindow(
     open(): this {
       if (xmlDocumentFor(raw(this)))
         throw new DOMException("Cannot open an XML document", "InvalidStateError");
-      replaceChildren(ownerRecord(raw(this)), []);
+      if (this === document && (scriptInput?.hasInsertionPoint || documentLoadStopped)) return this;
+      const owner = ownerRecord(raw(this));
+      const pending: Raw.Node[] = [owner];
+      while (pending.length) {
+        const node = pending.pop()!;
+        const handle = wrappers.get(node);
+        if (handle) {
+          const target = handle as InstanceType<typeof EventTarget>;
+          events.clear(target);
+          handlerTable(target).clear(target);
+        }
+        if (!("childNodes" in node)) continue;
+        for (const child of node.childNodes) pending.push(child);
+        if (tree.isElementNode(node)) {
+          if (
+            !handle &&
+            options.runScripts === "dangerously" &&
+            node.attrs.some((attr) => attr.name.startsWith("on"))
+          )
+            (erasedInlineHandlers ??= new WeakSet()).add(node);
+          const shadow = shadowRoots.get(node);
+          if (shadow) pending.push(shadow);
+        }
+      }
+      if (this === document) {
+        events.clear(window);
+        handlers.clear(window);
+      }
+      replaceChildren(owner, []);
       if (this !== document) {
         this.#detachedMarkup = "";
         return this;
@@ -16965,6 +16996,11 @@ function buildWindow(
       if (this !== document) {
         if (this.#detachedMarkup === undefined) this.open();
         this.#detachedMarkup = (this.#detachedMarkup ?? "") + markup;
+        return;
+      }
+      if (documentLoadStopped) return;
+      if (scriptInput?.hasInsertionPoint) {
+        scriptInput.insert(markup);
         return;
       }
       if (currentScript) {
@@ -16999,6 +17035,8 @@ function buildWindow(
       Document.prototype.write.call(this, ...parts, "\n");
     }
     close(): void {
+      if (xmlDocumentFor(raw(this)))
+        throw new DOMException("Cannot close an XML document", "InvalidStateError");
       if (this !== document) {
         const markup = this.#detachedMarkup;
         if (markup === undefined) return;
@@ -18196,6 +18234,7 @@ function buildWindow(
     styleBinding?.closeComputed();
     stopActiveParser?.();
     stopActiveParser = undefined;
+    scriptInput = undefined;
     cancelScheduledLoads();
     cachedNodeListFactory = undefined;
     advanceRevision();
@@ -19017,6 +19056,7 @@ function buildWindow(
     if (stoppingLoad) {
       stopActiveParser?.();
       stopActiveParser = undefined;
+      scriptInput = undefined;
       documentLoadStopped = true;
       cancelScheduledLoads();
     }
@@ -20089,6 +20129,7 @@ function buildWindow(
     script: Raw.Element,
     src: string,
     executeAfter?: Promise<void>,
+    withInsertion?: ScriptSteps,
   ): Promise<void> {
     const loadScript = options.loadTextResource;
     if (!loadScript) return;
@@ -20123,16 +20164,20 @@ function buildWindow(
     if (signal.aborted) return;
     if (executeAfter) await executeAfter;
     if (closed) return;
-    if (!evaluateScript(script, response.code, response.url, 0)) return;
-    // Resource completion follows evaluation's promise continuation. Once
-    // execution started, document destruction does not cancel its load event.
-    await Promise.resolve();
-    handle.dispatchEvent(events.trusted(new Event("load")));
+    const execute = async () => {
+      if (!evaluateScript(script, response.code, response.url, 0)) return;
+      // Resource completion follows evaluation's promise continuation. Once
+      // execution started, document destruction does not cancel its load event.
+      await Promise.resolve();
+      handle.dispatchEvent(events.trusted(new Event("load")));
+    };
+    await (withInsertion ? withInsertion(execute) : execute());
   }
 
   function startScript(
     script: Raw.Element,
     executeAfter?: Promise<void>,
+    withInsertion?: ScriptSteps,
   ): Promise<void> | undefined {
     if (!canRunScript(script)) return;
     const src =
@@ -20144,7 +20189,7 @@ function buildWindow(
     if (src !== null) {
       startedScripts.add(script);
       if (!allowsLegacyScriptEvent(script) || !options.loadTextResource) return;
-      return runExternalScript(script, src, executeAfter);
+      return runExternalScript(script, src, executeAfter, withInsertion);
     }
     const text = script.childNodes.filter(tree.isTextNode);
     const code = options.isXML
@@ -20162,7 +20207,11 @@ function buildWindow(
     startedScripts.add(script);
     if (!allowsLegacyScriptEvent(script)) return;
     const lineOffset = (text[0]?.sourceCodeLocation?.startLine ?? 1) - 1;
-    evaluateScript(script, code, url.href, lineOffset);
+    const execute = () => {
+      evaluateScript(script, code, url.href, lineOffset);
+    };
+    if (withInsertion) withInsertion(execute);
+    else execute();
   }
 
   function trackResource(
@@ -20996,7 +21045,21 @@ function buildWindow(
       );
     }
 
+    let scripts: ReturnType<typeof parserScriptInput> | undefined;
+    let checkpointScript: Raw.Element | undefined;
     function handleParsedScript(script: Raw.Element): void {
+      if (scripts) {
+        checkpointScript = script;
+        scripts.checkpoint();
+        return;
+      }
+      prepareParsedScript(script);
+    }
+    function prepareParsedScript(
+      script: Raw.Element,
+      withInsertion?: ScriptSteps,
+      nested = false,
+    ): void | Promise<void> {
       // parse5 mutates the raw tree directly. Invalidate live queries before running script.
       advanceRevision();
       initializeParsedRadios();
@@ -21020,17 +21083,25 @@ function buildWindow(
         }
       }
       let pending: Promise<void> | undefined;
-      if (pendingBlockingStylesheets?.size && canRunScript(script)) {
+      if (!nested && pendingBlockingStylesheets?.size && canRunScript(script)) {
         const ready = waitForScriptStylesheets();
         pending =
           attribute(script, "src") !== null
-            ? startScript(script, ready)
-            : ready.then(() => (parsing() ? startScript(script) : undefined));
-      } else if (asynchronousParser && canRunScript(script)) {
+            ? startScript(script, ready, withInsertion)
+            : ready.then(() =>
+                parsing() ? startScript(script, undefined, withInsertion) : undefined,
+              );
+      } else if (!nested && asynchronousParser && canRunScript(script)) {
         // Once a blocking resource has yielded to the host, preserve a microtask boundary before
         // each following script. Constructors encountered during resumption can queue work here.
-        pending = Promise.resolve().then(() => (parsing() ? startScript(script) : undefined));
-      } else pending = startScript(script);
+        pending = Promise.resolve().then(() =>
+          parsing() ? startScript(script, undefined, withInsertion) : undefined,
+        );
+      } else pending = startScript(script, undefined, withInsertion);
+      if (scripts) {
+        if (pending) asynchronousParser = true;
+        return pending;
+      }
       if (!parsing()) {
         parser?.tokenizer.pause();
         return;
@@ -21099,6 +21170,39 @@ function buildWindow(
     const currentParser = parser;
     const stop = () => currentParser.tokenizer.pause();
     stopActiveParser = stop;
+    if (parserOptions.scriptingEnabled && (!endOfInput || /<script[\t\n\f\r />]/i.test(markup))) {
+      scripts = parserScriptInput(
+        (chunk, end) => {
+          currentParser.tokenizer.write(chunk, end);
+          if (!end) currentParser.tokenizer.flushCharacters();
+          if (end) {
+            if (scriptInput === scripts) scriptInput = undefined;
+            finishParsedMarkup();
+          }
+        },
+        () => currentParser.openElements.currentTagId === html.TAG_ID.SCRIPT,
+        (withInsertion, nested) => {
+          const script = checkpointScript;
+          checkpointScript = undefined;
+          if (script) return prepareParsedScript(script, withInsertion, nested);
+        },
+        parsing,
+        (error) => {
+          if (options.frameFailed) options.frameFailed(error);
+          else options.reportScriptError?.(error);
+        },
+      );
+      const active = scripts;
+      scriptInput = active;
+      active.write(markup, endOfInput);
+      return (chunk, last) => {
+        if (!parsing() || streamEnded) return;
+        streamEnded = last;
+        needsParserRadioScan = true;
+        active.write(chunk, last);
+        if (!last) finishParsedMarkup();
+      };
+    }
     const write: MarkupWriter = (chunk, last) => {
       if (!parsing() || streamEnded) return;
       streamEnded = last;

@@ -58,6 +58,9 @@ export function createEventHandlers(input: {
 
   return {
     get,
+    clear(target: Target): void {
+      targets?.delete(target);
+    },
     set(target: Target, type: string, value: Handler | null): void {
       update(target, type, typeof value === "function" ? value : null);
     },
