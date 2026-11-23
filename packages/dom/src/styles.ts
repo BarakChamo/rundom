@@ -1669,9 +1669,11 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const name = property.toLowerCase();
       if (calculationSources?.get(this)?.delete(name)) this.#precisionRevision++;
       const longhands =
-        name === "outline"
-          ? outlineLonghands
-          : (grammarLonghands(name) ?? shorthandLonghands(name, propertyDefinitions));
+        name === "background-repeat"
+          ? ["background-repeat-x", "background-repeat-y"]
+          : name === "outline"
+            ? outlineLonghands
+            : (grammarLonghands(name) ?? shorthandLonghands(name, propertyDefinitions));
       if (this._readonly) return super.removeProperty(property);
       if (name.startsWith("background-") && super.getPropertyValue(name))
         super.removeProperty("background");
@@ -2161,7 +2163,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           return;
         }
       }
-      if (/^(?:margin|padding|box-shadow)$/.test(name) && substitutionFunction.test(value)) {
+      if (
+        /^(?:margin|padding|box-shadow)$/.test(name) &&
+        (substitutionFunction.test(value) || /var\(/i.test(value))
+      ) {
         const parsed = expandedDeclaration(name, value, priority === "important");
         if (!parsed) return;
         for (const [index, [child, component]] of parsed.entries.entries()) {
@@ -2179,7 +2184,9 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       if (
         value.includes("(") &&
-        (substitutionFunction.test(value) || usesTypedValueGrammar(name, value)) &&
+        (substitutionFunction.test(value) ||
+          usesTypedValueGrammar(name, value) ||
+          (!name.startsWith("--") && /var\(\s*(?:[{},)]|[^)]*\{)/i.test(value))) &&
         !propertyDefinitions.get(name)?.longhands &&
         !grammarLonghands(name)
       ) {
@@ -2201,13 +2208,20 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return;
       }
       if (
-        usesTypedValueGrammar(name, value) &&
+        (usesTypedValueGrammar(name, value) ||
+          (name === "background" &&
+            /(?:border-area|\/|,)/i.test(value) &&
+            !variableSyntax.test(value))) &&
         (name === "background" || name === "background-position" || name === "border")
       ) {
         const parsed = expandedDeclaration(name, value, priority === "important");
         if (!parsed) return;
         for (const [child, component] of parsed.entries) {
           this._setProperty(child, component, priority);
+        }
+        if (parsed.background) {
+          this._setProperty("background-position", parsed.background.position, priority);
+          this._setProperty("background-repeat", parsed.background.repeat, priority);
         }
         this._setProperty(name, parsed.text, priority);
         return;
@@ -2231,6 +2245,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         if (name.startsWith("background-")) super.removeProperty("background");
         if (
           name === "outline" ||
+          name === "background-repeat" ||
           grammarLonghands(name) ||
           isPhysicalBorder(name) ||
           propertyDefinitions.get(name)?.longhands?.length
@@ -2441,7 +2456,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         value &&
         !property.startsWith("--") &&
         !propertyDefinitions.get(name)?.longhands &&
-        (/^(?:counter-reset$|counter-increment$|counter-set$|transition-timing-function$|grid-auto-flow$|paint-order$|color-scheme$|container-name$|grid-template-areas$|box-shadow$|vertical-align$|transform$|shape-outside$|scale$|object-position$|perspective-origin$|transform-origin$|list-style-image$|text-box-edge$|font-palette$|clip-path$|text-autospace$|text-spacing-|text-transform$|font-variation-settings$|font-synthesis-|font-family$|will-change$|content$|offset-path$|mask-|border-image-|white-space-|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
+        (/^(?:counter-reset$|counter-increment$|counter-set$|transition-timing-function$|grid-auto-flow$|grid-(?:column|row)-(?:start|end)$|paint-order$|color-scheme$|container-name$|grid-template-areas$|box-shadow$|vertical-align$|transform$|shape-outside$|scale$|object-position$|perspective-origin$|transform-origin$|list-style-image$|text-box-edge$|font-palette$|clip-path$|text-autospace$|text-spacing-|text-transform$|font-variation-settings$|font-synthesis-|font-family$|will-change$|content$|offset-path$|mask-|border-image-|white-space-|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
           name,
         ) ||
           (name.startsWith("grid-template-") && value.includes("calc(")))
@@ -4325,7 +4340,7 @@ function parseRuleSelection({
 }): RuleSelection | undefined {
   const { parse, generate, walk, ident }: typeof import("css-tree") =
     require("./css-runtime.cjs").cssTree;
-  const selectorText = normalizeNestingSelector(text.trim(), nesting);
+  const selectorText = normalizeNestingSelector(cssInput(text, false).trim(), nesting);
   if (!selectorText) return;
   if (
     !nesting &&
@@ -6661,6 +6676,8 @@ export function createStyles(input: {
     ancestors: ReadonlySet<string>,
     encoding: string,
   ): Promise<boolean> | undefined {
+    const condition = rule.view.supportsText;
+    if (condition !== null && !css().supports(condition)) return Promise.resolve(true);
     const url = URL.parse(rule.view.href, base);
     const importedSheet = createAttachedSheet({
       sourceOwner: owner,
@@ -6675,8 +6692,6 @@ export function createStyles(input: {
     }
     if (ancestors.size >= 20 || ancestors.has(url.href)) return;
     if (!input.resourcesEnabled) return;
-    const condition = rule.view.supportsText;
-    if (condition !== null && !css().supports(condition)) return Promise.resolve(true);
     return input.loadImport(owner, url.href, encoding).then((resource) => {
       if (resource.status !== "loaded") return resource.status !== "aborted";
       sheetState(importedSheet).href = resource.url;
@@ -7224,6 +7239,7 @@ export function createStyles(input: {
     winners: ReadonlyMap<string, ComputedWinner>;
     inputs: readonly CascadeInput[] | undefined;
     userAgentDirection: string | undefined;
+    formattingContainer?: true;
     userAgentFocus?: true;
     userAgentHiddenInput: boolean;
     parent: WeakRef<ComputedFrame> | undefined;
@@ -7692,6 +7708,7 @@ export function createStyles(input: {
   }
 
   type ResolutionValues = {
+    transformedDisplay: string | undefined;
     prior: ComputedDeclaration | undefined;
     custom: CustomProjection | undefined;
     projected: CustomBlock | undefined;
@@ -7821,6 +7838,10 @@ export function createStyles(input: {
         continue;
       }
       if (isCustomProperty && /^(?:initial|inherit|unset|revert-layer)$/i.test(value)) continue;
+      if (name === "-webkit-box-orient" && (value === "inline-axis" || value === "block-axis")) {
+        result._setProperty(name, value === "inline-axis" ? "horizontal" : "vertical", "");
+        continue;
+      }
       if (name === "opacity" || name.endsWith("-opacity")) {
         const fraction = value.endsWith("%") ? Number(value.slice(0, -1)) / 100 : Number(value);
         if (Number.isFinite(fraction)) {
@@ -7951,6 +7972,11 @@ export function createStyles(input: {
             : computed,
       );
     }
+    if (
+      values.transformedDisplay !== undefined &&
+      (property === undefined || property === "display")
+    )
+      result._setProperty("display", values.transformedDisplay, "");
     const lineHeight = result._values.get("line-height");
     if (lineHeight) {
       const percentage = lineHeight.endsWith("%");
@@ -8129,6 +8155,8 @@ export function createStyles(input: {
     const deferred: DeferredComputed = {
       publish: views().deferredPublisher(
         (name) => {
+          if (name === "display" && values.transformedDisplay !== undefined)
+            return values.transformedDisplay;
           if (resolver.substitution && resolver.registrations?.has(name))
             return resolver.substitution.read(name);
           if (name === "color" && isSerializedRGB(values.color)) return values.color;
@@ -9409,7 +9437,35 @@ export function createStyles(input: {
         );
         if (computedFontSize !== undefined) fontSize = computedFontSize;
         if (element.parentNode?.nodeName === "#document") rootFontSize = fontSize;
+        const layoutValue = (name: string, fallback: string) => {
+          const declared = winners.get(name)?.value;
+          if (declared === undefined) return fallback;
+          const value = resolveValue(name, declared);
+          if (value === "inherit") return prior?.getPropertyValue(name) || fallback;
+          return value && !/^(?:initial|unset|revert(?:-layer)?)$/.test(value) ? value : fallback;
+        };
+        const display = layoutValue("display", userAgentDisplay ?? "inline");
+        const rootBox = documentChild && !activePseudo;
+        let transformedDisplay: string | undefined;
+        if (display === "contents") {
+          if (rootBox) transformedDisplay = "block";
+        } else if (
+          /^(?:inline(?:$|[- ])|table-(?:cell|caption|column|row|header|footer)|ruby(?:$|-))/.test(
+            display,
+          ) &&
+          (rootBox ||
+            parentFrame?.formattingContainer ||
+            /^(?:absolute|fixed)$/.test(layoutValue("position", "static")) ||
+            layoutValue("float", "none") !== "none")
+        ) {
+          const inside = display.replace(/^inline[- ]?/, "");
+          transformedDisplay = /^(?:flex|grid|table|list-item)$/.test(inside) ? inside : "block";
+        }
+        const formattingContainer =
+          /^(?:inline[- ])?(?:flex|grid)$/.test(display) ||
+          (display === "contents" && !rootBox && parentFrame?.formattingContainer);
         const attributes = {
+          transformedDisplay,
           prior,
           custom,
           projected: projected?.block,
@@ -9513,6 +9569,7 @@ export function createStyles(input: {
           characters + inputCharacters + (custom?.block.characters ?? 0) * 2 <= 32768;
         frame = {
           ...resolved,
+          ...(formattingContainer && { formattingContainer: true as const }),
           ...(substitution && { substitution }),
           ...(siblingColor ? { siblingColor } : {}),
           ...(registrations ? { registered: true } : {}),

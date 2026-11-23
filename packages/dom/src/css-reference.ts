@@ -126,6 +126,7 @@ export function expandedDeclaration(
   | {
       text: string;
       entries: [string, string][];
+      background?: { position: string; repeat: string };
       declarations: { name: string; pending?: unknown }[];
     }
   | undefined {
@@ -141,6 +142,12 @@ export function expandedDeclaration(
     declarations,
     text: style.getPropertyValue(name),
     entries: declarations.map(({ name }) => [name, style.getPropertyValue(name)]),
+    ...(name === "background" && {
+      background: {
+        position: style.getPropertyValue("background-position"),
+        repeat: style.getPropertyValue("background-repeat"),
+      },
+    }),
   };
 }
 
