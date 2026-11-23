@@ -2147,6 +2147,20 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (!property.startsWith("--")) value = canonicalWideKeyword(value);
       if (property.toLowerCase() === "page" && value.toLowerCase() === "auto") value = "auto";
       const name = property.toLowerCase();
+      if (
+        value &&
+        (/^-webkit-box-(?:flex|ordinal-group)$/.test(name) ||
+          (!name.startsWith("--") &&
+            /^[-+]?(?:[0-9]*\.[0-9]+|[0-9]+)(?:e[+-]?[0-9]+)?(?:[a-z]+|%)?$/i.test(value) &&
+            (value.length >= 8 || value === "-0")))
+      ) {
+        const serialized = specifiedDeclaration(name, value);
+        if (serialized !== undefined) value = serialized;
+        if (name.startsWith("-webkit-box-") && serialized !== undefined) {
+          this._setProperty(name, serialized, priority);
+          return;
+        }
+      }
       if (/^(?:margin|padding|box-shadow)$/.test(name) && substitutionFunction.test(value)) {
         const parsed = expandedDeclaration(name, value, priority === "important");
         if (!parsed) return;
@@ -2649,6 +2663,7 @@ function createRuleInterfaces(
   parseFunction: (
     text: string,
   ) => { data: FunctionRuleData<RuleList>; bind(owner: object): void } | undefined,
+  parseProperty: ReturnType<typeof createDescriptorRuleParser>["property"],
   parsePosition: (text: string) => PositionTry | undefined,
   positionDescriptors: ReturnType<typeof createDeclarationViews>["positionDescriptors"],
 ) {
@@ -3642,6 +3657,7 @@ function createRuleInterfaces(
     parseFontFace,
     parseFunction,
     CSSFunctionRule,
+    parseProperty,
     parsePosition,
     CSSPropertyRule,
     CSSNamespaceRule,
@@ -3755,6 +3771,9 @@ function argumentSpecificity(
   return result;
 }
 
+const wildcardPseudo =
+  /^::(?:highlight|view-transition-(?:group(?:-children)?|image-pair|old|new))\(\*\)$/i;
+
 function partSpecificity(node: CssNode, nesting = zeroSpecificity): Specificity {
   if (node.type === "NestingSelector") return nesting;
   if (node.type === "IdSelector") return { ids: 1, classes: 0, types: 0 };
@@ -3778,6 +3797,13 @@ function partSpecificity(node: CssNode, nesting = zeroSpecificity): Specificity 
     ? argumentSpecificity(node.children?.first, nesting)
     : zeroSpecificity;
   const isElement = node.type === "PseudoElementSelector";
+  if (
+    isElement &&
+    node.children?.first?.type === "Raw" &&
+    node.children.first.value.trim() === "*" &&
+    wildcardPseudo.test(`::${name}(*)`)
+  )
+    return zeroSpecificity;
   return {
     ids: argument.ids,
     classes: Math.min(specificityBase - 1, argument.classes + (isElement ? 0 : 1)),
@@ -3835,6 +3861,7 @@ function parseStyleSheetSyntax(text: string, recent?: Map<string, WeakRef<CssNod
   const ast = parseNestingStyleSheet(
     text,
     {
+      positions: /@property\b/i.test(text),
       parseRulePrelude: false,
       parseAtrulePrelude: false,
       parseValue: false,
@@ -4577,7 +4604,10 @@ function parseRuleSelection({
     const trailingPseudo =
       pseudoElementName(tail) ??
       (tail?.type === "PseudoElementSelector"
-        ? computedPseudoTarget(generate(tail))?.slice(2)
+        ? (wildcardPseudo.test(generate(tail))
+            ? generate(tail).toLowerCase()
+            : computedPseudoTarget(generate(tail))
+          )?.slice(2)
         : undefined);
     let pseudoText = "";
     let detailsStates = "";
@@ -5267,76 +5297,22 @@ function parseSheet(
       node.block &&
       node.prelude
     ) {
-      const { ident, lexer }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      const names: string[] = [];
-      let prelude: CssNode;
-      try {
-        prelude = parse(generate(node.prelude), { context: "atrulePrelude", atrule: "property" });
-      } catch {
-        return;
+      const registration = interfaces.parseProperty(
+        node.loc
+          ? (nesting ? `x { ${text} }` : text).slice(node.loc.start.offset, node.loc.end.offset)
+          : generate(node),
+      );
+      if (registration) {
+        target.push({
+          kind: "property",
+          view: new interfaces.CSSPropertyRule(interfaces.key, {
+            names: Object.freeze([...registration.names]),
+            syntax: registration.syntax,
+            inherits: registration.inherits,
+            initialValue: registration.initialValue,
+          }),
+        });
       }
-      if (prelude.type !== "AtrulePrelude") return;
-      let needsName = true;
-      for (const part of prelude.children) {
-        if (!needsName) {
-          if (part.type !== "Operator" || part.value !== ",") return;
-          needsName = true;
-          continue;
-        }
-        needsName = false;
-        if (part.type !== "Identifier") return;
-        const name = ident.decode(part.name);
-        if (!name.startsWith("--") || name === "--") return;
-        names.push(name);
-      }
-      if (needsName) return;
-      let syntax: string | undefined;
-      let inherits: boolean | undefined;
-      let initialValue: string | null = null;
-      for (const desc of node.block.children) {
-        if (desc.type !== "Declaration" || desc.important) continue;
-        const value = generate(desc.value);
-        switch (desc.property.toLowerCase()) {
-          case "syntax": {
-            let parsed: CssNode;
-            try {
-              parsed = parse(value, { context: "value" });
-            } catch (error) {
-              if (!(error instanceof SyntaxError)) throw error;
-              break;
-            }
-            const token =
-              parsed.type === "Value" && parsed.children.size === 1 ? parsed.children.first : null;
-            if (token?.type === "String") syntax = token.value;
-            break;
-          }
-          case "inherits":
-            if (/^(true|false)$/i.test(value)) inherits = value.toLowerCase() === "true";
-            break;
-          case "initial-value":
-            initialValue = value;
-            break;
-        }
-      }
-      if (!names.length || !syntax || inherits === undefined) return;
-      if (syntax !== "*") {
-        if (!initialValue) return;
-        // Match each registered alternative with CSS Tree's value grammar.
-        const types =
-          /^(?:<(?:length|number|percentage|length-percentage|color|image|url|integer|angle|time|resolution|transform-function|transform-list|custom-ident)>|[-_a-zA-Z][\w-]*)[+#]?$/;
-        const alternatives = syntax.split("|").map((part) => part.trim());
-        if (!alternatives.every((part) => types.test(part))) return;
-        if (!alternatives.some((part) => lexer.match(part, initialValue!).error === null)) return;
-      }
-      target.push({
-        kind: "property",
-        view: new interfaces.CSSPropertyRule(interfaces.key, {
-          names: Object.freeze(names),
-          syntax,
-          inherits,
-          initialValue,
-        }),
-      });
       return;
     }
     if (node.type === "Atrule" && node.name === "position-try" && node.block) {
@@ -6098,6 +6074,7 @@ export function createStyles(input: {
   >;
   track: (pending: Promise<void>, owner: Raw.Element) => void;
   resourcesEnabled: boolean;
+  queueInlineLoad: (owner: Raw.Element) => void;
   importCompleted: (owner: Raw.Element, type: "load" | "error") => void;
   writeInlineStyle: (node: Raw.Element, text: string) => void;
 }) {
@@ -6152,6 +6129,7 @@ export function createStyles(input: {
     (binding, text) => descriptorRules().descriptor(binding, text),
     (text) => descriptorRules().fontFace(text),
     (text) => descriptorRules().functionRule<RuleList>(text),
+    (text) => descriptorRules().property(text),
     (text) => descriptorRules().position(text),
     (style, parent) => views().positionDescriptors(style, parent),
   );
@@ -6763,6 +6741,7 @@ export function createStyles(input: {
     reportErrors(record);
     if (importBase !== undefined)
       trackImportTree(node, loadImports(node, record, importBase, new Set([importBase]), encoding));
+    else if (node.tagName === "style") input.queueInlineLoad(node);
     return record.sheet;
   }
 
@@ -8427,6 +8406,9 @@ export function createStyles(input: {
     let rootFontSize = inheritedFrame?.rootFontSize ?? initialFontSize;
     let color = inheritedFrame?.color ?? initialColor;
     for (const { node: element, scope, pseudo: activePseudo } of parents.reverse()) {
+      const pseudoFamily = activePseudo?.includes("(")
+        ? activePseudo.slice(0, activePseudo.indexOf("(")) + "(*)"
+        : undefined;
       let subjectTypeName: string | undefined;
       let subjectKeys: Set<string> | undefined;
       function elementSubjectKeys(): Set<string> {
@@ -8794,7 +8776,8 @@ export function createStyles(input: {
             } else if (outerPart) continue;
             const { specificity, hostOnly, subjectKey, subjectType } = entry;
             const match = activePseudo
-              ? entry.pseudo?.text === activePseudo
+              ? entry.pseudo &&
+                (entry.pseudo.text === activePseudo || entry.pseudo.text === pseudoFamily)
                 ? entry.pseudo.match
                 : neverMatchesElement
               : entry.match;

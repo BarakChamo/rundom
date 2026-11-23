@@ -2656,6 +2656,16 @@ function buildWindow(
       documentEncoding: (node) => documentEncoding(ownerRecord(node)),
       track: trackStylesheet,
       resourcesEnabled: options.loadTextResource !== undefined,
+      queueInlineLoad: (owner) => {
+        if (!closed)
+          timers.setTimeout(() => {
+            if (!closed)
+              Node.prototype.dispatchEvent.call(
+                wrapElement(owner),
+                events.trusted(new Event("load")),
+              );
+          });
+      },
       importCompleted: (owner, kind) => {
         if (!closed)
           Node.prototype.dispatchEvent.call(wrapElement(owner), events.trusted(new Event(kind)));

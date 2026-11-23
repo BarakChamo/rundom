@@ -509,6 +509,13 @@ export function bindCSSWrapper(wrapper: object, owner: object): void {
   Reflect.set(utils.implForWrapper(wrapper), utils.wrapperSymbol, owner);
 }
 
+export type PropertyDescriptors = {
+  readonly names: readonly string[];
+  readonly syntax: string;
+  readonly inherits: boolean;
+  readonly initialValue: string | null;
+};
+
 export type FunctionRuleData<List> = {
   readonly name: string;
   readonly cssText: string;
@@ -531,7 +538,11 @@ export function createDescriptorRuleParser(
     parseRule(
       text: string,
       global: object,
-    ): PositionTry | { cssText: string; fontFamily: string } | { message: string };
+    ):
+      | PositionTry
+      | PropertyDescriptors
+      | { cssText: string; fontFamily: string }
+      | { message: string };
   } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
   const globals = {
     Object,
@@ -643,6 +654,16 @@ export function createDescriptorRuleParser(
       const impl = parseRule(text, globals);
       if (!("getParameters" in impl)) return;
       return bindRule<FunctionRuleData<List>>(impl);
+    },
+    property(text: string) {
+      if (!Object.hasOwn(globals, "CSSPropertyRule")) {
+        const idl: {
+          install(global: object, names: string[]): void;
+        } = require("rundom-css-reference/lib/generated/idl/CSSPropertyRule.js");
+        idl.install(globals, ["Window"]);
+      }
+      const rule = parseRule(text, globals);
+      if ("initialValue" in rule) return rule;
     },
     position(text: string) {
       const rule = parseRule(text, globals);
