@@ -1179,6 +1179,7 @@ const realmTreeOperations = new WeakMap<
     documentEncoding: (owner: Raw.Document) => string;
     initializeCopiedTree: (copy: Raw.Node, owner: Raw.Document) => object;
     nativeHTMLElementPrototype: (localName: string, autonomous: boolean) => object;
+    parserStylesheetBlockers: () => Set<Promise<void>> | undefined;
     eligibleComputedStyle: (node: Raw.Element) => boolean;
     computedStyle: (
       node: Raw.Element,
@@ -3029,6 +3030,7 @@ function buildWindow(
     documentEncoding,
     initializeCopiedTree,
     nativeHTMLElementPrototype,
+    parserStylesheetBlockers,
     eligibleComputedStyle,
     computedStyle: (node, root, pseudo) =>
       pseudo && root
@@ -19104,6 +19106,10 @@ function buildWindow(
       stopActiveParser = undefined;
       scriptInput = undefined;
       documentLoadStopped = true;
+      if (readyState !== "complete") {
+        readyState = "complete";
+        document.dispatchEvent(new Event("readystatechange"));
+      }
       cancelScheduledLoads();
     }
     cancelResourceRequests();
@@ -20185,6 +20191,7 @@ function buildWindow(
     executeAfter?: Promise<void>,
     withInsertion?: ScriptSteps,
   ): Promise<void> {
+    const generation = loadGeneration;
     const loadScript = options.loadTextResource;
     if (!loadScript) return;
     const handle = wrapElement(script);
@@ -20217,7 +20224,7 @@ function buildWindow(
     }
     if (signal.aborted) return;
     if (executeAfter) await executeAfter;
-    if (closed) return;
+    if (closed || generation !== loadGeneration) return;
     const execute = async () => {
       if (!evaluateScript(script, response.code, response.url, 0)) return;
       // Resource completion follows evaluation's promise continuation. Once
@@ -20308,6 +20315,13 @@ function buildWindow(
     const sheet = styleBinding?.sheet(node);
     if (sheet) sheet.disabled = false;
     startStyle(node);
+  }
+
+  function parserStylesheetBlockers(): Set<Promise<void>> | undefined {
+    if (pendingBlockingStylesheets?.size) return pendingBlockingStylesheets;
+    const parent = options.frameElement && records.get(options.frameElement)?.realm;
+    if (parent && parent !== token)
+      return realmTreeOperations.get(parent)?.parserStylesheetBlockers();
   }
 
   function trackStylesheet(pending: Promise<void>, owner: Raw.Element): void {
@@ -20951,9 +20965,38 @@ function buildWindow(
     const parsing = () => !closed && !documentLoadStopped && generation === loadGeneration;
     if (!parsing()) return;
     needsParserRadioScan = !endOfInput || /<input[\t\n\f\r />]/i.test(markup);
+    let deferredStart: (() => void) | undefined;
+    let lastDeferred: Promise<void> | undefined;
+    function scheduleDeferred(script: Raw.Element): void {
+      if (!deferredStart) {
+        const gate = Promise.withResolvers<void>();
+        const signal = (resourceAbort ??= new AbortController()).signal;
+        const release = () => gate.resolve();
+        signal.addEventListener("abort", release, { once: true });
+        deferredStart = () => {
+          signal.removeEventListener("abort", release);
+          gate.resolve();
+        };
+        lastDeferred = gate.promise;
+      }
+      // Fetch immediately, then execute after parsing and all preceding deferred scripts.
+      const pending = startScript(script, lastDeferred);
+      if (pending) lastDeferred = Promise.allSettled([pending]).then(() => {});
+    }
+
     if (options.isXML) {
       const onScript = (script: Raw.Element) => {
         advanceRevision();
+        if (attribute(script, "src") !== null) {
+          if (attribute(script, "async") !== null) {
+            trackResource(startScript(script), "load");
+            return;
+          }
+          if (attribute(script, "defer") !== null) {
+            scheduleDeferred(script);
+            return;
+          }
+        }
         return startScript(script);
       };
       try {
@@ -20970,13 +21013,22 @@ function buildWindow(
         if (pending) {
           void pending
             .then(() => {
-              if (parsing()) finishLoading();
+              if (parsing())
+                finishLoading(
+                  deferredStart && lastDeferred
+                    ? { start: deferredStart, done: lastDeferred }
+                    : undefined,
+                );
             })
             .catch((error: unknown) => {
               if (!parsing()) return;
               if (isXMLParseError(error)) {
                 options.reportXMLParsingError?.(error);
-                finishLoading();
+                finishLoading(
+                  deferredStart && lastDeferred
+                    ? { start: deferredStart, done: lastDeferred }
+                    : undefined,
+                );
               } else if (options.frameFailed) options.frameFailed(error);
               else options.reportScriptError?.(error);
             });
@@ -20986,7 +21038,9 @@ function buildWindow(
         if (!options.frameParent || !isXMLParseError(error)) throw error;
         replaceChildren(source, [xmlParserError(error.message)]);
       }
-      finishLoading();
+      finishLoading(
+        deferredStart && lastDeferred ? { start: deferredStart, done: lastDeferred } : undefined,
+      );
       return;
     }
     let parsedFrames: Raw.Element[] | undefined;
@@ -20994,7 +21048,7 @@ function buildWindow(
     const collectStylesheets =
       parserOptions.scriptingEnabled &&
       options.loadTextResource !== undefined &&
-      (!endOfInput || /<(?:link|style)[\t\n\f\r />]/i.test(markup));
+      (!endOfInput || /<(?:link|style|script)[\t\n\f\r />]/i.test(markup));
     const settings =
       !endOfInput || collectStylesheets || /<(?:iframe|frame)[\t\n\f\r />]/i.test(markup)
         ? {
@@ -21037,8 +21091,12 @@ function buildWindow(
 
     async function waitForScriptStylesheets(): Promise<void> {
       // Imported sheets can add blockers as their parent sheet finishes.
-      while (parsing() && pendingBlockingStylesheets?.size)
-        await Promise.allSettled(pendingBlockingStylesheets);
+      for (
+        let pending = parserStylesheetBlockers();
+        parsing() && pending?.size;
+        pending = parserStylesheetBlockers()
+      )
+        await Promise.allSettled(pending);
     }
 
     const parsedShadows: Raw.DocumentFragment[] | undefined =
@@ -21058,25 +21116,6 @@ function buildWindow(
     const liveParserSettings = { ...parserSettings, treeAdapter: parserAdapter };
 
     let asynchronousParser = false;
-    let deferredStart: (() => void) | undefined;
-    let lastDeferred: Promise<void> | undefined;
-    function scheduleDeferred(script: Raw.Element): void {
-      if (!deferredStart) {
-        const gate = Promise.withResolvers<void>();
-        const signal = (resourceAbort ??= new AbortController()).signal;
-        const release = () => gate.resolve();
-        signal.addEventListener("abort", release, { once: true });
-        deferredStart = () => {
-          signal.removeEventListener("abort", release);
-          gate.resolve();
-        };
-        lastDeferred = gate.promise;
-      }
-      // Fetch immediately, then execute after parsing and all preceding deferred scripts.
-      const pending = startScript(script, lastDeferred);
-      if (pending) lastDeferred = Promise.allSettled([pending]).then(() => {});
-    }
-
     let streamEnded = endOfInput;
     function finishParsedMarkup(): void {
       if (streamEnded && stopActiveParser === stop) stopActiveParser = undefined;
@@ -21137,7 +21176,7 @@ function buildWindow(
         }
       }
       let pending: Promise<void> | undefined;
-      if (!nested && pendingBlockingStylesheets?.size && canRunScript(script)) {
+      if (!nested && parserStylesheetBlockers()?.size && canRunScript(script)) {
         const ready = waitForScriptStylesheets();
         pending =
           attribute(script, "src") !== null
@@ -21227,6 +21266,14 @@ function buildWindow(
     if (parserOptions.scriptingEnabled && (!endOfInput || /<script[\t\n\f\r />]/i.test(markup))) {
       scripts = parserScriptInput(
         (chunk, end) => {
+          const open = currentParser.openElements.current;
+          if (
+            end &&
+            open &&
+            tree.isElementNode(open) &&
+            currentParser.openElements.currentTagId === html.TAG_ID.SCRIPT
+          )
+            startedScripts.add(open);
           currentParser.tokenizer.write(chunk, end);
           if (!end) currentParser.tokenizer.flushCharacters();
           if (end) {

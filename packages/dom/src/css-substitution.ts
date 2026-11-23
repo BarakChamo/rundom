@@ -80,6 +80,7 @@ export type SubstitutionFrame = {
 
 type CascadeBlock = {
   entries: readonly { name: string; value: string; important: boolean }[];
+  base?: string | undefined;
   weight: number;
   hostContext: boolean;
   layerIndex: number | undefined;
@@ -94,6 +95,7 @@ export function substitutionFrame(
   registrations: ReadonlyMap<string, RegisteredProperty> | undefined,
   sources?: readonly CascadeBlock[],
   shorthands?: ReadonlyMap<string, string>,
+  sheetBases?: ReadonlyMap<string, string>,
 ): SubstitutionFrame {
   let frame: SubstitutionFrame | undefined;
   function materialize(): SubstitutionFrame {
@@ -106,6 +108,7 @@ export function substitutionFrame(
       registrations,
       sources,
       shorthands,
+      sheetBases,
     ));
   }
   return {
@@ -142,6 +145,7 @@ function buildSubstitutionFrame(
   registrations: ReadonlyMap<string, RegisteredProperty> | undefined,
   sources?: readonly CascadeBlock[],
   shorthands?: ReadonlyMap<string, string>,
+  sheetBases?: ReadonlyMap<string, string>,
 ): SubstitutionFrame {
   const resolver: {
     hasResolvedStyle(element: object): boolean;
@@ -349,9 +353,20 @@ function buildSubstitutionFrame(
   // Initialize upstream's cycle guard and caches, then supply the already-matched cascade.
   resolver.hasResolvedStyle(element);
   const state = getDocumentStyleState(document).elements.get(element)!;
+  function styleSource(block: Map<string, unknown>, base: (name: string) => string | undefined) {
+    return {
+      _getBaseURL: base,
+      _getParsedDeclaration: (name: string) => block.get(name),
+      _mayDeclare: (name: string) => block.has(name),
+      get _declarations() {
+        return block.values();
+      },
+    };
+  }
   state.candidates = [
     {
       declarations,
+      ...(sheetBases && { style: styleSource(declarations, (name) => sheetBases.get(name)) }),
       context: {
         origin: 3,
         attached: true,
@@ -391,6 +406,7 @@ function buildSubstitutionFrame(
       if (block.size)
         state.candidates.push({
           declarations: block,
+          ...(source.base && { style: styleSource(block, () => source.base) }),
           matched: true,
           specificity: [source.weight, 0, 0],
           context: {

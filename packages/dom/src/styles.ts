@@ -9166,6 +9166,9 @@ export function createStyles(input: {
             for (const [name, value] of custom.block.values)
               if (!substitutionValues.has(name)) substitutionValues.set(name, value);
           }
+          let sheetBases: Map<string, string> | undefined;
+          for (const [name, winner] of winners)
+            if (winner.base) (sheetBases ??= new Map()).set(name, winner.base);
           substitution = substitutionFrame(
             element,
             inheritedFrame,
@@ -9181,6 +9184,7 @@ export function createStyles(input: {
                   ),
                 )
               : undefined,
+            sheetBases,
           );
         }
         const resolver = winningValueResolver(
