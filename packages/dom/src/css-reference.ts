@@ -62,22 +62,26 @@ function detachedDeclaration(declarations: readonly unknown[]) {
       global: object,
       args: never[],
       options: object,
-    ) => { readonly cssText: string; getPropertyValue(property: string): string };
+    ) => {
+      cssText: string;
+      _inlineParseContext: object;
+      setProperty(name: string, value: string, priority: string): void;
+      removeProperty(name: string): string;
+      getPropertyValue(property: string): string;
+    };
   } = require("rundom-css-reference/lib/jsdom/living/css/CSSStyleDeclaration-impl.js");
   return new Declaration(globalThis, [], { baseURL: "about:blank", declarations });
 }
 
-/** Serializes CSS blocks containing overlapping shorthands or pending substitutions. */
-export type ShorthandSource = {
-  shorthand: string;
-  text: string;
-  declaration: object;
-  pending: boolean;
-};
-export function serializeDeclarationBlock(
-  text: string,
-  pending?: ReadonlyMap<string, ShorthandSource>,
-): string {
+/** Preserves CSSOM ordering when physical and logical declarations overlap. */
+export function orderedDeclaration(text: string) {
+  const { declarations, context } = parseBlock(text);
+  const block = detachedDeclaration(declarations);
+  block._inlineParseContext = context;
+  return block;
+}
+
+function parseBlock(text: string) {
   const {
     parseDeclarations,
   }: {
@@ -89,7 +93,20 @@ export function serializeDeclarationBlock(
     createContext(owner: object): object;
   } = require("rundom-css-reference/lib/jsdom/living/css/parse/context.js");
   context ??= createContext({ _globalObject: globalThis });
-  const declarations = parseDeclarations(text, context);
+  return { declarations: parseDeclarations(text, context), context };
+}
+/** Serializes CSS blocks containing overlapping shorthands or pending substitutions. */
+export type ShorthandSource = {
+  shorthand: string;
+  text: string;
+  declaration: object;
+  pending: boolean;
+};
+export function serializeDeclarationBlock(
+  text: string,
+  pending?: ReadonlyMap<string, ShorthandSource>,
+): string {
+  const { declarations } = parseBlock(text);
   return detachedDeclaration(
     pending?.size
       ? declarations.map((declaration) => {

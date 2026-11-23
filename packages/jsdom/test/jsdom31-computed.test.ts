@@ -442,3 +442,16 @@ it("keeps repeated gap decorations and computes relative rule insets", () => {
     window.close();
   }
 });
+
+it("moves a repeated physical CSSOM assignment past an intervening logical shorthand", () => {
+  for (const Constructor of [Reference, JSDOM]) {
+    const { window } = new Constructor("<div></div>");
+    const node = window.document.querySelector("div")!;
+    node.style.cssText = "margin-left:1px; margin-inline:7px;";
+    node.style.setProperty("margin-left", "1px");
+    expect(node.getAttribute("style")).toBe("margin-inline: 7px; margin-left: 1px;");
+    node.style.removeProperty("margin-inline");
+    expect(node.style.cssText).toBe("margin-left: 1px;");
+    window.close();
+  }
+});

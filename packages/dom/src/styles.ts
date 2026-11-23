@@ -23,6 +23,7 @@ import {
   longhandDefinition,
   registeredProperty,
   specifiedDeclaration,
+  orderedDeclaration,
   specifiedMediaQuery,
   type RegisteredProperty,
 } from "./css-reference.js";
@@ -262,6 +263,9 @@ type PropertyRule = {
 // Public CSSOM rounds converted dimensions. Keep their original calculation for
 // the later computed-value stage so intermediate rounding cannot alter its result.
 let calculationSources: WeakMap<object, Map<string, string>> | undefined;
+const orderedStyles = new WeakMap<object, ReturnType<typeof orderedDeclaration>>();
+const logicalBoxName =
+  /^(?:(?:margin|padding|inset|border)-(?:block|inline)(?:-|$)|border-(?:start|end)-(?:start|end)-radius$)/;
 const computedGapRules = new WeakMap<object, SubstitutionFrame>();
 let shorthandSources: WeakMap<object, Map<string, ShorthandSource>> | undefined;
 function setShorthandSource(owner: object, child: string, value: ShorthandSource): void {
@@ -1421,6 +1425,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (block.borderOrder) borderColorSourceOrder.set(this, new Map(block.borderOrder));
     }
     override get cssText(): string {
+      const ordered = orderedStyles.get(this);
+      if (ordered) return ordered.cssText;
       let text = super.cssText;
       if (shorthandSources?.get(this)?.size) {
         // CSSOM deliberately hides the value of a longhand with a pending shorthand.
@@ -1541,7 +1547,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       // Native shorthand setters remove their serialized entry while rebuilding
       // longhands. Only a public removal expands to the complete declaration.
       if (requestedStyleWrites.has(this)) return super.removeProperty(name);
-      return this.#updateStyle(() => this.#removeProperty(name));
+      return this.#updateStyle(() => {
+        orderedStyles.get(this)?.removeProperty(name);
+        return this.#removeProperty(name);
+      });
     }
     override set cssText(text: string) {
       const owner = styleMutationOwners.get(this);
@@ -1557,9 +1566,14 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           "NoModificationAllowedError",
         );
       }
+      const trackOrder =
+        this._onChange &&
+        /(?:margin|inset|border|padding)-(?:block|inline|start|end)-?/i.test(value);
       this.#updateStyle(() => {
+        orderedStyles.delete(this);
         calculationSources?.delete(this);
         this.#setCSSText(value);
+        if (trackOrder) orderedStyles.set(this, orderedDeclaration(value));
         // Priorities must refer to entries in the finite parsed declaration block.
         for (const name of this._priorities.keys())
           if (!this._values.has(name)) this._priorities.delete(name);
@@ -2091,11 +2105,17 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           "NoModificationAllowedError",
         );
       if (text && importance && importance !== "important") return;
+      let ordered = orderedStyles.get(this);
+      if (!ordered && this._onChange && logicalBoxName.test(name)) {
+        ordered = orderedDeclaration(this.cssText);
+        orderedStyles.set(this, ordered);
+      }
       this.#updateStyle(() => {
         const previous = requestedStyleWrites.get(this);
         requestedStyleWrites.set(this, { property: name.toLowerCase(), priority: importance });
         try {
           this.#setPropertyValue(name, text, importance);
+          ordered?.setProperty(name, text, importance);
         } finally {
           if (previous) requestedStyleWrites.set(this, previous);
           else requestedStyleWrites.delete(this);
