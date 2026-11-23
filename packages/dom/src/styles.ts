@@ -3057,8 +3057,8 @@ function createRuleInterfaces(
       return this.#namespaceURI;
     }
     get cssText(): string {
-      const { string }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      const prefix = this.#prefix ? `${this.#prefix} ` : "";
+      const { string, ident }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+      const prefix = this.#prefix ? `${ident.encode(this.#prefix)} ` : "";
       return `@namespace ${prefix}url(${string.encode(this.#namespaceURI)});`;
     }
     get [Symbol.toStringTag](): string {
@@ -4307,14 +4307,16 @@ function parseRuleSelection({
   )
     return;
   let canonicalText: string | undefined;
-  if (!nesting && selectorText.includes(":")) {
+  if (!nesting && (selectorText.includes(":") || selectorText.includes("\\"))) {
     canonicalText = canonicalSelectorList(selectorText, namespaces);
     if (canonicalText === undefined) return;
   }
   // State-independent functional selectors and pseudo-elements can share the
   // same compiled matchers across Windows. Unknown or escaped pseudos stay local.
   if (!nesting && !namespaces?.size) {
-    const pure = purePseudoSelector(selectorText);
+    const pure = /::(?:slotted|part)\(/i.test(selectorText)
+      ? undefined
+      : purePseudoSelector(selectorText);
     if (pure === null) return;
     if (pure) {
       const [ids, classes, types] = pure.specificity;
@@ -4455,7 +4457,6 @@ function parseRuleSelection({
   prelude.children.forEach((selector) => {
     if (selector.type !== "Selector") return;
     const parts = selector.children.toArray();
-    const last = parts.at(-1);
     const partIndex = parts.findIndex(
       (n) => n.type === "PseudoElementSelector" && n.name.toLowerCase() === "part",
     );
@@ -4496,7 +4497,27 @@ function parseRuleSelection({
       if (pseudo) suffix.pop();
       if (suffix.some((n) => n.type !== "PseudoClassSelector")) return;
       const match = compileSelector({
-        selector: "*" + suffix.map((n) => generate(n)).join(""),
+        selector:
+          "*" +
+          suffix
+            .map((n) =>
+              generate(n, {
+                decorator: (handlers) => ({
+                  ...handlers,
+                  node(child) {
+                    if (
+                      child.type === "PseudoClassSelector" &&
+                      /^(?:empty|root|scope|has|host|host-context|(?:first|last|only|nth|nth-last)-(?:child|of-type))$/i.test(
+                        ident.decode(child.name),
+                      )
+                    )
+                      handlers.node({ type: "Raw", value: ":not(*)" });
+                    else handlers.node(child);
+                  },
+                }),
+              }),
+            )
+            .join(""),
         ...compileOptions,
       });
       selectors.push({
@@ -4510,11 +4531,21 @@ function parseRuleSelection({
       treeOnly = false;
       return;
     }
-    if (last?.type === "PseudoElementSelector" && last.name.toLowerCase() === "slotted") {
-      const argument = last.children?.first;
+    const slotIndex = parts.findIndex(
+      (n) => n.type === "PseudoElementSelector" && n.name.toLowerCase() === "slotted",
+    );
+    const slotted = parts[slotIndex];
+    if (slotted?.type === "PseudoElementSelector") {
+      const suffix = parts.slice(slotIndex + 1);
+      const pseudo =
+        suffix.length === 1 && suffix[0]?.type === "PseudoElementSelector"
+          ? computedPseudoTarget(generate(suffix[0]))
+          : undefined;
+      if (suffix.length && !pseudo) return;
+      const argument = slotted.children?.first;
       if (
         argument?.type !== "Selector" ||
-        last.children?.size !== 1 ||
+        slotted.children?.size !== 1 ||
         argument.children.some(
           (part) => part.type === "Combinator" || part.type === "PseudoElementSelector",
         )
@@ -4522,13 +4553,14 @@ function parseRuleSelection({
         return;
       try {
         const origin = parts
-          .slice(0, -1)
+          .slice(0, slotIndex)
           .map((part) => generate(part))
           .join("");
         const match = compileSelector({ selector: generate(argument), ...compileOptions });
         const slot = compileSelector({ selector: origin || "*", ...compileOptions });
         selectors.push({
-          match,
+          match: pseudo ? neverMatchesElement : match,
+          ...(pseudo && { pseudo: { text: pseudo, match } }),
           slot,
           hostOnly: true,
           specificity: specificity(selector, nestingSpecificity),
@@ -4857,7 +4889,7 @@ function parseSheet(
   nesting?: NestingMode,
   syntax?: ReturnType<typeof parseStyleSheetSyntax>,
 ): Omit<SheetRecord, "sheet"> {
-  const { parse, generate } = (sheetSyntaxEngine ??= require("./css-runtime.cjs")
+  const { parse, generate, ident } = (sheetSyntaxEngine ??= require("./css-runtime.cjs")
     .cssTree as typeof import("css-tree"));
   // The parser retains its latest recovery callback. That callback captures only the error list.
   const { ast, errors, reused } =
@@ -5080,7 +5112,7 @@ function parseSheet(
       }
       if (prelude.type !== "AtrulePrelude") return;
       const [first, second] = prelude.children.toArray();
-      const prefix = first?.type === "Identifier" ? first.name : "";
+      const prefix = first?.type === "Identifier" ? ident.decode(first.name) : "";
       const uri = prefix ? second : first;
       if (uri?.type === "String" || uri?.type === "Url") {
         (namespaces ??= new Map()).set(prefix, uri.value);
@@ -8505,6 +8537,7 @@ export function createStyles(input: {
         immutable = false,
       ): void {
         const old = previous?.inputs?.[inputs.length];
+        const depth = outerPart?.depth ?? (activeSlot ? -1 : undefined);
         if (immutable) {
           const entries = ruleEntries(style);
           if (entries.length >= minimumPackedTokens && themeBlocks.has(entries))
@@ -8512,7 +8545,7 @@ export function createStyles(input: {
           if (
             old?.entries === entries &&
             old.weight === weight &&
-            old.outerDepth === outerPart?.depth &&
+            old.outerDepth === depth &&
             old.hostContext === hostContext &&
             old.base === base &&
             old.proximity === proximity &&
@@ -8527,7 +8560,7 @@ export function createStyles(input: {
               proximity,
               layerIndex,
               entries,
-              ...(outerPart && { outerDepth: outerPart.depth }),
+              ...(depth !== undefined && { outerDepth: depth }),
             });
           return;
         }
@@ -8564,7 +8597,7 @@ export function createStyles(input: {
           !entries &&
           old &&
           old.weight === weight &&
-          old.outerDepth === outerPart?.depth &&
+          old.outerDepth === depth &&
           old.hostContext === hostContext &&
           old.base === base &&
           old.proximity === proximity &&
@@ -8579,7 +8612,7 @@ export function createStyles(input: {
             proximity,
             layerIndex,
             entries: entries ?? old?.entries ?? [],
-            ...(outerPart && { outerDepth: outerPart.depth }),
+            ...(depth !== undefined && { outerDepth: depth }),
           });
         }
       }
@@ -8848,7 +8881,10 @@ export function createStyles(input: {
           for (const mapping of (
             host.attrs.find((attr) => !attr.namespace && attr.name === "exportparts")?.value ?? ""
           ).split(",")) {
-            const match = /^\s*([^\s:,]+)\s*(?::\s*([^\s:,]+)\s*)?$/.exec(mapping);
+            const match =
+              /^[\t\n\f\r ]*([^\t\n\f\r :,]+)[\t\n\f\r ]*(?::[\t\n\f\r ]*([^\t\n\f\r :,]+)[\t\n\f\r ]*)?$/.exec(
+                mapping,
+              );
             if (match && names.has(match[1]!)) forwarded.add(match[2] ?? match[1]!);
           }
           names = forwarded;
@@ -8860,10 +8896,13 @@ export function createStyles(input: {
       if (shadow) applyScope(shadow, true);
       const parent = element.parentNode;
       const slotRoot = parent && tree.isElementNode(parent) && input.shadowRoot(parent);
-      if (slotRoot && (activeSlot = input.assignedSlot(element))) {
-        reusableEligible = false;
-        applyScope(slotRoot, true);
-        activeSlot = undefined;
+      if (slotRoot) {
+        activeSlot = input.assignedSlot(element);
+        while (activeSlot) {
+          reusableEligible = false;
+          applyScope(input.styleScope(activeSlot), true);
+          activeSlot = input.assignedSlot(activeSlot);
+        }
       }
       if (!activePseudo) {
         const inline = inlineStyles?.get(element)?.style;
@@ -8928,15 +8967,20 @@ export function createStyles(input: {
               : -layerIndex;
           for (const { name, important, value, order, shorthand } of source.entries) {
             // Normal declarations prefer the outer scope. Important declarations prefer the inner scope.
-            const offset = source.outerDepth
-              ? source.outerDepth / (2 * (source.outerDepth + 1))
-              : 0;
+            const offset =
+              source.outerDepth && source.outerDepth > 0
+                ? source.outerDepth / (2 * (source.outerDepth + 1))
+                : 0;
             const context = important
               ? hostContext
-                ? 3
+                ? source.outerDepth === -1
+                  ? 2.75
+                  : 3
                 : 2 - offset
               : hostContext
-                ? 0
+                ? source.outerDepth === -1
+                  ? 0.25
+                  : 0
                 : 1 + offset;
             if (value.length === 11 && value.toLowerCase() === "revert-rule") continue;
             if (

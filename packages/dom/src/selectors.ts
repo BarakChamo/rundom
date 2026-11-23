@@ -604,7 +604,7 @@ function adaptSelector(
       } else if (node.name.startsWith("|")) {
         const name = localName(node.name.slice(1));
         item.data = register(
-          (element) => !element.namespaceURI && (name === "*" || element.tagName === name),
+          (element) => !element.namespaceURI && (node.name === "|*" || element.tagName === name),
         );
       } else if (namespaces) {
         const qualified = qualifiedSelectorName.exec(node.name);
@@ -616,13 +616,15 @@ function adaptSelector(
             uri === "http://www.w3.org/1999/xhtml" ? localName(local) : ident.decode(local);
           item.data = register(
             (element) =>
-              element.namespaceURI === uri && (name === "*" || elementLocalName(element) === name),
+              element.namespaceURI === uri && (local === "*" || elementLocalName(element) === name),
           );
         }
       }
       if (item.data === node && !node.name.includes("|")) {
         const name = ident.decode(node.name);
-        if (!isXML && /[A-Z\u0080-\uffff]/.test(name)) {
+        if (name === "*" && node.name !== "*") {
+          item.data = register((element) => elementLocalName(element) === name);
+        } else if (!isXML && /[A-Z\u0080-\uffff]/.test(name)) {
           const lower = name.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
           item.data = register(
             (element) =>

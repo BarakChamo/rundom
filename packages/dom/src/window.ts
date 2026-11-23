@@ -3465,7 +3465,7 @@ function buildWindow(
       });
     // Untrusted selectors cannot grow retained strings without a fixed bound.
     if (
-      /(?:^|[^\\]):(?:host|state|not)\b|::(?:slotted|part)\b/i.test(query) &&
+      /(?:^|[^\\]):(?:host|state|not|constructor|has)\b|::(?:slotted|part)\b/i.test(query) &&
       !validPseudoSelectorList(query)
     )
       throw new DOMException("Invalid selector", "SyntaxError");
@@ -6173,6 +6173,7 @@ function buildWindow(
     }
   }
 
+  let partLists: WeakMap<Element, DOMTokenList> | undefined;
   const classLists = new WeakMap<Element, DOMTokenList>();
   const tokenLists = new WeakMap<
     object,
@@ -6517,6 +6518,18 @@ function buildWindow(
     }
     set className(value: string) {
       this.setAttribute("class", domString(value));
+    }
+    get part(): DOMTokenList {
+      const lists = (partLists ??= new WeakMap());
+      let list = lists.get(this);
+      if (!list) {
+        list = new DOMTokenList(token, this, "part");
+        lists.set(this, list);
+      }
+      return list;
+    }
+    set part(value: string) {
+      this.part.value = value;
     }
     get classList(): DOMTokenList {
       let list = classLists.get(this);
