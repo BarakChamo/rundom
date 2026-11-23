@@ -262,6 +262,7 @@ type PropertyRule = {
 // Public CSSOM rounds converted dimensions. Keep their original calculation for
 // the later computed-value stage so intermediate rounding cannot alter its result.
 let calculationSources: WeakMap<object, Map<string, string>> | undefined;
+const computedGapRules = new WeakMap<object, SubstitutionFrame>();
 let shorthandSources: WeakMap<object, Map<string, ShorthandSource>> | undefined;
 function setShorthandSource(owner: object, child: string, value: ShorthandSource): void {
   shorthandSources ??= new WeakMap();
@@ -1494,7 +1495,11 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
               emitted = true;
             } else output.push(text.slice(node.loc.start.offset, node.loc.end.offset) + ";");
           }
-          if (emitted) text = output.join(" ");
+          if (emitted) {
+            text = output.join(" ");
+            if (this._values.has("border-image") && /(?:^|; )border-image-source:/.test(text))
+              text = serializeDeclarationBlock(text);
+          }
         }
       }
       if (!super.getPropertyValue("outline-width") || super.getPropertyValue("outline"))
@@ -1759,6 +1764,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
     }
     override getPropertyValue(property: string): string {
+      if (this._computed && /^(?:(?:column|row)-)?rule$/.test(property)) {
+        const frame = computedGapRules.get(this);
+        if (frame) return frame.read(property);
+      }
       if (property === "line-height") {
         const resolved = publicLineHeights.get(this);
         if (resolved !== undefined) return resolved;
@@ -2111,7 +2120,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (
         value.includes("(") &&
         (substitutionFunction.test(value) || usesTypedValueGrammar(name, value)) &&
-        !propertyDefinitions.get(name)?.longhands
+        !propertyDefinitions.get(name)?.longhands &&
+        !grammarLonghands(name)
       ) {
         const serialized = specifiedDeclaration(property.startsWith("--") ? property : name, value);
         if (serialized !== undefined) {
@@ -2247,7 +2257,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
             (child) => !propertyDefinitions.get(child)?.longhands,
           ),
         );
-        if (name === "border") leaves.add("border-image");
+        if (name === "border") {
+          leaves.add("border-image");
+          for (const child of grammarLonghands("border-image") ?? []) leaves.add(child);
+        }
         for (const shorthand of borderShorthands)
           if (shorthandLonghands(shorthand, propertyDefinitions).some((child) => leaves.has(child)))
             super.removeProperty(shorthand);
@@ -2463,6 +2476,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
   ) {
     // Completed frames are immutable; bind context ownership once, never cache a public view.
     const context = Object.create(source) as CSSStyleProperties;
+    const gapRules = computedGapRules.get(source);
+    if (gapRules) computedGapRules.set(context, gapRules);
     const lineHeight = unitlessLineHeights.get(source);
     if (lineHeight !== undefined) publicLineHeights.set(context, lineHeight);
     context._global = source._global;
@@ -7008,6 +7023,7 @@ export function createStyles(input: {
   }
 
   type CascadeEntry = {
+    shorthand?: string;
     name: string;
     value: string;
     important: boolean;
@@ -7028,9 +7044,12 @@ export function createStyles(input: {
     const order = borderColorSourceOrder.get(style);
     for (let index = 0; index < style._length; index++) {
       const name = style[index] ?? "";
+      const source = shorthandSources?.get(style)?.get(name);
       entries.push({
         name,
-        value: calculationSources?.get(style)?.get(name) ?? style.getPropertyValue(name),
+        ...(source && { shorthand: source.shorthand }),
+        value:
+          source?.text ?? calculationSources?.get(style)?.get(name) ?? style.getPropertyValue(name),
         important: style.getPropertyPriority(name) === "important",
         order: order?.get(name),
       });
@@ -7633,7 +7652,7 @@ export function createStyles(input: {
       }
       if (
         resolver.substitution &&
-        (!shorthand || variableSyntax.test(specified)) &&
+        (!shorthand || variableSyntax.test(specified) || contextualLonghand.test(name)) &&
         !usesDynamicViewportMath(specified) &&
         (substitutionFunction.test(specified) ||
           contextualLonghand.test(name) ||
@@ -7642,6 +7661,8 @@ export function createStyles(input: {
           (!isCustomProperty && elementDimension.test(specified)))
       ) {
         const computed = resolver.substitution.read(name);
+        if (shorthand && /^(?:(?:column|row)-)?rule$/.test(shorthand))
+          computedGapRules.set(result, resolver.substitution);
         if (computed) result._setProperty(name, computed, "");
         continue;
       }
@@ -8378,7 +8399,11 @@ export function createStyles(input: {
         for (; index < style._length; index++) {
           const name = style[index] ?? "";
           const important = style.getPropertyPriority(name) === "important";
-          const value = calculationSources?.get(style)?.get(name) ?? style.getPropertyValue(name);
+          const source = shorthandSources?.get(style)?.get(name);
+          const value =
+            source?.text ??
+            calculationSources?.get(style)?.get(name) ??
+            style.getPropertyValue(name);
           const order = declarationOrder?.get(name);
           const priorEntry = old?.entries[index];
           const equal =
@@ -8386,9 +8411,15 @@ export function createStyles(input: {
             priorEntry.name === name &&
             priorEntry.value === value &&
             priorEntry.important === important &&
+            priorEntry.shorthand === source?.shorthand &&
             priorEntry.order === order;
           if (!entries && !equal) entries = old ? old.entries.slice(0, index) : [];
-          if (entries) entries.push(equal ? priorEntry : { name, important, value, order });
+          if (entries)
+            entries.push(
+              equal
+                ? priorEntry
+                : { name, important, value, order, ...(source && { shorthand: source.shorthand }) },
+            );
         }
         if (!entries && old && index !== old.entries.length) entries = old.entries.slice(0, index);
         if (
@@ -8715,7 +8746,7 @@ export function createStyles(input: {
             : layerIndex === undefined
               ? undefined
               : -layerIndex;
-          for (const { name, important, value, order } of source.entries) {
+          for (const { name, important, value, order, shorthand } of source.entries) {
             // Normal declarations prefer the outer scope. Important declarations prefer the inner scope.
             const context = important ? (hostContext ? 3 : 2) : hostContext ? 0 : 1;
             if (value.length === 11 && value.toLowerCase() === "revert-rule") continue;
@@ -8740,6 +8771,11 @@ export function createStyles(input: {
             if (order !== undefined) {
               winner.block = block;
               winner.order = order;
+            }
+            if (shorthand) {
+              hasVariableShorthand = true;
+              consider(name, { ...winner, block, shorthand });
+              continue;
             }
             const colorPair = logicalBorderColorShorthands.get(name);
             if (colorPair) {

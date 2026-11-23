@@ -427,3 +427,18 @@ it("shares CSS random draws across functions and keeps element keys after a styl
   expect(style.getPropertyValue("width")).toBe(width + "px");
   window.close();
 });
+
+it("keeps repeated gap decorations and computes relative rule insets", () => {
+  for (const Constructor of [JSDOM, Reference]) {
+    const { window } = new Constructor('<p style="font-size: 40px"></p>');
+    const element = window.document.querySelector("p")!;
+    element.style.setProperty("column-rule", "repeat(auto, 5px solid blue, 10px dotted green)");
+    element.style.setProperty("column-rule-inset-cap", "calc(10px + .5em)");
+    const view = window.getComputedStyle(element);
+    expect(view.getPropertyValue("column-rule")).toBe(
+      "repeat(auto, 5px solid rgb(0, 0, 255), 10px dotted rgb(0, 128, 0))",
+    );
+    expect(view.getPropertyValue("column-rule-inset-cap")).toBe("30px");
+    window.close();
+  }
+});
