@@ -450,6 +450,7 @@ type WindowSettings = {
     DOMException: typeof globalThis.DOMException;
   }) => SocketTransportConstructor;
   hasMarkupStyles?: boolean;
+  hasInlineURLStyles?: boolean;
   hasMarkupFrames?: boolean;
   mayHaveMarkupRadios?: boolean;
   canKeepInitialDocumentNamesEmpty?: boolean;
@@ -707,6 +708,8 @@ function parseInactiveHTML(
 // These conservative source checks describe immutable markup, independently of Window options.
 function inspectMarkup(markup: string) {
   return {
+    hasInlineURLStyles:
+      /\bstyle[\t\n\f\r ]*=/i.test(markup) && /(?:url|image-set|var)\(|&#/i.test(markup),
     hasMarkupStyles: /<(?:style|link)[\t\n\f\r />]/i.test(markup),
     hasMarkupFrames: /<(?:iframe|frame)[\t\n\f\r />]/i.test(markup),
     hasNamedElements: /<(?:embed|form|iframe|image|img|object)[\t\n\f\r />]/i.test(markup),
@@ -759,6 +762,7 @@ export function createWindow(
   const { parseMarkup, finishLoading, closeWindow, ...realm } = buildWindow(source, {
     ...settings,
     hasMarkupStyles: features.hasMarkupStyles,
+    hasInlineURLStyles: features.hasInlineURLStyles,
     hasMarkupFrames: features.hasMarkupFrames,
     canKeepInitialDocumentNamesEmpty,
     mayHaveMarkupRadios: features.mayHaveMarkupRadios,
@@ -5753,7 +5757,11 @@ function buildWindow(
       const child = realm instanceof InitialFrameRealm ? realm.existingWindow : realm?.window;
       if (child) notifyFrameMedia.get(child)?.();
     }
-    if (!namespace && name === "style") syncInlineStyle(record);
+    if (!namespace && name === "style") {
+      if (attr.value !== oldValue && /(?:url|image-set|var)\(/i.test(attr.value))
+        styles().captureInlineBase(record);
+      syncInlineStyle(record);
+    }
     if (!namespace && name === "media") styleBinding?.syncSheetMedia(record);
     if (
       !namespace &&
@@ -20758,6 +20766,8 @@ function buildWindow(
       if (!tree.isElementNode(root)) continue;
       for (const node of shadowIncludingElements(root)) {
         if (insertedElementIsCheckedRadio(node)) checked.push(node);
+        const inline = attribute(node, "style");
+        if (inline && /(?:url|image-set|var)\(/i.test(inline)) styles().captureInlineBase(node);
         if (node.tagName === "style" || node.tagName === "link") hasStyles = true;
         if (isFrame(node) || (scriptsEnabled && elementLocalName(node) === "script"))
           active.push(node);
@@ -20827,6 +20837,15 @@ function buildWindow(
     const generation = loadGeneration;
     const current = () => !closed && !documentLoadStopped && generation === loadGeneration;
     const keepsEmptyNames = !didFinishInitialInput && options.canKeepInitialDocumentNamesEmpty;
+    if (!didFinishInitialInput && options.hasInlineURLStyles) {
+      for (const node of descendants(source)) {
+        if (
+          tree.isElementNode(node) &&
+          /(?:url|image-set|var)\(/i.test(attribute(node, "style") ?? "")
+        )
+          styles().captureInlineBase(node);
+      }
+    }
     didFinishInitialInput = true;
     advanceRevision({ namesChanged: !keepsEmptyNames });
     initializeParsedRadios();

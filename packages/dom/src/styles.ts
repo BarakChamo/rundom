@@ -264,6 +264,9 @@ type PropertyRule = {
 // Public CSSOM rounds converted dimensions. Keep their original calculation for
 // the later computed-value stage so intermediate rounding cannot alter its result.
 let calculationSources: WeakMap<object, Map<string, string>> | undefined;
+const inlineBaseReaders = new WeakMap<object, () => string>();
+let declarationBases: WeakMap<object, Map<string, string>> | undefined;
+const urlDependentValue = /(?:url|image-set|var)\(/i;
 const orderedStyles = new WeakMap<object, ReturnType<typeof orderedDeclaration>>();
 const logicalBoxName =
   /^(?:(?:margin|padding|inset|border)-(?:block|inline)(?:-|$)|border-(?:start|end)-(?:start|end)-radius$)/;
@@ -1329,6 +1332,17 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     override _setProperty(property: string, value: string, priority?: string): void {
       if (calculationSources?.get(this)?.delete(property)) this.#precisionRevision++;
       shorthandSources?.get(this)?.delete(property);
+      if (value && urlDependentValue.test(value)) {
+        const reader = inlineBaseReaders.get(this);
+        if (reader && !(property.startsWith("--") && this._values.get(property) === value)) {
+          declarationBases ??= new WeakMap();
+          let bases = declarationBases.get(this);
+          if (!bases) declarationBases.set(this, (bases = new Map()));
+          const base = reader();
+          if (bases.get(property) !== base) this.#precisionRevision++;
+          bases.set(property, base);
+        }
+      } else declarationBases?.get(this)?.delete(property);
       const requested = requestedStyleWrites.get(this);
       if (requested?.property === property) priority = requested.priority;
       else priority ??= requested?.priority ?? "";
@@ -1572,6 +1586,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         /(?:margin|inset|border|padding)-(?:block|inline|start|end)-?/i.test(value);
       this.#updateStyle(() => {
         orderedStyles.delete(this);
+        declarationBases?.delete(this);
         calculationSources?.delete(this);
         this.#setCSSText(value);
         if (trackOrder) orderedStyles.set(this, orderedDeclaration(value));
@@ -1667,6 +1682,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     #removeProperty(property: string): string {
       const name = property.toLowerCase();
+      declarationBases?.get(this)?.delete(name);
       if (calculationSources?.get(this)?.delete(name)) this.#precisionRevision++;
       const longhands =
         name === "background-repeat"
@@ -6734,6 +6750,7 @@ export function createStyles(input: {
     if (existing) delete sheetState(existing.sheet).owner;
     if (elementLocalName(node) === "style") node[stylesheetSourceVersion] = sourceVersion;
     const sheet = createAttachedSheet(href === undefined ? { owner: node } : { owner: node, href });
+    if (href === undefined) sheetState(sheet).base = input.baseURL(input.ownerDocument(node));
     encoding ??= input.documentEncoding(node);
     sheetState(sheet).encoding = encoding;
     // Parse diagnostics and import requests are observable at attachment. For a large
@@ -6782,6 +6799,7 @@ export function createStyles(input: {
       syncing: false,
     };
     inline.set(node, state);
+    inlineBaseReaders.set(state.style, () => input.baseURL(input.ownerDocument(node)));
     const text = node.attrs.find((attr) => !attr.namespace && attr.name === "style")?.value;
     if (text) {
       const block = parseInlineBlock(text);
@@ -7168,6 +7186,7 @@ export function createStyles(input: {
   }
 
   type CascadeEntry = {
+    base?: string;
     shorthand?: string;
     name: string;
     value: string;
@@ -8586,9 +8605,11 @@ export function createStyles(input: {
             calculationSources?.get(style)?.get(name) ??
             style.getPropertyValue(name);
           const order = declarationOrder?.get(name);
+          const propertyBase = declarationBases?.get(style)?.get(name);
           const priorEntry = old?.entries[index];
           const equal =
             priorEntry &&
+            priorEntry.base === propertyBase &&
             priorEntry.name === name &&
             priorEntry.value === value &&
             priorEntry.important === important &&
@@ -8599,7 +8620,14 @@ export function createStyles(input: {
             entries.push(
               equal
                 ? priorEntry
-                : { name, important, value, order, ...(source && { shorthand: source.shorthand }) },
+                : {
+                    name,
+                    important,
+                    value,
+                    order,
+                    ...(propertyBase && { base: propertyBase }),
+                    ...(source && { shorthand: source.shorthand }),
+                  },
             );
         }
         if (!entries && old && index !== old.entries.length) entries = old.entries.slice(0, index);
@@ -8976,7 +9004,14 @@ export function createStyles(input: {
             : layerIndex === undefined
               ? undefined
               : -layerIndex;
-          for (const { name, important, value, order, shorthand } of source.entries) {
+          for (const {
+            name,
+            important,
+            value,
+            order,
+            shorthand,
+            base: propertyBase,
+          } of source.entries) {
             // Normal declarations prefer the outer scope. Important declarations prefer the inner scope.
             const offset =
               source.outerDepth && source.outerDepth > 0
@@ -9008,7 +9043,13 @@ export function createStyles(input: {
               (value.includes("(") &&
                 (substitutionFunction.test(value) || usesTypedValueGrammar(name, value))) ||
               (!name.startsWith("--") && elementDimension.test(value));
-            const winner: Winner = { context, weight, proximity, value, base };
+            const winner: Winner = {
+              context,
+              weight,
+              proximity,
+              value,
+              base: propertyBase ?? base,
+            };
             const layer = important ? importantLayer : layerIndex;
             if (layer !== undefined) winner.layer = layer;
             if (unmodifiedLayer !== undefined) winner.layerIndex = unmodifiedLayer;
@@ -9674,6 +9715,7 @@ export function createStyles(input: {
     setAdopted,
     applySheet,
     applyInline,
+    captureInlineBase: inlineStyle,
     exposeSheet,
     inlineStyle: publicInlineStyle,
     computedStyle,

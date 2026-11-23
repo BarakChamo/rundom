@@ -294,8 +294,8 @@ it("preserves target-dependent SVG currentColor when ancestor styles have been q
   }
 });
 
-it("resolves relative computed URLs against the current document base", () => {
-  // Given: a base change can alter a computed value without changing its declaration.
+it("retains the declaration URL base until the property is assigned again", () => {
+  // Given: the declaration was parsed with the first base URL.
   const { window } = new JSDOM(
     '<base href="/first/"><p style="background-image:url(image.png)">text</p>',
     { url: "https://example.test/" },
@@ -313,8 +313,12 @@ it("resolves relative computed URLs against the current document base", () => {
     );
     base.setAttribute("href", "/second/");
     expect(window.getComputedStyle(node).getPropertyValue("background-image")).toBe(
-      'url("https://example.test/second/image.png")',
+      'url("https://example.test/first/image.png")',
     );
+    expect(first.getPropertyValue("background-image")).toBe(
+      'url("https://example.test/first/image.png")',
+    );
+    node.style.setProperty("background-image", "url(image.png)");
     expect(first.getPropertyValue("background-image")).toBe(
       'url("https://example.test/second/image.png")',
     );
@@ -323,7 +327,7 @@ it("resolves relative computed URLs against the current document base", () => {
   }
 });
 
-it("resolves an unread relative URL against the current document base", () => {
+it("resolves an unread relative URL against the stylesheet base at attachment", () => {
   // Given: the ancestor already needed the document base during cascade construction.
   const { window } = new JSDOM(
     "<base href='/first/'><style>main{background-image:url(parent.png)}" +
@@ -340,12 +344,12 @@ it("resolves an unread relative URL against the current document base", () => {
     base.setAttribute("href", "/next/");
     const after = window.getComputedStyle(node);
 
-    // Then: both declarations resolve against the current base.
+    // Then: both declarations use the base captured when the sheet was attached.
     expect(before.getPropertyValue("background-image")).toBe(
-      'url("https://example.test/next/child.png")',
+      'url("https://example.test/first/child.png")',
     );
     expect(after.getPropertyValue("background-image")).toBe(
-      'url("https://example.test/next/child.png")',
+      'url("https://example.test/first/child.png")',
     );
   } finally {
     window.close();
