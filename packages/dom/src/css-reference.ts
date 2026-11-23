@@ -683,9 +683,12 @@ export function computedPseudoTarget(text: string): string | null {
   let result = "";
   for (const token of selectors) {
     const name = token.name ?? token.value;
+    const argument = token.name ? token.value : null;
     if (
       name === "part" ||
       name === "slotted" ||
+      (argument?.types.includes("<pt-name-and-class-selector>") &&
+        !argument[0].types.includes("<custom-ident>")) ||
       !Object.hasOwn(elements, token.name ? name + "()" : name)
     )
       return null;

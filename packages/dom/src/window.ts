@@ -1179,6 +1179,7 @@ const realmTreeOperations = new WeakMap<
     documentEncoding: (owner: Raw.Document) => string;
     initializeCopiedTree: (copy: Raw.Node, owner: Raw.Document) => object;
     nativeHTMLElementPrototype: (localName: string, autonomous: boolean) => object;
+    eligibleComputedStyle: (node: Raw.Element) => boolean;
     computedStyle: (
       node: Raw.Element,
       root?: Raw.ParentNode,
@@ -2551,6 +2552,50 @@ function buildWindow(
       : undefined;
   }
 
+  function eligibleComputedStyle(node: Raw.Element): boolean {
+    const owner = actualOwnerRecord(node);
+    if (!documentViews.has(owner)) return false;
+    const realm = documentRealms.get(owner);
+    if (realm && realm !== token)
+      return realmTreeOperations.get(realm)?.eligibleComputedStyle(node) ?? false;
+    if (!connected(node)) return false;
+    if (hasShadowRoots) {
+      for (let current: Raw.Node | null = node; current;) {
+        const slot = assignedSlot(current);
+        const parent = treeParent(current, true);
+        if (
+          !slot &&
+          "parentNode" in current &&
+          current.parentNode &&
+          tree.isElementNode(current.parentNode)
+        ) {
+          const host = current.parentNode;
+          if (shadowRoots.has(host) || (isSlot(host) && slotMembers(host, false).length))
+            return false;
+        }
+        current = slot ?? parent;
+      }
+    }
+    const frame = focusFrameOwners.get(owner);
+    if (!frame) return true;
+    if (!eligibleComputedStyle(frame)) return false;
+    const parentRealm = documentRealms.get(actualOwnerRecord(frame));
+    const resolve = parentRealm && realmTreeOperations.get(parentRealm)?.computedStyle;
+    if (!resolve) return false;
+    for (
+      let current: Raw.Node | null = frame;
+      current;
+      current = assignedSlot(current) ?? treeParent(current, true)
+    ) {
+      if (
+        tree.isElementNode(current) &&
+        resolve(current, styleScope(current)).getPropertyValue("display") === "none"
+      )
+        return false;
+    }
+    return true;
+  }
+
   function styles() {
     return (styleBinding ??= createStyles({
       objectPrototype: Object.getPrototypeOf(EventTarget.prototype),
@@ -2984,6 +3029,7 @@ function buildWindow(
     documentEncoding,
     initializeCopiedTree,
     nativeHTMLElementPrototype,
+    eligibleComputedStyle,
     computedStyle: (node, root, pseudo) =>
       pseudo && root
         ? styles().pseudoStyle(node, root, pseudo)
@@ -19589,6 +19635,7 @@ function buildWindow(
       const record = element(node);
       if (closed) styles().closeComputed();
       const text = pseudoElement == null ? "" : domString(pseudoElement);
+      const localElement = records.get(node)?.realm === token;
       const pseudo = text.startsWith(":") ? styles().computedPseudoTarget(text) : undefined;
       return styles().liveView(
         record,
@@ -19606,6 +19653,13 @@ function buildWindow(
           return foreign ? foreign(record, scope) : styles().computedStyle(record, scope);
         },
         pseudo,
+        () =>
+          (!hasShadowRoots &&
+            !hasAdditionalDocuments &&
+            !options.frameElement &&
+            !options.detachedDocument &&
+            localElement) ||
+          eligibleComputedStyle(record),
       );
     }
     readonly DocumentFragment = DocumentFragment;

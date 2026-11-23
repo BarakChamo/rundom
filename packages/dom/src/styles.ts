@@ -1613,6 +1613,11 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           ? node.property
           : canonicalProperty(node.property.toLowerCase());
         const value = generate(node.value).trim();
+        if (!value && name.startsWith("--") && name !== "--") {
+          if (node.important || this._priorities.get(name) !== "important")
+            this._setProperty(name, " ", node.important ? "important" : "");
+          return;
+        }
         if (!value || (!node.important && this._priorities.get(name) === "important")) return;
         let preserved: Map<string, string> | undefined;
         if (!node.important) {
@@ -2134,9 +2139,29 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         if (serialized !== undefined) this._setProperty(property, serialized, priority);
         return;
       }
+      if (property.startsWith("--") && value && /^(?:\s|\/\*[\s\S]*?\*\/)*$/.test(value)) {
+        this._setProperty(property, " ", priority);
+        return;
+      }
       if (!property.startsWith("--")) value = canonicalWideKeyword(value);
       if (property.toLowerCase() === "page" && value.toLowerCase() === "auto") value = "auto";
       const name = property.toLowerCase();
+      if (/^(?:margin|padding|box-shadow)$/.test(name) && substitutionFunction.test(value)) {
+        const parsed = expandedDeclaration(name, value, priority === "important");
+        if (!parsed) return;
+        for (const [index, [child, component]] of parsed.entries.entries()) {
+          const declaration = parsed.declarations[index]!;
+          this._setProperty(child, component || parsed.text, priority);
+          setShorthandSource(this, child, {
+            shorthand: name,
+            text: parsed.text,
+            pending: !!declaration.pending,
+            declaration,
+          });
+        }
+        this._setProperty(name, parsed.text, priority);
+        return;
+      }
       if (
         value.includes("(") &&
         (substitutionFunction.test(value) || usesTypedValueGrammar(name, value)) &&
@@ -4448,7 +4473,12 @@ function parseRuleSelection({
       return;
     }
     const detailsIndex = detailsContentIndex(parts);
-    const trailingPseudo = pseudoElementName(parts.at(-1));
+    const tail = parts.at(-1);
+    const trailingPseudo =
+      pseudoElementName(tail) ??
+      (tail?.type === "PseudoElementSelector"
+        ? computedPseudoTarget(generate(tail))?.slice(2)
+        : undefined);
     let pseudoText = "";
     let detailsStates = "";
     let validPseudo = true;
@@ -5454,7 +5484,7 @@ function usesTypedValueGrammar(name: string, text: string): boolean {
       name === "filter" ||
       name === "backdrop-filter" ||
       (name === "transform" && /[0-9](?:grad|rad|turn)\b/i.test(text)) ||
-      /(?:^|[^\w-])(?:alpha|palette-mix|light-dark|random-item|calc-size|sibling-count|sibling-index|image|image-set|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
+      /(?:^|[^\w-])(?:src|alpha|palette-mix|light-dark|random-item|calc-size|sibling-count|sibling-index|image|image-set|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
         text,
       ) ||
       ((name === "transform" || /[/*]|\b(?:nan|infinity)\b/i.test(text)) && /calc\(/i.test(text)))
@@ -6032,6 +6062,7 @@ export function createStyles(input: {
       emptyComputed: () => {
         const empty = declaration();
         empty._readonly = true;
+        empty._global = declarationGlobals;
         return empty;
       },
       styleProperties: declarationProperties,
@@ -7672,7 +7703,10 @@ export function createStyles(input: {
       }
       if (
         resolver.substitution &&
-        (!shorthand || variableSyntax.test(specified) || contextualLonghand.test(name)) &&
+        (!shorthand ||
+          variableSyntax.test(specified) ||
+          substitutionFunction.test(specified) ||
+          contextualLonghand.test(name)) &&
         !usesDynamicViewportMath(specified) &&
         (substitutionFunction.test(specified) ||
           contextualLonghand.test(name) ||
@@ -7752,7 +7786,7 @@ export function createStyles(input: {
         // The cascade already selected the case-sensitive name and discarded
         // importance. Custom tokens only need the declaration's value cleanup.
         const tokens = cssInput(value).trim();
-        if (tokens) result._setProperty(name, tokens, "");
+        result._setProperty(name, tokens || " ", "");
         continue;
       }
       if (name === "background-image" && /-gradient\(/i.test(value)) {
@@ -8339,7 +8373,11 @@ export function createStyles(input: {
             field: false,
             hiddenInput: false,
             userAgentColor: undefined,
-            userAgentDisplay: undefined,
+            userAgentDisplay: /^(?:inline-)?(?:flex|grid)$/.test(
+              prior?.getPropertyValue("display") ?? "",
+            )
+              ? "block"
+              : undefined,
             userAgentContentVisibility: undefined,
             needsDirection: false,
           }
@@ -9422,20 +9460,29 @@ export function createStyles(input: {
     pseudoStyle(node: Raw.Element, root: Raw.ParentNode, pseudo: string) {
       return computeStyle(node, root, collect(root), undefined, undefined, pseudo);
     },
-    liveView(node: Raw.Element, read: () => PublicDeclaration | undefined, pseudo?: string | null) {
+    liveView(
+      node: Raw.Element,
+      read: () => PublicDeclaration | undefined,
+      pseudo: string | null | undefined,
+      eligible: () => boolean,
+    ) {
       if (pseudo !== undefined)
-        return views().liveView(read, () => pseudo !== null && input.isConnected(node));
+        return views().liveView(
+          () => (eligible() ? read() : undefined),
+          () => pseudo !== null && input.isConnected(node) && eligible(),
+        );
       let frame: ComputedFrame | undefined;
       let snapshot: PublicDeclaration | undefined;
       return views().liveView(
         () => {
+          if (!eligible()) return;
           if (snapshot && completedFrame(frame, node, input.styleRevision(input.document)))
             return snapshot;
           snapshot = read();
           frame = snapshot ? computedFrames.get(node)?.target : undefined;
           return snapshot;
         },
-        () => input.isConnected(node),
+        () => input.isConnected(node) && eligible(),
       );
     },
     focusDisplayCheck,

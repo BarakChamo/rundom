@@ -191,6 +191,8 @@ describe("getComputedStyle repeated reads", () => {
         sheet = window.document.createElement("style");
       sheet.textContent = ":host{color:red}";
       root.append(sheet);
+      expect(window.getComputedStyle(node).length).toBe(0);
+      root.append(window.document.createElement("slot"));
       expect(window.getComputedStyle(node).color).toBe("rgb(255, 0, 0)");
     } finally {
       window.close();

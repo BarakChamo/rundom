@@ -57,10 +57,12 @@ export function parserScriptInput(
       const pending = prepare(withInsertion, point !== undefined);
       if (pending) {
         blocked ??= task;
-        void pending.then(() => {
-          if (blocked === task) blocked = undefined;
-          if (!point) pump(tail);
-        }, error);
+        void pending
+          .then(() => {
+            if (blocked === task) blocked = undefined;
+            if (!point) pump(tail);
+          })
+          .catch(error);
       }
     }
     if (active() && !blocked && !point && !finished && eof && input === tail && !input.text) {
