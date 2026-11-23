@@ -97,6 +97,7 @@ type DeclarationFields = {
 const stylesheetInstances = new WeakSet<object>();
 
 type SelectorEntry = {
+  part?: { names: string[]; local: boolean; origin: (node: Raw.Element) => boolean };
   slot?: (node: Raw.Element, root?: Raw.ParentNode) => boolean;
   pseudo?: { text: string; match: (node: Raw.Element, root?: Raw.ParentNode) => boolean };
   match: (node: Raw.Element, root?: Raw.ParentNode) => boolean;
@@ -4455,6 +4456,60 @@ function parseRuleSelection({
     if (selector.type !== "Selector") return;
     const parts = selector.children.toArray();
     const last = parts.at(-1);
+    const partIndex = parts.findIndex(
+      (n) => n.type === "PseudoElementSelector" && n.name.toLowerCase() === "part",
+    );
+    if (partIndex !== -1) {
+      const part = parts[partIndex];
+      if (part?.type !== "PseudoElementSelector" || !part.children?.first) return;
+      const syntax = parse(generate(part.children.first), { context: "value" });
+      if (
+        syntax.type !== "Value" ||
+        syntax.children.isEmpty ||
+        syntax.children.some((n) => n.type !== "Identifier")
+      )
+        return;
+      const names = syntax.children
+        .toArray()
+        .map((n) => ident.decode((n as { name: string }).name));
+      const head = parts.slice(0, partIndex);
+      if (head.some((n) => n.type === "PseudoElementSelector")) return;
+      const single = head.length === 1 ? head[0] : undefined;
+      const host =
+        single?.type === "PseudoClassSelector" && single.name.toLowerCase() === "host"
+          ? single
+          : undefined;
+      const nested =
+        single?.type === "NestingSelector" && parentSelection?.entries.some((e) => e.hostOnly);
+      const from = host
+        ? host.children?.first
+          ? generate(host.children.first)
+          : "*"
+        : head.map((n) => generate(n)).join("") || "*";
+      const origin = nested
+        ? (node: Raw.Element) => parentSelection!.entries.some((e) => e.hostOnly && e.match(node))
+        : compileSelector({ selector: from, ...compileOptions });
+      const suffix = parts.slice(partIndex + 1);
+      const last = suffix.at(-1);
+      const pseudo =
+        last?.type === "PseudoElementSelector" ? computedPseudoTarget(generate(last)) : undefined;
+      if (pseudo) suffix.pop();
+      if (suffix.some((n) => n.type !== "PseudoClassSelector")) return;
+      const match = compileSelector({
+        selector: "*" + suffix.map((n) => generate(n)).join(""),
+        ...compileOptions,
+      });
+      selectors.push({
+        part: { names, local: !!host || !!nested, origin },
+        match: pseudo ? neverMatchesElement : match,
+        ...(pseudo && { pseudo: { text: pseudo, match } }),
+        specificity: specificity(selector, nestingSpecificity),
+        hostOnly: false,
+      });
+      serializedSelectors.push(serializeSelectorPart(selector));
+      treeOnly = false;
+      return;
+    }
     if (last?.type === "PseudoElementSelector" && last.name.toLowerCase() === "slotted") {
       const argument = last.children?.first;
       if (
@@ -7133,6 +7188,7 @@ export function createStyles(input: {
     return entries;
   }
   type CascadeInput = {
+    outerDepth?: number;
     weight: number;
     hostContext: boolean;
     base: string | undefined;
@@ -8438,6 +8494,7 @@ export function createStyles(input: {
       let collectLosers = false,
         hasHistory = false,
         hasRollback = false;
+      let outerPart: { host: Raw.Element; names: Set<string>; depth: number } | undefined;
       function take(
         style: DeclarationImplementation,
         weight: number,
@@ -8455,13 +8512,23 @@ export function createStyles(input: {
           if (
             old?.entries === entries &&
             old.weight === weight &&
+            old.outerDepth === outerPart?.depth &&
             old.hostContext === hostContext &&
             old.base === base &&
             old.proximity === proximity &&
             old.layerIndex === layerIndex
           )
             inputs.push(old);
-          else inputs.push({ weight, hostContext, base, proximity, layerIndex, entries });
+          else
+            inputs.push({
+              weight,
+              hostContext,
+              base,
+              proximity,
+              layerIndex,
+              entries,
+              ...(outerPart && { outerDepth: outerPart.depth }),
+            });
           return;
         }
         let entries: CascadeEntry[] | undefined;
@@ -8497,6 +8564,7 @@ export function createStyles(input: {
           !entries &&
           old &&
           old.weight === weight &&
+          old.outerDepth === outerPart?.depth &&
           old.hostContext === hostContext &&
           old.base === base &&
           old.proximity === proximity &&
@@ -8511,6 +8579,7 @@ export function createStyles(input: {
             proximity,
             layerIndex,
             entries: entries ?? old?.entries ?? [],
+            ...(outerPart && { outerDepth: outerPart.depth }),
           });
         }
       }
@@ -8529,7 +8598,7 @@ export function createStyles(input: {
         const { media, href, base } = sheetState(sheet);
         if (media && !mediaListState(media).matches((viewport ??= input.viewport()))) return;
         // Imports form an acyclic graph bounded by loadImports.
-        for (const rule of hostContext || scoped || parentSelection
+        for (const rule of hostContext || outerPart || scoped || parentSelection
           ? rules
           : candidates(rules, sheet)) {
           if (
@@ -8675,6 +8744,21 @@ export function createStyles(input: {
                 : (selection?.entries ?? []);
           let score = -1;
           for (const entry of selectors) {
+            if (entry.part) {
+              if (hostContext || entry.part.local === !!outerPart) continue;
+              const host = outerPart?.host ?? (scope && input.shadowHost(scope));
+              if (!host || !entry.part.origin(host)) continue;
+              const names =
+                outerPart?.names ??
+                new Set(
+                  (
+                    element.attrs.find((attr) => !attr.namespace && attr.name === "part")?.value ??
+                    ""
+                  ).split(/[\t\n\f\r ]+/),
+                );
+              if (!entry.part.names.every((name) => names.has(name))) continue;
+              reusableEligible = false;
+            } else if (outerPart) continue;
             const { specificity, hostOnly, subjectKey, subjectType } = entry;
             const match = activePseudo
               ? entry.pseudo?.text === activePseudo
@@ -8723,7 +8807,7 @@ export function createStyles(input: {
         // Only private, individually anchored sheets can be omitted; unindexed
         // groups keep their exact place in document order.
         const index =
-          !activePseudo && !hostContext && !didAdoptStylesheets
+          !activePseudo && !hostContext && !outerPart && !didAdoptStylesheets
             ? cascadeSubjectIndex(
                 records,
                 cascadeSheetIndexes,
@@ -8747,6 +8831,31 @@ export function createStyles(input: {
         }
       }
       applyScope(scope, false);
+      const exposed =
+        scope &&
+        input.shadowHost(scope) &&
+        element.attrs.find((attr) => !attr.namespace && attr.name === "part")?.value;
+      if (exposed && scope) {
+        let host = input.shadowHost(scope);
+        let names = new Set(exposed.split(/[\t\n\f\r ]+/).filter(Boolean));
+        let depth = 0;
+        while (host && names.size) {
+          const outer = input.styleScope(host);
+          if (!outer) break;
+          outerPart = { host, names, depth: ++depth };
+          applyScope(outer, false);
+          const forwarded = new Set<string>();
+          for (const mapping of (
+            host.attrs.find((attr) => !attr.namespace && attr.name === "exportparts")?.value ?? ""
+          ).split(",")) {
+            const match = /^\s*([^\s:,]+)\s*(?::\s*([^\s:,]+)\s*)?$/.exec(mapping);
+            if (match && names.has(match[1]!)) forwarded.add(match[2] ?? match[1]!);
+          }
+          names = forwarded;
+          host = input.shadowHost(outer);
+        }
+        outerPart = undefined;
+      }
       const shadow = input.shadowRoot(element);
       if (shadow) applyScope(shadow, true);
       const parent = element.parentNode;
@@ -8819,7 +8928,16 @@ export function createStyles(input: {
               : -layerIndex;
           for (const { name, important, value, order, shorthand } of source.entries) {
             // Normal declarations prefer the outer scope. Important declarations prefer the inner scope.
-            const context = important ? (hostContext ? 3 : 2) : hostContext ? 0 : 1;
+            const offset = source.outerDepth
+              ? source.outerDepth / (2 * (source.outerDepth + 1))
+              : 0;
+            const context = important
+              ? hostContext
+                ? 3
+                : 2 - offset
+              : hostContext
+                ? 0
+                : 1 + offset;
             if (value.length === 11 && value.toLowerCase() === "revert-rule") continue;
             if (
               (value.length === 6 || value.length === 12) &&
@@ -8894,6 +9012,8 @@ export function createStyles(input: {
             consider(name, winner);
           }
         };
+        if (activePseudo === "::before" || activePseudo === "::after")
+          winners.set("content", { context: -1, weight: 0, value: "none" });
         if (userAgentFocus) {
           winners.set("outline-style", { context: -1, weight: 0, value: "auto" });
           winners.set("outline-color", { context: -1, weight: 0, value: "auto" });

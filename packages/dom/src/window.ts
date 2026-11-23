@@ -462,6 +462,7 @@ type WindowSettings = {
   frameDepth?: number;
   storageAreas?: () => StorageAreas;
   frameLoaded?: () => void;
+  frameOpened?: () => void;
   frameFailed?: (error: unknown) => void;
   reportXMLParsingError?: (cause: unknown) => void;
   frameClosed?: () => void;
@@ -855,6 +856,7 @@ class InitialFrameRealm implements ChildRealm {
   #materialize(): ChildRealm {
     if (!this.#realm) {
       const load = this.#load;
+      let initialCompletion = true;
       const settings = load
         ? {
             ...this.input,
@@ -862,7 +864,14 @@ class InitialFrameRealm implements ChildRealm {
             hasMarkupFrames: false,
             mayHaveMarkupRadios: false,
             hasMarkupDetails: false,
-            frameLoaded: () => this.#finishBlankLoad(),
+            frameLoaded: () => {
+              if (!initialCompletion) {
+                this.input.frameLoaded?.();
+                return;
+              }
+              initialCompletion = false;
+              this.#finishBlankLoad();
+            },
           }
         : this.input;
       const realm = buildWindow(
@@ -17046,6 +17055,7 @@ function buildWindow(
         this.#detachedMarkup = "";
         return this;
       }
+      options.frameOpened?.();
       writtenDocument = { writer: undefined };
       didBindBody = false;
       didScanStyles = false;
@@ -20567,6 +20577,14 @@ function buildWindow(
     const abort = target ? new AbortController() : undefined;
     storage();
     const handle = wrapElement(node);
+    let replacement: ReturnType<typeof Promise.withResolvers<void>> | undefined;
+    let dispatchingLoad = false;
+    let muteNextLoad = false;
+    const releaseFrame = () => {
+      complete();
+      replacement?.resolve();
+      replacement = undefined;
+    };
     const childOptions: WindowInput = {
       ...options,
       lastModifiedMs: undefined,
@@ -20583,11 +20601,27 @@ function buildWindow(
       inheritedOrigin: documentOrigin(),
       inheritedBase: base,
       storageAreas: sharedAreas,
-      frameClosed: complete,
+      frameClosed: releaseFrame,
+      frameOpened() {
+        if (dispatchingLoad) muteNextLoad = true;
+        if (!replacement) {
+          replacement = Promise.withResolvers<void>();
+          trackFrameLoad((pendingLoadResources ??= new Set()), replacement.promise);
+        }
+      },
       frameLoaded: () => {
         if (closed || abort?.signal.aborted) return;
-        if (!hasNavigation || loader) handle.dispatchEvent(new Event("load"));
-        complete();
+        const mute = muteNextLoad;
+        muteNextLoad = false;
+        releaseFrame();
+        if (!mute && (!hasNavigation || loader)) {
+          dispatchingLoad = true;
+          try {
+            handle.dispatchEvent(new Event("load"));
+          } finally {
+            dispatchingLoad = false;
+          }
+        }
       },
     };
     const state: FrameState = {
@@ -20603,7 +20637,7 @@ function buildWindow(
             ),
       signature,
       abort,
-      complete,
+      complete: releaseFrame,
     };
     frameStates.set(node, state);
     const indexed = frameIndexTargets.get(node)?.deref();
