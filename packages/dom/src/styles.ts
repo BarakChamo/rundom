@@ -2197,6 +2197,19 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         this._setProperty(name, parsed.text, priority);
         return;
       }
+      if (
+        (name === "background-position" || name === "background-repeat" || name === "box-shadow") &&
+        value &&
+        !variableSyntax.test(value)
+      ) {
+        const expanded = expandedDeclaration(name, value, priority === "important");
+        if (expanded) {
+          for (const [child, component] of expanded.entries)
+            this._setProperty(child, component, priority);
+          this._setProperty(name, expanded.text, priority);
+          return;
+        }
+      }
       value = normalizePropertyInput(name, value);
       if (!name.startsWith("--") && hasContextlessPercentage(name, value)) return;
       if (!name.startsWith("--") && value.trim() === "") {
@@ -5463,7 +5476,7 @@ function simplifyCSSCalculation(value: string): string {
 // These dimensions need font metrics or a writing mode from the element's cascade.
 // These longhands normalize lists, coordinates or ratios using the element's style context.
 const contextualLonghand =
-  /^(?:(?:column|row)-rule-(?:style|color|width)|aspect-ratio|translate|transition-timing-function|counter-reset|counter-increment|counter-set|border-spacing|grid-auto-flow|font-style|rotate|background-size|grid-auto-rows|grid-auto-columns|zoom|scale|shape-outside|object-position|perspective-origin|transform-origin|offset-(?:anchor|path|position|rotate)|list-style-image|overflow-clip-margin(?:-|$)|text-box-edge|background-position-[xy])$/;
+  /^(?:box-shadow(?:-(?:blur|color|spread|position|offset))?|(?:column|row)-rule-(?:style|color|width)|aspect-ratio|translate|transition-timing-function|counter-reset|counter-increment|counter-set|border-spacing|grid-auto-flow|font-style|rotate|background-size|grid-auto-rows|grid-auto-columns|zoom|scale|shape-outside|object-position|perspective-origin|transform-origin|offset-(?:anchor|path|position|rotate)|list-style-image|overflow-clip-margin(?:-|$)|text-box-edge|background-position-[xy])$/;
 // The pinned evaluator has a fixed viewport. RunDOM resolves physical viewport
 // math against the dimensions captured for the declaration, including var() input.
 function usesDynamicViewportMath(value: string): boolean {

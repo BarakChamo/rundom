@@ -2392,6 +2392,25 @@ function buildWindow(
   let focusFixupPending = false;
   class DOMException extends HostDOMException {}
   Object.defineProperties(DOMException, exceptionConstants);
+  for (const name of ["name", "message", "code"]) {
+    const getter = Object.getOwnPropertyDescriptor(HostDOMException.prototype, name)!.get!;
+    Object.defineProperty(DOMException.prototype, name, {
+      configurable: true,
+      enumerable: true,
+      get(this: object) {
+        try {
+          return getter.call(this);
+        } catch {
+          const ErrorType = context ? Reflect.get(context, "TypeError") : TypeError;
+          throw new ErrorType("Illegal invocation");
+        }
+      },
+    });
+  }
+  Object.defineProperty(DOMException.prototype, Symbol.toStringTag, {
+    value: "DOMException",
+    configurable: true,
+  });
   Object.defineProperties(DOMException.prototype, exceptionConstants);
 
   class QuotaExceededError extends DOMException {
@@ -19867,6 +19886,10 @@ function buildWindow(
   const context =
     options.runScripts === undefined ? null : createScriptRealm(bindings, reportRuntimeError);
   const window: Window = context ?? bindings;
+  Object.setPrototypeOf(
+    DOMException.prototype,
+    (context ? Reflect.get(context, "Error") : Error).prototype,
+  );
   // The private member holder is never the public prototype. Install globals
   // together instead of repeatedly deleting the holder's prototype properties.
   const globals: PropertyDescriptorMap = {};

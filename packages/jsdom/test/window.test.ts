@@ -3791,7 +3791,7 @@ it("installs global event handlers on their Web IDL interfaces", () => {
   }
 });
 
-it("resolves computed box shadow colors and normalizes shadow lists", () => {
+it("serializes computed box-shadow lists and their longhands", () => {
   // Given an inset shadow using currentColor and a second shadow with no explicit color.
   const { window } = new JSDOM(
     '<p style="color: red; box-shadow: inset 1px 2px currentColor, 0 2px"></p>',
@@ -3800,15 +3800,16 @@ it("resolves computed box shadow colors and normalizes shadow lists", () => {
     const paragraph = window.document.querySelector("p");
     if (!(paragraph instanceof window.HTMLElement)) throw new Error("Missing paragraph");
 
-    // When the computed style is read, both shadows use the element color and absolute offsets.
+    // CSSOM omits the default color, blur and spread when serializing the shorthand.
     expect(window.getComputedStyle(paragraph).getPropertyValue("box-shadow")).toBe(
-      "rgb(255, 0, 0) 1px 2px 0px 0px inset, rgb(255, 0, 0) 0px 2px 0px 0px",
+      "1px 2px inset, 0px 2px",
     );
 
-    // The authored declaration retains its original tokens.
-    expect(paragraph.style.getPropertyValue("box-shadow")).toBe(
-      "inset 1px 2px currentColor, 0 2px",
+    // Both color components preserve the currentcolor keyword.
+    expect(window.getComputedStyle(paragraph).getPropertyValue("box-shadow-color")).toBe(
+      "currentcolor, currentcolor",
     );
+    expect(paragraph.style.getPropertyValue("box-shadow")).toBe("1px 2px inset, 0px 2px");
   } finally {
     window.close();
   }

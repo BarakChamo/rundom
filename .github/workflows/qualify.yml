@@ -335,7 +335,7 @@ jobs:
           PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
           CYPRESS_INSTALL_BINARY: 0
-          NX_DAEMON: 'false'
+          NX_DAEMON: "false"
           SCULLY_rnd: ppt
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
         run: |
