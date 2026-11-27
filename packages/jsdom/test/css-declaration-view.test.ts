@@ -1,4 +1,5 @@
 // Checks the public WebIDL boundary around private inline, rule and computed CSS declarations.
+import { inspect } from "node:util";
 import { describe, it, expect } from "vitest";
 import { JSDOM } from "@run-dom/jsdom";
 
@@ -217,6 +218,77 @@ describe("CSSStyleDeclaration public views", () => {
       window.close();
     }
   });
+  it("publishes fresh computed views whose reflection shows only supported indices", () => {
+    // Given: a styled element with a custom property in one Window.
+    const { window } = new JSDOM("<style>p{color:red;--x:1}</style><p></p>");
+    try {
+      const node = window.document.querySelector("p");
+      if (!node) throw new Error("Expected paragraph");
+      const style = window.getComputedStyle(node);
+      const indices = Array.from({ length: style.length }, (_, index) => String(index));
+      // When/Then: each call is a distinct object and no private slot is reflected.
+      expect(window.getComputedStyle(node)).not.toBe(style);
+      expect(Reflect.ownKeys(style)).toEqual(indices);
+      expect(Object.getOwnPropertySymbols(style)).toEqual([]);
+      expect(Object.keys(JSON.parse(JSON.stringify(style)))).toEqual(indices);
+      expect(inspect(style)).toBe("CSSStyleProperties {}");
+      expect(() => structuredClone(style)).toThrow("#<CSSStyleProperties> could not be cloned.");
+      // Then: expandos stay on the receiving view and readonly writes keep their DOMException.
+      Reflect.set(style, "expando", 1);
+      expect(Object.keys(style)).toContain("expando");
+      expect(Object.keys(window.getComputedStyle(node))).not.toContain("expando");
+      expect(() => Reflect.set(style, "color", "green")).toThrow(
+        'Cannot set property "color" on a read-only style declaration.',
+      );
+      expect(() =>
+        window.CSSStyleDeclaration.prototype.getPropertyValue.call(
+          Object.create(window.CSSStyleProperties.prototype),
+          "color",
+        ),
+      ).toThrow("Illegal invocation");
+    } finally {
+      window.close();
+    }
+  });
+
+  it("resolves borrowed computed-view methods through the receiver's Window and empties views on close", () => {
+    // Given: two Windows with differently styled paragraphs and a retained computed view.
+    const first = new JSDOM("<style>p{color:red}</style><p></p>"),
+      second = new JSDOM("<style>p{color:blue}</style><p></p>");
+    try {
+      const a = first.window,
+        b = second.window;
+      const paragraph = a.document.querySelector("p"),
+        other = b.document.querySelector("p");
+      if (!paragraph || !other) throw new Error("Expected paragraphs");
+      const foreign = b.getComputedStyle(other);
+      const color = Object.getOwnPropertyDescriptor(a.CSSStyleProperties.prototype, "color")?.get;
+      if (!color) throw new Error("Expected color getter");
+      // When/Then: the first Window's methods read the second Window's computed state.
+      expect(a.CSSStyleDeclaration.prototype.getPropertyValue.call(foreign, "color")).toBe(
+        "rgb(0, 0, 255)",
+      );
+      expect(a.CSSStyleDeclaration.prototype.item.call(foreign, 0)).toBe(foreign.item(0));
+      expect(color.call(foreign)).toBe("rgb(0, 0, 255)");
+      const retained = a.getComputedStyle(paragraph);
+      expect(retained.length).toBeGreaterThan(0);
+      // When: the owning Window closes.
+      a.close();
+      // Then: retained and later views read as empty, while the other Window's views stay live.
+      expect(retained.length).toBe(0);
+      expect(retained[0]).toBeUndefined();
+      expect(retained.color).toBe("");
+      expect(retained.getPropertyValue("--x")).toBe("");
+      expect(a.getComputedStyle(paragraph).length).toBe(0);
+      expect(a.CSSStyleDeclaration.prototype.getPropertyValue.call(foreign, "color")).toBe(
+        "rgb(0, 0, 255)",
+      );
+    } finally {
+      first.window.close();
+      second.window.close();
+    }
+  });
+
   it("isolates public accessor function identity and expandos between Windows", () => {
     // Given: shared private metadata must not share mutable public function objects.
     const first = new JSDOM(),

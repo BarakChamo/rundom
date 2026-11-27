@@ -40,11 +40,90 @@ type DeferredDeclaration = {
 };
 const deferredDeclarations = new WeakMap<object, DeferredDeclaration>();
 const implementations = new WeakMap<object, DeclarationImplementation>();
-const computedOwners = new WeakMap<object, (view: object) => DeclarationImplementation>();
-const viewFactories = new WeakMap<object, ReturnType<typeof createDeclarationViews>["expose"]>();
+
+type ComputedSource = DeclarationImplementation | (() => object | undefined);
+type ComputedResolver = (target: object) => DeclarationImplementation;
+class SlotTarget {
+  constructor(target: object) {
+    return target;
+  }
+}
+// Computed views publish once per getComputedStyle call, so their private state lives in native
+// slots instead of WeakMaps. All state sits on the never-escaping proxy target (cheap ordinary
+// object slots); the public proxy carries only one slot pointing at its target, because V8 private
+// fields on proxies are much slower to add and read. Slots add no keys and invoke no traps.
+class ComputedTarget extends SlotTarget {
+  #source: ComputedSource;
+  #resolve: ComputedResolver;
+  #connected: (() => boolean) | undefined;
+  constructor(
+    target: object,
+    source: ComputedSource,
+    resolve: ComputedResolver,
+    connected: (() => boolean) | undefined,
+  ) {
+    super(target);
+    this.#source = source;
+    this.#resolve = resolve;
+    this.#connected = connected;
+  }
+  static resolver(target: object): ComputedResolver | undefined {
+    return #resolve in target ? target.#resolve : undefined;
+  }
+  static source(target: object): ComputedSource | undefined {
+    return #source in target ? target.#source : undefined;
+  }
+  static connected(target: object): (() => boolean) | undefined {
+    return #connected in target ? target.#connected : undefined;
+  }
+}
+class ComputedView extends SlotTarget {
+  #target: object;
+  constructor(view: object, target: object) {
+    super(view);
+    this.#target = target;
+  }
+  static target(view: object): object | undefined {
+    return #target in view ? view.#target : undefined;
+  }
+}
+
+type ViewFactory = ReturnType<typeof createDeclarationViews>["expose"];
+// Registration runs once per private declaration implementation (an ordinary object), so its
+// owning factory and interface choice live in native slots instead of side tables.
+class Registration extends SlotTarget {
+  #factory: ViewFactory;
+  #styleProperties: boolean;
+  constructor(implementation: object, factory: ViewFactory, styleProperties: boolean) {
+    super(implementation);
+    this.#factory = factory;
+    this.#styleProperties = styleProperties;
+  }
+  static factory(implementation: object): ViewFactory | undefined {
+    return #factory in implementation ? implementation.#factory : undefined;
+  }
+  static styleProperties(implementation: object, factory: ViewFactory): boolean {
+    return #factory in implementation
+      ? implementation.#factory === factory && implementation.#styleProperties
+      : false;
+  }
+  static register(implementation: object, factory: ViewFactory, styleProperties: boolean): void {
+    if (!(#factory in implementation)) new Registration(implementation, factory, styleProperties);
+    else if (implementation.#factory === factory)
+      implementation.#styleProperties ||= styleProperties;
+    else {
+      implementation.#factory = factory;
+      implementation.#styleProperties = styleProperties;
+    }
+  }
+}
 
 function declarationImplementation(view: object): DeclarationImplementation {
-  const implementation = implementations.get(view) ?? computedOwners.get(view)?.(view);
+  let implementation = implementations.get(view);
+  if (!implementation) {
+    const target = ComputedView.target(view);
+    implementation = target && ComputedTarget.resolver(target)?.(target);
+  }
   if (!implementation) throw new TypeError("Illegal invocation");
   return implementation;
 }
@@ -185,7 +264,6 @@ export function createDeclarationViews(input: {
   functionPrototype: object;
   arrayValues: typeof Array.prototype.values;
 }) {
-  const properties = new WeakSet<DeclarationImplementation>();
   const ordinaryViews = new WeakMap<object, CSSStyleProperties>();
   const indexedHandlers = new WeakMap<object, ProxyHandler<object>>();
   const inheritedIndices = new WeakMap<DeclarationImplementation, AddedIndices>();
@@ -238,7 +316,9 @@ export function createDeclarationViews(input: {
     }
     get length(): number {
       const style = receiver(this);
-      if (typeof computedValues?.get(this) === "function") return computedNames(style).length;
+      const target = ComputedView.target(this);
+      if (target && typeof computedSource(target) === "function")
+        return computedNames(style).length;
       const indices = inheritedIndices.get(style);
       return style._length + (indices?.names.length ?? 0) + (indices?.last ? 1 : 0);
     }
@@ -432,18 +512,20 @@ export function createDeclarationViews(input: {
     options: { fresh?: boolean } = {},
   ): CSSStyleProperties {
     if (options.fresh) {
-      const prototype = properties.has(implementation)
+      const prototype = Registration.styleProperties(implementation, expose)
         ? CSSStyleProperties.prototype
         : pageDeclarationPrototype();
       return publishComputed(prototype, implementation);
     }
-    const owner = viewFactories.get(implementation);
+    const owner = Registration.factory(implementation);
     if (owner && owner !== expose) return owner(implementation, options);
     const previous = ordinaryViews.get(implementation);
     if (previous) return previous;
     // This is an owned allocation with all observable members supplied by the public prototype/proxy.
     const target = Object.create(
-      properties.has(implementation) ? CSSStyleProperties.prototype : pageDeclarationPrototype(),
+      Registration.styleProperties(implementation, expose)
+        ? CSSStyleProperties.prototype
+        : pageDeclarationPrototype(),
     ) as CSSStyleProperties;
     let handler = indexedHandlers.get(implementation);
     if (!handler)
@@ -467,12 +549,16 @@ export function createDeclarationViews(input: {
     (target) => inlineTarget(target)._length,
     (target, index) => inlineTarget(target).item(index),
   );
-  type ComputedSource = DeclarationImplementation | (() => CSSStyleProperties | undefined);
-  let computedValues: WeakMap<object, ComputedSource> | undefined = new WeakMap();
-  const connectedLiveSources = new WeakMap<() => CSSStyleProperties | undefined, () => boolean>();
+  let computedClosed = false;
+  /** Reads only this Window's open computed targets, matching its former per-Window side table. */
+  function computedSource(target: object): ComputedSource | undefined {
+    return computedClosed || ComputedTarget.resolver(target) !== computedValue
+      ? undefined
+      : ComputedTarget.source(target);
+  }
   let empty: DeclarationImplementation | undefined;
-  function computedValue(view: object): DeclarationImplementation {
-    const source = computedValues?.get(view);
+  function computedValue(target: object): DeclarationImplementation {
+    const source = computedSource(target);
     if (typeof source !== "function") return source ?? (empty ??= input.emptyComputed());
     const current = source();
     return current ? declarationImplementation(current) : (empty ??= input.emptyComputed());
@@ -497,28 +583,31 @@ export function createDeclarationViews(input: {
     privateLookup,
     (target) => {
       const value = computedValue(target);
-      return typeof computedValues?.get(target) === "function"
+      return typeof computedSource(target) === "function"
         ? computedNames(value).length
         : indexedLength(value, inheritedIndices.get(value));
     },
     (target, index) => {
-      const source = computedValues?.get(target);
+      const source = computedSource(target);
       if (typeof source === "function") {
         const name = computedLonghands()[index];
-        if (name !== undefined) return connectedLiveSources.get(source)?.() ? name : undefined;
+        if (name !== undefined) return ComputedTarget.connected(target)?.() ? name : undefined;
       }
       const value = computedValue(target);
-      return typeof computedValues?.get(target) === "function"
+      return typeof computedSource(target) === "function"
         ? computedNames(value)[index]
         : indexedItem(value, index, inheritedIndices.get(value));
     },
   );
-  function publishComputed(prototype: object, value: ComputedSource): CSSStyleProperties {
+  function publishComputed(
+    prototype: object,
+    value: ComputedSource,
+    connected?: () => boolean,
+  ): CSSStyleProperties {
     const target = Object.create(prototype) as CSSStyleProperties;
+    new ComputedTarget(target, value, computedValue, connected);
     const view = new Proxy<CSSStyleProperties>(target, computedHandler);
-    computedValues?.set(target, value);
-    computedValues?.set(view, value);
-    computedOwners.set(view, computedValue);
+    new ComputedView(view, target);
     return view;
   }
   return {
@@ -557,7 +646,7 @@ export function createDeclarationViews(input: {
       implementation: DeclarationImplementation,
       inherited?: AddedIndices,
     ): () => CSSStyleProperties {
-      const prototype = properties.has(implementation)
+      const prototype = Registration.styleProperties(implementation, expose)
         ? CSSStyleProperties.prototype
         : pageDeclarationPrototype();
       if (inherited) inheritedIndices.set(implementation, inherited);
@@ -621,15 +710,13 @@ export function createDeclarationViews(input: {
       read: () => CSSStyleProperties | undefined,
       connected: () => boolean,
     ): CSSStyleProperties {
-      connectedLiveSources.set(read, connected);
-      return publishComputed(propertyPrototype, read);
+      return publishComputed(propertyPrototype, read, connected);
     },
     closeComputed(): void {
-      computedValues = undefined;
+      computedClosed = true;
     },
     register(implementation: DeclarationImplementation, hasStyleProperties: boolean): void {
-      if (hasStyleProperties) properties.add(implementation);
-      viewFactories.set(implementation, expose);
+      Registration.register(implementation, expose, hasStyleProperties);
     },
   };
 }
