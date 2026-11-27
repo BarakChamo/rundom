@@ -3,9 +3,11 @@ const { readFileSync, existsSync } = require("node:fs");
 const { createHash } = require("node:crypto");
 const { createRequire, wrap } = require("node:module");
 const { Script } = require("node:vm");
-const filename = __dirname + "/css-runtime-implementation.cjs";
+// Serves every code-cached CSS artifact: <name>.cjs loads <name>-implementation.cjs with <name>.cache.
+const artifact = __filename.slice(0, -".cjs".length);
+const filename = artifact + "-implementation.cjs";
 const source = readFileSync(filename, "utf8");
-const cachefile = __dirname + "/css-runtime.cache";
+const cachefile = artifact + ".cache";
 const cache = existsSync(cachefile) ? readFileSync(cachefile) : undefined;
 const digest = createHash("sha256").update(source).digest();
 const cachedData = cache?.subarray(0, 32).equals(digest) ? cache.subarray(32) : undefined;

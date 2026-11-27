@@ -539,18 +539,20 @@ export function createDescriptorRuleParser(
   changed: () => void,
   declarationPrototype: () => object,
 ) {
-  const {
-    parseRule,
-  }: {
-    parseRule(
-      text: string,
-      global: object,
-    ):
-      | PositionTry
-      | PropertyDescriptors
-      | { cssText: string; fontFamily: string }
-      | { message: string };
-  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  // Interface reads must not initialize the grammar, so the parser loads with the first rule.
+  function parseRule(text: string, global: object) {
+    const parser: {
+      parseRule(
+        text: string,
+        global: object,
+      ):
+        | PositionTry
+        | PropertyDescriptors
+        | { cssText: string; fontFamily: string }
+        | { message: string };
+    } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+    return parser.parseRule(text, global);
+  }
   const globals = {
     Object,
     Array,
