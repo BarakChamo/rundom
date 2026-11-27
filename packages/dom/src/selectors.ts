@@ -760,8 +760,17 @@ function compileSimpleList(branches: readonly SimpleBranch[], isXML: boolean) {
 
 function simpleTypeMatcher(tag: string, isXML: boolean) {
   const lower = tag.toLowerCase();
-  return (element: Raw.Element) =>
-    elementLocalName(element) === (!isXML && element.namespaceURI === html.NS.HTML ? lower : tag);
+  return (element: Raw.Element) => {
+    const expected = !isXML && element.namespaceURI === html.NS.HTML ? lower : tag;
+    const name = element.tagName;
+    // Type selectors never contain ":", so only an exact or "prefix:"-qualified tag name can match.
+    if (name.length === expected.length) return name === expected;
+    return (
+      name.length > expected.length &&
+      name.charCodeAt(name.length - expected.length - 1) === 58 &&
+      elementLocalName(element) === expected
+    );
+  };
 }
 
 // HTML's legacy attribute-value folding applies only to HTML elements in HTML documents.
@@ -773,7 +782,12 @@ const htmlInsensitiveValues = new Set(
   ).split(" "),
 );
 function asciiFold(value: string): string {
-  return value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+  // Most attribute values are already lowercase; scanning avoids a replace per comparison.
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code >= 65 && code <= 90) return value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+  }
+  return value;
 }
 function attributeValueTest(
   operator: string,
