@@ -28,6 +28,7 @@ import {
   type RegisteredProperty,
 } from "./css-reference.js";
 import {
+  dependsOnWinnersOnly,
   substitutionFunction,
   substitutionFrame,
   type SubstitutionFrame,
@@ -7281,6 +7282,8 @@ export function createStyles(input: {
     baseURL: string | undefined;
     focusRevision?: number | undefined;
     substitution?: SubstitutionFrame;
+    // The frame's values depend only on winners and ancestors: reusable, and not inherited.
+    staticSubstitution?: true;
     siblingColor?: boolean;
     registered?: boolean;
     custom?: CustomProjection;
@@ -8574,7 +8577,12 @@ export function createStyles(input: {
         !activePseudo && input.statePseudos["focus-visible"]?.(element) === true;
       const userAgentDirection = needsDirection ? input.directionality(element) : undefined;
       function sameEnvironment(cached: ComputedFrame): boolean {
-        if (cached.substitution || cached.siblingColor || cached.registered || scriptRegistrations)
+        if (
+          (cached.substitution && !cached.staticSubstitution) ||
+          cached.siblingColor ||
+          cached.registered ||
+          scriptRegistrations
+        )
           return false;
         const currentViewport = cached.viewport && (viewport ??= input.viewport());
         const sameViewport =
@@ -9034,6 +9042,7 @@ export function createStyles(input: {
         const winners = new Map<string, Winner>();
         let hasVariableShorthand = false;
         let usesSubstitution = false;
+        let environmentSubstitution = false;
 
         // Cached frames return above without allocating winner-expansion closures.
         const consider = (name: string, candidate: Winner): void => {
@@ -9093,14 +9102,19 @@ export function createStyles(input: {
             )
               hasRollback = true;
 
-            usesSubstitution ||=
-              contextualLonghand.test(name) ||
-              (name.startsWith("--") && /\)var\(/i.test(value)) ||
-              ((name === "container-type" || name === "container") &&
-                /(?:^|[ /])(?:inline-)?size(?:$| )/.test(value)) ||
-              (value.includes("(") &&
-                (substitutionFunction.test(value) || usesTypedValueGrammar(name, value))) ||
-              (!name.startsWith("--") && elementDimension.test(value));
+            if (!environmentSubstitution) {
+              const evaluated =
+                contextualLonghand.test(name) ||
+                (value.includes("(") && usesTypedValueGrammar(name, value));
+              environmentSubstitution =
+                (evaluated && !dependsOnWinnersOnly(value)) ||
+                (name.startsWith("--") && /\)var\(/i.test(value)) ||
+                ((name === "container-type" || name === "container") &&
+                  /(?:^|[ /])(?:inline-)?size(?:$| )/.test(value)) ||
+                (value.includes("(") && substitutionFunction.test(value)) ||
+                (!name.startsWith("--") && elementDimension.test(value));
+              usesSubstitution ||= evaluated || environmentSubstitution;
+            }
             const winner: Winner = {
               context,
               weight,
@@ -9288,7 +9302,7 @@ export function createStyles(input: {
         const substitutionValues =
           usesSubstitution ||
           hasVariableShorthand ||
-          parentFrame?.substitution ||
+          (parentFrame?.substitution && !parentFrame.staticSubstitution) ||
           registrations?.size
             ? new Map([...winners].map(([name, winner]) => [name, winner.value]))
             : undefined;
@@ -9702,6 +9716,13 @@ export function createStyles(input: {
           ...resolved,
           ...(formattingContainer && { formattingContainer: true as const }),
           ...(substitution && { substitution }),
+          ...(substitution &&
+            !environmentSubstitution &&
+            !hasVariableShorthand &&
+            !registrations?.size &&
+            (!parentFrame?.substitution || parentFrame.staticSubstitution) && {
+              staticSubstitution: true as const,
+            }),
           ...(siblingColor ? { siblingColor } : {}),
           ...(registrations ? { registered: true } : {}),
           inputs: retainInputs ? inputs : undefined,

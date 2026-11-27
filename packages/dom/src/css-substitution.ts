@@ -8,6 +8,36 @@ import type { RegisteredProperty } from "./css-reference.js";
 const require = createRequire(import.meta.url);
 export const substitutionFunction = /(?:^|[^\w-])(?:attr|ident|if|random(?:-item)?)\(/i;
 
+const winnerFunctions =
+  /^(?:calc|cubic-bezier|steps|rgba?|hsla?|hwb|(?:ok)?la[bc]|(?:ok)?lch|color)$/i;
+const systemColor =
+  /(?:^|[^\w-])(?:accentcolor(?:text)?|activetext|buttonborder|buttonface|buttontext|canvas(?:text)?|field(?:text)?|graytext|highlight(?:text)?|linktext|mark(?:text)?|selecteditem(?:text)?|visitedtext|activeborder|activecaption|appworkspace|background|buttonhighlight|buttonshadow|captiontext|inactiveborder|inactivecaption(?:text)?|infobackground|infotext|menu(?:text)?|scrollbar|threed(?:darkshadow|face|highlight|lightshadow|shadow)|window(?:frame|text)?)(?![\w-])/i;
+
+/**
+ * Whether the evaluator's result for a declaration depends only on cascade winners and the
+ * ancestor chain, never on attributes, siblings, URLs, containers or the page color scheme.
+ * Frames holding only such values are reusable and do not extend to descendants.
+ */
+export function dependsOnWinnersOnly(value: string): boolean {
+  let known = winnerOnlyValues.get(value);
+  if (known === undefined) {
+    known = scanWinnersOnly(value);
+    if (winnerOnlyValues.size >= 4096) winnerOnlyValues.clear();
+    winnerOnlyValues.set(value, known);
+  }
+  return known;
+}
+const winnerOnlyValues = new Map<string, boolean>();
+
+function scanWinnersOnly(value: string): boolean {
+  if (value.includes("\\") || systemColor.test(value)) return false;
+  for (const [, unit] of value.replace(/#[\da-f]+/gi, "").matchAll(/\d([a-z]+)/gi))
+    if (!/^(?:px|em|deg|ms|s)$/i.test(unit!)) return false;
+  for (const [, name] of value.matchAll(/([\w-]*)\(/g))
+    if (!winnerFunctions.test(name!)) return false;
+  return true;
+}
+
 type EvaluationDocument = {
   _parentDocument: null;
   _styleCache: null | object;
@@ -77,6 +107,51 @@ export type SubstitutionFrame = {
   element: object;
   read(name: string): string;
 };
+type BuiltFrame = SubstitutionFrame & { declares(name: string): boolean };
+
+// Properties whose computed value, for a valid declared winner, is a function of its text and
+// the custom properties it references once relative units, colors and keywords that read
+// context are excluded.
+const contextFreeProperty =
+  /^(?:transition-timing-function|box-shadow(?:-(?:blur|color|spread|position|offset))?|(?:transform|perspective)-origin|object-position|font-style|background-(?:size|image|position-[xy])|list-style-image|(?:min-|max-)?(?:width|height)|(?:padding|margin)-(?:top|right|bottom|left)|top|right|bottom|left)$/;
+const contextKeyword = /\d(?:\.\d+)?em\b|currentcolor|inherit|initial|unset|revert/i;
+const resolvedText = new Map<string, string>();
+
+function contextFreeKey(
+  name: string,
+  text: string,
+  frame: {
+    values: ReadonlyMap<string, string>;
+    shorthands: ReadonlyMap<string, string> | undefined;
+    registrations: ReadonlyMap<string, RegisteredProperty> | undefined;
+    xml: boolean;
+  },
+): string | undefined {
+  if (text.length > 512 || !contextFreeProperty.test(name)) return;
+  let key = `${frame.xml ? "x" : "h"}${name}\0${frame.shorthands?.get(name) ?? ""}\0${text}`;
+  if (text.includes("var(")) {
+    // Every referenced custom property must be declared on this frame: inherited ones would
+    // come from the ancestor chain, which the key cannot name.
+    if (frame.registrations?.size) return;
+    const seen = new Set<string>();
+    const pending = [text];
+    while (pending.length) {
+      for (const [, reference] of pending.pop()!.matchAll(/var\(\s*(--[\w-]+)/g)) {
+        if (seen.has(reference!)) continue;
+        const value = frame.values.get(reference!);
+        if (value === undefined || seen.add(reference!).size > 16) return;
+        key += `\0${reference}=${value}`;
+        pending.push(value);
+      }
+    }
+  }
+  return key.length <= 2048 ? key : undefined;
+}
+
+function contextFree(key: string): boolean {
+  // var() is the one substitution whose inputs the key carries.
+  return !contextKeyword.test(key) && dependsOnWinnersOnly(key.replace(/var\(/gi, "calc("));
+}
 
 type CascadeBlock = {
   entries: readonly { name: string; value: string; important: boolean }[];
@@ -97,8 +172,8 @@ export function substitutionFrame(
   shorthands?: ReadonlyMap<string, string>,
   sheetBases?: ReadonlyMap<string, string>,
 ): SubstitutionFrame {
-  let frame: SubstitutionFrame | undefined;
-  function materialize(): SubstitutionFrame {
+  let frame: BuiltFrame | undefined;
+  function materialize(): BuiltFrame {
     return (frame ??= buildSubstitutionFrame(
       raw,
       parent,
@@ -118,7 +193,24 @@ export function substitutionFrame(
     get element() {
       return materialize().element;
     },
-    read: (name) => materialize().read(name),
+    read(name) {
+      // Context-free winners resolve once per process; a frame is built only on a miss.
+      const text = values.get(name);
+      const key =
+        text === undefined
+          ? undefined
+          : contextFreeKey(name, text, { values, shorthands, registrations, xml });
+      const known = key && resolvedText.get(key);
+      if (known) return known;
+      const built = materialize();
+      const value = built.read(name);
+      if (key && value && built.declares(name) && contextFree(key)) {
+        // ponytail: whole-map reset at 4096 keys; an LRU if MUI-scale suites thrash it.
+        if (resolvedText.size >= 4096) resolvedText.clear();
+        resolvedText.set(key, value);
+      }
+      return value;
+    },
   };
 }
 
@@ -146,7 +238,7 @@ function buildSubstitutionFrame(
   sources?: readonly CascadeBlock[],
   shorthands?: ReadonlyMap<string, string>,
   sheetBases?: ReadonlyMap<string, string>,
-): SubstitutionFrame {
+): BuiltFrame {
   const resolver: {
     hasResolvedStyle(element: object): boolean;
     getResolvedPropertyValue(name: string, element: object): string;
@@ -463,5 +555,10 @@ function buildSubstitutionFrame(
       matched: true,
       specificity: [0, 0, 1],
     });
-  return { element, document, read: (name) => resolver.getResolvedPropertyValue(name, element) };
+  return {
+    element,
+    document,
+    read: (name) => resolver.getResolvedPropertyValue(name, element),
+    declares: (name) => declaredWinner(name) !== undefined,
+  };
 }
