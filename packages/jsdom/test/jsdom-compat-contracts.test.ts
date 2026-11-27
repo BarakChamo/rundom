@@ -8,6 +8,18 @@ const reference: Pick<
   "JSDOM" | "requestInterceptor"
 > = require("jsdom");
 
+type Window = JSDOM["window"];
+type Declaration = ReturnType<Window["getComputedStyle"]>;
+function firstRule(window: Window) {
+  const rule = window.document.styleSheets[0]?.cssRules[0];
+  if (!(rule instanceof window.CSSStyleRule)) throw new Error("Expected a style rule");
+  return rule;
+}
+function htmlElement(window: Window, element: unknown) {
+  if (!(element instanceof window.HTMLElement)) throw new Error("Expected an HTML element");
+  return element;
+}
+
 const providers = [
   { name: "RunDOM", Constructor: JSDOM, intercept: requestInterceptor },
   { name: "jsdom", Constructor: reference.JSDOM, intercept: reference.requestInterceptor },
@@ -22,7 +34,7 @@ describe.each(providers)("$name CSSStyleDeclaration property names", ({ Construc
     );
     try {
       const element = window.document.querySelector("div")!;
-      const rule = (window.document.styleSheets[0]!.cssRules[0] as CSSStyleRule).style;
+      const rule = firstRule(window).style;
       const computed = window.getComputedStyle(element);
       // When/Then: upper-case standard names find the lower-case declarations.
       expect(element.style.getPropertyValue("COLOR")).toBe("red");
@@ -59,7 +71,7 @@ describe.each(providers)("$name CSSStyleDeclaration property names", ({ Construc
     );
     try {
       const element = window.document.querySelector("div")!;
-      const rule = (window.document.styleSheets[0]!.cssRules[0] as CSSStyleRule).style;
+      const rule = firstRule(window).style;
       // When/Then: only the exact spelling reads, removes or computes.
       expect([
         element.style.getPropertyValue("--bar"),
@@ -130,8 +142,8 @@ describe.each(providers)("$name <alpha-value> percentages", ({ Constructor }) =>
         }
       }
       const element = window.document.createElement("div");
-      element.style.opacity = "25%";
-      expect(element.style.opacity).toBe("0.25");
+      Reflect.set(element.style, "opacity", "25%");
+      expect(Reflect.get(element.style, "opacity")).toBe("0.25");
     } finally {
       window.close();
     }
@@ -143,11 +155,13 @@ describe.each(providers)("$name <alpha-value> percentages", ({ Constructor }) =>
       `<style>.o { opacity: 50%; fill-opacity: 25% }</style><div class="o"></div>`,
     );
     try {
-      const rule = window.document.styleSheets[0]!.cssRules[0] as CSSStyleRule;
+      const rule = firstRule(window);
       // When/Then: the rule serializes numbers and the computed opacity agrees.
       expect(rule.cssText).toBe(".o { opacity: 0.5; fill-opacity: 0.25; }");
       expect(rule.style.getPropertyValue("opacity")).toBe("0.5");
-      expect(window.getComputedStyle(window.document.querySelector("div")!).opacity).toBe("0.5");
+      expect(
+        window.getComputedStyle(window.document.querySelector("div")!).getPropertyValue("opacity"),
+      ).toBe("0.5");
     } finally {
       window.close();
     }
@@ -192,18 +206,29 @@ describe.each(providers)(
           "http://doc.example/dir/imp.css",
           "http://doc.example/dir/l.css",
         ]);
-        const importRule = document.styleSheets[0]!.cssRules[0] as CSSImportRule;
+        const importRule = document.styleSheets[0]?.cssRules[0];
+        if (!(importRule instanceof window.CSSImportRule)) throw new Error("Expected an import");
         expect([importRule.href, importRule.styleSheet?.href]).toEqual([
           "imp.css",
           "http://doc.example/dir/imp.css",
         ]);
         expect(document.styleSheets[1]!.href).toBe("http://doc.example/dir/l.css");
-        expect(computed("p").backgroundImage).toBe('url("http://doc.example/dir/x.png")');
+        expect(computed("p").getPropertyValue("background-image")).toBe(
+          'url("http://doc.example/dir/x.png")',
+        );
         // Then: rules and style attributes before the base use the document URL; later ones the base.
-        expect(computed(".a").backgroundImage).toBe('url("http://doc.example/dir/a.png")');
-        expect(computed(".a").listStyleImage).toBe('url("http://doc.example/dir/i.png")');
-        expect(computed(".b").backgroundImage).toBe('url("http://other.example/sub/b.png")');
-        expect(computed(".b").listStyleImage).toBe('url("http://other.example/sub/j.png")');
+        expect(computed(".a").getPropertyValue("background-image")).toBe(
+          'url("http://doc.example/dir/a.png")',
+        );
+        expect(computed(".a").getPropertyValue("list-style-image")).toBe(
+          'url("http://doc.example/dir/i.png")',
+        );
+        expect(computed(".b").getPropertyValue("background-image")).toBe(
+          'url("http://other.example/sub/b.png")',
+        );
+        expect(computed(".b").getPropertyValue("list-style-image")).toBe(
+          'url("http://other.example/sub/j.png")',
+        );
         expect(document.baseURI).toBe("http://other.example/sub/");
       } finally {
         window.close();
@@ -218,17 +243,19 @@ describe.each(providers)(
         // When: a script prepends a sheet and later writes a URL into the early element's style.
         const style = document.createElement("style");
         style.textContent = "p { background-image: url(p.png) }";
-        document.head.prepend(style);
-        const early = document.querySelector<HTMLElement>(".a")!;
-        early.style.backgroundImage = "url(late.png)";
+        document.head?.prepend(style);
+        const early = htmlElement(window, document.querySelector(".a"));
+        early.style.setProperty("background-image", "url(late.png)");
         // Then: both resolve against the current document base, as in jsdom.
-        expect(window.getComputedStyle(document.querySelector("p")!).backgroundImage).toBe(
-          'url("http://other.example/sub/p.png")',
-        );
-        expect(window.getComputedStyle(early).backgroundImage).toBe(
+        expect(
+          window
+            .getComputedStyle(document.querySelector("p")!)
+            .getPropertyValue("background-image"),
+        ).toBe('url("http://other.example/sub/p.png")');
+        expect(window.getComputedStyle(early).getPropertyValue("background-image")).toBe(
           'url("http://other.example/sub/late.png")',
         );
-        expect(window.getComputedStyle(early).listStyleImage).toBe(
+        expect(window.getComputedStyle(early).getPropertyValue("list-style-image")).toBe(
           'url("http://doc.example/dir/i.png")',
         );
       } finally {
@@ -258,7 +285,7 @@ describe.each(providers)(
       const a = new Constructor().window;
       const b = new Constructor().window;
       try {
-        const element = a.document.createElement("div");
+        const element = htmlElement(a, a.document.createElement("div"));
         element.innerHTML = "<p></p>";
         element.className = "c";
         element.dataset.x = "1";
@@ -283,7 +310,7 @@ describe.each(providers)(
         }
         expect(Object.getPrototypeOf(fromB.childNodes.call(element))).toBe(a.NodeList.prototype);
         // Then: the borrowed objects stay live views of A's element.
-        (fromB.style.call(element) as CSSStyleDeclaration).color = "red";
+        (fromB.style.call(element) as Declaration).color = "red";
         expect(element.getAttribute("style")).toBe("color: red;");
       } finally {
         a.close();
@@ -294,7 +321,7 @@ describe.each(providers)(
 );
 
 describe.each(providers)("$name declaration indices after shorthand writes", ({ Constructor }) => {
-  function names(style: CSSStyleDeclaration): string[] {
+  function names(style: Declaration): string[] {
     const indexed = Array.from({ length: style.length }, (_, index) => style[index] ?? "");
     // The indexed getter, item() and iteration agree on one list.
     expect(indexed.map((_, index) => style.item(index))).toEqual(indexed);
@@ -361,7 +388,7 @@ describe.each(providers)("$name declaration indices after shorthand writes", ({ 
         expect([property, element.style.length, element.style.cssText]).toEqual([property, 0, ""]);
       }
       const font = window.document.createElement("div");
-      font.style.font = "12px serif";
+      font.style.setProperty("font", "12px serif");
       expect(font.style.length).toBe(19);
       expect(names(font.style)).not.toContain("font");
     } finally {
@@ -382,7 +409,7 @@ describe.each(providers)("$name declaration indices after shorthand writes", ({ 
       expect(margin.style.cssText).toBe("margin-right: 2px; margin-bottom: 1px; margin-left: 2px;");
       expect([margin.style.length, margin.style.getPropertyValue("margin")]).toEqual([3, ""]);
       const overflow = window.document.createElement("div");
-      overflow.style.overflow = "hidden";
+      overflow.style.setProperty("overflow", "hidden");
       expect([
         overflow.style.getPropertyValue("overflow-x"),
         overflow.style.getPropertyValue("overflow-y"),
@@ -393,7 +420,7 @@ describe.each(providers)("$name declaration indices after shorthand writes", ({ 
         "hidden",
       ]);
       const border = window.document.createElement("div");
-      border.style.border = "1px solid red";
+      border.style.setProperty("border", "1px solid red");
       expect(border.style.getPropertyValue("border-image-source")).toBe("none");
     } finally {
       window.close();
@@ -406,8 +433,9 @@ describe.each(providers)("$name DOMStringMap and DOMTokenList errors", ({ Constr
     // Given: an element, and an anchor whose relList defines no supported tokens.
     const { window } = new Constructor();
     try {
-      const element = window.document.createElement("div");
+      const element = htmlElement(window, window.document.createElement("div"));
       const anchor = window.document.createElement("a");
+      if (!(anchor instanceof window.HTMLAnchorElement)) throw new Error("Expected an anchor");
       // When/Then: each invalid operation throws jsdom's type and message.
       expect(() => {
         element.dataset["a-b"] = "x";
