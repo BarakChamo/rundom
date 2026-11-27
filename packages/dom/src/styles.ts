@@ -4162,11 +4162,23 @@ function simplifyResolutionCalculations(
 }
 
 /** Parses a CSSOM media query and shares its evaluator with stylesheet media rules. */
-export function parseMediaQuery(query: string): {
+type ParsedMediaQuery = {
   media: string;
   queries: string[];
   matches: (viewport: Viewport) => boolean;
-} {
+};
+// Parsing depends only on the text, and matches() reads the viewport on every call, so one
+// shared, never-mutated parse serves every MediaList, rule and matchMedia list with that text.
+const parsedMediaQueries = new Map<string, ParsedMediaQuery>();
+export function parseMediaQuery(query: string): ParsedMediaQuery {
+  const known = parsedMediaQueries.get(query);
+  if (known) return known;
+  const parsed = readMediaQuery(query);
+  if (query.length <= 1024) rememberSyntax(parsedMediaQueries, query, parsed, 256);
+  return parsed;
+}
+
+function readMediaQuery(query: string): ParsedMediaQuery {
   const css: typeof import("css-tree") & CSSTokenizer = require("./css-runtime.cjs").cssTree;
   const { parse, generate } = css;
   const render = (node: MediaConditionNode) => generate(node as CssNode);
