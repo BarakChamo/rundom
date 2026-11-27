@@ -26,6 +26,8 @@ function computedLonghands(): readonly string[] {
 export type DeclarationImplementation = {
   readonly _length: number;
   readonly [index: number]: string | undefined;
+  /** The CSSOM-visible property names, when they differ from the stored indices. */
+  publicNames?: () => readonly string[] | undefined;
   cssText: string;
   readonly parentRule: object | null;
   getPropertyValue: (property: string) => string;
@@ -179,7 +181,8 @@ type AddedIndices = {
 type MaterializedDeclaration = { style: DeclarationImplementation; indices?: AddedIndices };
 
 function indexedLength(style: DeclarationImplementation, indices?: AddedIndices): number {
-  return style._length + (indices?.names.length ?? 0) + (indices?.last ? 1 : 0);
+  if (!indices) return style.publicNames?.()?.length ?? style._length;
+  return style._length + indices.names.length + (indices.last ? 1 : 0);
 }
 
 function indexedItem(
@@ -187,7 +190,10 @@ function indexedItem(
   index: number,
   indices?: AddedIndices,
 ): string | undefined {
-  if (!indices) return style[index];
+  if (!indices) {
+    const names = style.publicNames?.();
+    return names ? names[index] : style[index];
+  }
   if (indices.last && index === indexedLength(style, indices) - 1) return indices.last;
   let start = 0;
   for (const group of indices.groups) {
@@ -327,8 +333,7 @@ export function createDeclarationViews(input: {
       const target = ComputedView.target(this);
       if (target && typeof computedSource(target) === "function")
         return computedNames(style).length;
-      const indices = inheritedIndices.get(style);
-      return style._length + (indices?.names.length ?? 0) + (indices?.last ? 1 : 0);
+      return indexedLength(style, inheritedIndices.get(style));
     }
     get parentRule(): object | null {
       return receiver(this).parentRule;

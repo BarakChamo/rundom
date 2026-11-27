@@ -292,3 +292,111 @@ describe.each(providers)(
     });
   },
 );
+
+describe.each(providers)("$name declaration indices after shorthand writes", ({ Constructor }) => {
+  function names(style: CSSStyleDeclaration): string[] {
+    const indexed = Array.from({ length: style.length }, (_, index) => style[index] ?? "");
+    // The indexed getter, item() and iteration agree on one list.
+    expect(indexed.map((_, index) => style.item(index))).toEqual(indexed);
+    expect([...style]).toEqual(indexed);
+    return indexed;
+  }
+
+  it("should list only longhands, in jsdom's expansion order", () => {
+    // Given: one element per shorthand write.
+    const { window } = new Constructor();
+    try {
+      const cases: readonly (readonly [string, string, readonly string[]])[] = [
+        ["margin", "1px", ["margin-top", "margin-right", "margin-bottom", "margin-left"]],
+        ["padding", "1px 2px", ["padding-top", "padding-right", "padding-bottom", "padding-left"]],
+        ["border-top", "1px solid", ["border-top-width", "border-top-style", "border-top-color"]],
+        ["overflow", "hidden", ["overflow-x", "overflow-y"]],
+        [
+          "text-decoration",
+          "underline",
+          [
+            "text-decoration-line",
+            "text-decoration-thickness",
+            "text-decoration-style",
+            "text-decoration-color",
+          ],
+        ],
+        [
+          "background",
+          "red",
+          [
+            "background-image",
+            "background-position-x",
+            "background-position-y",
+            "background-size",
+            "background-repeat-x",
+            "background-repeat-y",
+            "background-attachment",
+            "background-origin",
+            "background-clip",
+            "background-color",
+            "background-blend-mode",
+          ],
+        ],
+        [
+          "border",
+          "1px solid red",
+          ["width", "style", "color"]
+            .flatMap((part) =>
+              ["top", "right", "bottom", "left"].map((side) => `border-${side}-${part}`),
+            )
+            .concat(
+              ["source", "slice", "width", "outset", "repeat"].map((p) => `border-image-${p}`),
+            ),
+        ],
+      ];
+      for (const [property, value, expected] of cases) {
+        const element = window.document.createElement("div");
+        // When: the shorthand is written.
+        element.style.setProperty(property, value);
+        // Then: the indices are its longhands only.
+        expect([property, names(element.style)]).toEqual([property, expected]);
+        // When/Then: removing it empties the block.
+        element.style.removeProperty(property);
+        expect([property, element.style.length, element.style.cssText]).toEqual([property, 0, ""]);
+      }
+      const font = window.document.createElement("div");
+      font.style.font = "12px serif";
+      expect(font.style.length).toBe(19);
+      expect(names(font.style)).not.toContain("font");
+    } finally {
+      window.close();
+    }
+  });
+
+  it("should keep a shorthand's other longhands when one of them is removed", () => {
+    // Given: shorthands written over and after a longhand.
+    const { window } = new Constructor();
+    try {
+      const margin = window.document.createElement("div");
+      margin.style.setProperty("margin-top", "3px");
+      margin.style.setProperty("margin", "1px 2px");
+      // When: a covered longhand is removed.
+      expect(margin.style.removeProperty("margin-top")).toBe("1px");
+      // Then: the remaining longhands stay and the shorthand no longer serializes.
+      expect(margin.style.cssText).toBe("margin-right: 2px; margin-bottom: 1px; margin-left: 2px;");
+      expect([margin.style.length, margin.style.getPropertyValue("margin")]).toEqual([3, ""]);
+      const overflow = window.document.createElement("div");
+      overflow.style.overflow = "hidden";
+      expect([
+        overflow.style.getPropertyValue("overflow-x"),
+        overflow.style.getPropertyValue("overflow-y"),
+      ]).toEqual(["hidden", "hidden"]);
+      overflow.style.removeProperty("overflow-x");
+      expect([names(overflow.style), overflow.style.getPropertyValue("overflow-y")]).toEqual([
+        ["overflow-y"],
+        "hidden",
+      ]);
+      const border = window.document.createElement("div");
+      border.style.border = "1px solid red";
+      expect(border.style.getPropertyValue("border-image-source")).toBe("none");
+    } finally {
+      window.close();
+    }
+  });
+});
