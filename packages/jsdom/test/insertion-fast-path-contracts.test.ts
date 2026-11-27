@@ -232,4 +232,36 @@ describe("Node insertion and removal fast path", () => {
     expect(document.getElementById("x")).toBeNull();
     dom.window.close();
   });
+
+  it("drops nested names and IDs when innerHTML replaces a wide list", () => {
+    // Given: a warmed ID index and a list whose items hide a nested named form and an ID.
+    const { dom, document, host } = page();
+    const named = document as unknown as Record<string, unknown>;
+    const rows = Array.from({ length: 40 }, (_, index) => `<li data-row=${index}>${index}</li>`);
+    host.innerHTML = `<ul>${rows.join("")}<li><div><form name=deep></form><b id=inner></b></div></li></ul>`;
+    for (let index = 0; index < 8; index++) document.getElementById("inner");
+    expect(named.deep).toBeInstanceOf(document.defaultView?.HTMLFormElement);
+    // When: the list is replaced by markup without those descendants.
+    host.innerHTML = rows.join("");
+    // Then: neither the nested name nor the nested ID remains reachable.
+    expect(named.deep).toBeUndefined();
+    expect(document.getElementById("inner")).toBeNull();
+    dom.window.close();
+  });
+
+  it("clears parser form association only when a control leaves without its form", () => {
+    // Given: a control associated by the parser with a form that is not its ancestor.
+    const { dom, document, host } = page(
+      "<!doctype html><body><main id=host><div><form id=f></div><input id=i></main>",
+    );
+    const input = document.getElementById("i") as HTMLInputElement;
+    const form = document.getElementById("f");
+    expect(input.form).toBe(form);
+    // When: the control is removed and reinserted.
+    input.remove();
+    host.appendChild(input);
+    // Then: the parser association does not survive the removal.
+    expect(input.form).toBeNull();
+    dom.window.close();
+  });
 });
