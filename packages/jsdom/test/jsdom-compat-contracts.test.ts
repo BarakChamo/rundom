@@ -582,3 +582,32 @@ describe.each(providers)("$name outline shorthand serialization", ({ Constructor
     }
   });
 });
+
+describe.each(providers)("$name shorthands read from their listed longhands", ({ Constructor }) => {
+  it("should serialize shorthands and legacy aliases whose longhands are set to initial", () => {
+    // Given: a declaration per shorthand or alias, holding only the longhands its write listed.
+    const { window } = new Constructor();
+    try {
+      const style = window.document.createElement("div").style;
+      for (const property of [
+        "background-position",
+        "background-repeat",
+        "border-bottom-radius",
+        "page-break-after",
+        "color-adjust",
+        "-webkit-box-shadow",
+      ]) {
+        style.cssText = "";
+        style.setProperty(property, "initial");
+        const longhands = [...style];
+        style.cssText = "";
+        // When: each listed longhand is set separately.
+        for (const longhand of longhands) style.setProperty(longhand, "initial");
+        // Then: the shorthand or alias serializes from them (WPT cssom-getPropertyValue-common-checks).
+        expect([property, style.getPropertyValue(property)]).toEqual([property, "initial"]);
+      }
+    } finally {
+      window.close();
+    }
+  });
+});

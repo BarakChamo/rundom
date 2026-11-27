@@ -74,6 +74,8 @@ import { elementLocalName, xmlSpecial } from "./xml.js";
 const require = createRequire(import.meta.url);
 const arrayValues = Array.prototype.values;
 const setParsedOutline = Symbol();
+const storedPropertyValue = Symbol();
+const referenceShorthandValue = Symbol();
 type Declaration = DeclarationFields &
   Iterable<string> & {
     readonly _length: number;
@@ -1982,6 +1984,28 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
     }
     override getPropertyValue(property: string): string {
+      return this[storedPropertyValue](property) || this[referenceShorthandValue](property);
+    }
+    /**
+     * Serializes a jsdom shorthand or legacy alias from the longhands public indices list
+     * (for example background-position from its -x and -y longhands), which cssstyle cannot
+     * recombine. Empty unless every longhand is stored.
+     */
+    [referenceShorthandValue](property: string): string {
+      if (this._computed || !this._length) return "";
+      if (!referenceShorthands().has(property)) property = canonicalProperty(property);
+      const members = referenceShorthands().get(property)?.flat();
+      if (!members || property === "all") return "";
+      let text = "";
+      for (const member of members) {
+        const value = this._values.get(member);
+        if (value === undefined) return "";
+        text += `${member}: ${value}${this._priorities.get(member) ? " !important" : ""}; `;
+      }
+      return orderedDeclaration(text).getPropertyValue(property);
+    }
+    // Symbol-keyed: computed contexts inherit this class through Object.create, without private slots.
+    [storedPropertyValue](property: string): string {
       if (this._computed && /^(?:(?:column|row)-)?rule$/.test(property)) {
         const frame = computedGapRules.get(this);
         if (frame) return frame.read(property);
