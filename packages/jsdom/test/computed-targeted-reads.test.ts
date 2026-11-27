@@ -157,6 +157,21 @@ describe("Window.getComputedStyle single-property reads", () => {
     }
   });
 
+  it("should read an unstyled box-sizing as its initial value before enumeration", () => {
+    // Given: an authored document whose target has no box-sizing declaration.
+    withWindow("<style>p { display: block }</style><p><b>x</b></p>", (window) => {
+      const leaf = window.document.querySelector("b");
+      if (!leaf) throw new Error("Expected a leaf");
+      // When: box-sizing is read before and after full enumeration.
+      const single = read(window.getComputedStyle(leaf), "boxSizing");
+      const style = window.getComputedStyle(leaf);
+      expect(style.length).toBeGreaterThan(0);
+      // Then: both reads report the jsdom 31 initial value.
+      expect(single).toBe("content-box");
+      expect(style.getPropertyValue("box-sizing")).toBe("content-box");
+    });
+  });
+
   it("should resolve explicit inheritance from a lazily resolved ancestor", () => {
     // Given: an ancestor computed only for its descendants.
     withWindow(

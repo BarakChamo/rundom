@@ -8199,7 +8199,7 @@ export function createStyles(input: {
           if (!winner)
             return custom
               ? (values.custom?.block.values.get(name) ?? "")
-              : (computedInitialValues.get(name) ?? "");
+              : (computedInitialValues.get(name) ?? longhandDefinition(name)?.initial ?? "");
           if (typeof winner !== "string") {
             if (winner.shorthand || variableSyntax.test(winner.value)) return;
             if (
