@@ -1,5 +1,5 @@
 // Checks that the flat stylesheet scanner admits CSS-in-JS output and reproduces the pinned parser's tree exactly.
-import { List, parse, type CssNode } from "css-tree";
+import { generate, List, parse, type CssNode } from "css-tree";
 import { describe, expect, it } from "vitest";
 import { scanFlatStyleSheet } from "../src/css-flat-sheet.js";
 
@@ -92,4 +92,23 @@ describe("scanFlatStyleSheet", () => {
       expect(scanFlatStyleSheet(source, List)).toBeUndefined();
     });
   }
+});
+
+describe("pinned css-tree raw generation", () => {
+  it("serializes backslash-free raw preludes as their own text", () => {
+    // Given: raw rule preludes that style rule construction reads without regenerating
+    const preludes = [
+      ".a#b",
+      ":not(.a)b",
+      "a.5",
+      ".css-x>:not(style)~:not(style)",
+      "[class^=\"ant-\"] [class*=' ant-']",
+      ".a , .b\n\t.c",
+      "-->.a",
+      ".é",
+    ];
+    // When: the pinned generator serializes each one
+    // Then: the output is the raw text unchanged
+    for (const value of preludes) expect(generate({ type: "Raw", value })).toBe(value);
+  });
 });
