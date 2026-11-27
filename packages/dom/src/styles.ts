@@ -1447,7 +1447,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     override get cssText(): string {
       const ordered = orderedStyles.get(this);
       if (ordered) return ordered.cssText;
-      let text = super.cssText;
+      let text = this.#plainBlockText() ?? super.cssText;
       if (shorthandSources?.get(this)?.size) {
         // CSSOM deliberately hides the value of a longhand with a pending shorthand.
         // Feed its specified source into the serializer while preserving original order.
@@ -1534,6 +1534,24 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       return shorthand
         ? serializeOutline(text, shorthand, this.getPropertyPriority("outline"))
         : text;
+    }
+    // cssstyle's block serializer only rewrites shorthands and border declarations; a block
+    // without them is its declarations in order, which skips its per-call normalization.
+    #plainBlockText(): string | undefined {
+      if (this._computed) return;
+      let text = "";
+      for (let i = 0; i < this._length; i++) {
+        const name = this[i];
+        if (
+          name === undefined ||
+          name.startsWith("border") ||
+          propertyDefinitions.get(name)?.longhands
+        )
+          return;
+        const priority = this._priorities.get(name);
+        text += `${text ? " " : ""}${name}: ${this.getPropertyValue(name)}${priority ? ` !${priority}` : ""};`;
+      }
+      return text;
     }
     #updateStyle<T>(write: () => T, publish: "changed" | "always" = "changed"): T {
       const changed = this._onChange;
