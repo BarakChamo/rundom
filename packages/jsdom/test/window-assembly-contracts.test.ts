@@ -355,6 +355,32 @@ describe("Window global surface", () => {
   }
 });
 
+describe("Window animation frame globals", () => {
+  it("installs them as enumerable data right after the Window members when visual", () => {
+    // Given: a Window that pretends to be visual.
+    const { window } = new JSDOM("", { pretendToBeVisual: true });
+    try {
+      // When: its own keys are reflected.
+      const keys = Object.getOwnPropertyNames(window);
+      const start = keys.indexOf("requestAnimationFrame");
+      // Then: the pair follows the last Window member and precedes the unsupported methods.
+      expect(keys.slice(start - 1, start + 3)).toEqual([
+        "close",
+        "requestAnimationFrame",
+        "cancelAnimationFrame",
+        "alert",
+      ]);
+      expect(Object.getOwnPropertyDescriptor(window, "cancelAnimationFrame")).toMatchObject({
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+    } finally {
+      window.close();
+    }
+  });
+});
+
 describe("Node wrapper clone barrier", () => {
   it("rejects host structured cloning of every wrapper allocation path", () => {
     // Given: wrappers from parsing, element creation, text, documents and fragments.

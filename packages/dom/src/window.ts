@@ -19959,7 +19959,7 @@ function buildWindow(
   }
   installWindowProperties();
   const nativeGetComputedStyle = WindowMembers.prototype.getComputedStyle;
-  const windowMemberDescriptors = Object.getOwnPropertyDescriptors(WindowMembers.prototype);
+  const windowMembers = WindowMembers.prototype;
   // Allocate with the public prototype from the outset. Switching a populated
   // member holder's prototype makes subsequent global descriptor installation costly.
   const bindings = construct(WindowMembers, [], Window) as WindowMembers;
@@ -19970,29 +19970,31 @@ function buildWindow(
     DOMException.prototype,
     (context ? Reflect.get(context, "Error") : Error).prototype,
   );
-  // The private member holder is never the public prototype. Install globals
-  // together instead of repeatedly deleting the holder's prototype properties.
-  const globals: PropertyDescriptorMap = {};
-  for (const [name, descriptor] of Object.entries(windowMemberDescriptors)) {
+  // The private member holder is never the public prototype. Copy its members
+  // one by one instead of materializing a descriptor map of the whole holder.
+  for (const name of Object.getOwnPropertyNames(windowMembers)) {
     if (name === "constructor" || Object.hasOwn(window, name)) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(windowMembers, name);
+    if (!descriptor) continue;
     descriptor.enumerable = name === "XPathException" || !/^[A-Z]/.test(name);
-    globals[name] = descriptor;
+    Object.defineProperty(window, name, descriptor);
   }
   if (options.pretendToBeVisual) {
-    globals.requestAnimationFrame = {
-      value: requestAnimationFrame,
-      writable: true,
-      enumerable: true,
-      configurable: true,
-    };
-    globals.cancelAnimationFrame = {
-      value: cancelAnimationFrame,
-      writable: true,
-      enumerable: true,
-      configurable: true,
-    };
+    Object.defineProperties(window, {
+      requestAnimationFrame: {
+        value: requestAnimationFrame,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      },
+      cancelAnimationFrame: {
+        value: cancelAnimationFrame,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      },
+    });
   }
-  Object.defineProperties(window, globals);
   if (context) {
     const realmObject: ObjectConstructor = Reflect.get(context, "Object");
     realmObjectPrototypes.set(realmObject.prototype, token);
@@ -20166,12 +20168,12 @@ function buildWindow(
   }
   defineReplaceable("screen", () => (screen ??= new Screen(screenKey)));
   for (const name of ["localStorage", "sessionStorage"]) {
-    const descriptor = windowMemberDescriptors[name];
+    const descriptor = Object.getOwnPropertyDescriptor(windowMembers, name);
     if (!descriptor) throw new Error(`Missing Window ${name} descriptor`);
     Object.defineProperty(window, name, { ...descriptor, enumerable: true });
   }
   for (const name of ["self", "frames", "parent", "length"]) {
-    const get = windowMemberDescriptors[name]?.get;
+    const get = Object.getOwnPropertyDescriptor(windowMembers, name)?.get;
     if (!get) throw new Error(`Missing Window ${name} getter`);
     defineReplaceable(name, () => Reflect.apply(get, window, []));
   }
@@ -20192,7 +20194,7 @@ function buildWindow(
     "MutationObserver",
     "FileReader",
   ]) {
-    const descriptor = windowMemberDescriptors[name];
+    const descriptor = Object.getOwnPropertyDescriptor(windowMembers, name);
     if (!descriptor?.get) throw new Error(`Missing Window ${name} getter`);
     const get = descriptor.get;
     defineReplaceable(name, () => Reflect.apply(get, window, []));
