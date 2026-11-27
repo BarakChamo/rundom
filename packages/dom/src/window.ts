@@ -1209,6 +1209,7 @@ const realmTreeOperations = new WeakMap<
     frameWindow: (frame: Raw.Element) => ChildRealm["window"] | null;
     frameSVGDocument: (frame: Raw.Element) => object | null;
     focusViewport: () => void;
+    prepareDispatch: (node: object, event: object) => void;
     /** The node's own live member objects, which every Window's getter must return. */
     identity: {
       childNodes: (node: object) => object;
@@ -3262,6 +3263,8 @@ function buildWindow(
       else setAttributeValue(handle, existing, { name, value });
     },
     replaceData,
+    prepareDispatch: (node, event) =>
+      prepareNodeDispatch(node as Node, event as InstanceType<typeof Event>),
     identity: {
       childNodes: (node) => childLists.get(node as Node) ?? createChildList(node as Node),
       children: (node, owner) => childElements(node as Node, owner),
@@ -5298,32 +5301,49 @@ function buildWindow(
       remove(record);
       return child;
     }
-
     override dispatchEvent(event: InstanceType<typeof Event>): boolean {
-      const type = event.type;
-      if (type === "click" || type === "mousedown" || type === "pointerdown" || type === "keydown")
-        noteFocusInput(raw(this), event);
-      // Only dispatch needs wrappers for ancestors; parsing never allocates them.
-      const related = events.relatedTargetOf(event);
-      const relatedRecord = related && nodeRecord(related);
-      if (relatedRecord) {
-        for (
-          let current: Raw.Node | null = relatedRecord.node;
-          current;
-          current = treeParent(current, true)
-        )
-          bindPath(current);
-      }
-      for (
-        let current: Raw.Node | null = raw(this);
-        current;
-        current = treeParent(current, event.composed || Boolean(relatedRecord))
-      ) {
-        bindPath(current);
-      }
-      return super.dispatchEvent(event);
+      prepareNodeDispatch(this, event);
+      return eventTargetDispatch.call(this, event);
     }
   }
+  function prepareNodeDispatch(node: Node, event: InstanceType<typeof Event>): void {
+    const type = event.type;
+    if (type === "click" || type === "mousedown" || type === "pointerdown" || type === "keydown")
+      noteFocusInput(raw(node), event);
+    // Only dispatch needs wrappers for ancestors; parsing never allocates them.
+    const related = events.relatedTargetOf(event);
+    const relatedRecord = related && nodeRecord(related);
+    if (relatedRecord) {
+      for (
+        let current: Raw.Node | null = relatedRecord.node;
+        current;
+        current = treeParent(current, true)
+      )
+        bindPath(current);
+    }
+    for (
+      let current: Raw.Node | null = raw(node);
+      current;
+      current = treeParent(current, event.composed || Boolean(relatedRecord))
+    ) {
+      bindPath(current);
+    }
+  }
+  // EventTarget.prototype.dispatchEvent called directly on a node, from any Window, builds the
+  // same event path as Node dispatch; the node's own Window prepares it.
+  const eventTargetDispatch = EventTarget.prototype.dispatchEvent;
+  Object.defineProperty(EventTarget.prototype, "dispatchEvent", {
+    value: {
+      dispatchEvent(this: unknown, event: InstanceType<typeof Event>): boolean {
+        if (arguments.length === 0) return Reflect.apply(eventTargetDispatch, this, []);
+        const realm = records.read(this as object)?.realm;
+        if (realm === token) prepareNodeDispatch(this as Node, event);
+        else if (realm !== undefined)
+          realmTreeOperations.get(realm)?.prepareDispatch(this as object, event);
+        return eventTargetDispatch.call(this, event);
+      },
+    }.dispatchEvent,
+  });
 
   type Members<T> = CollectionMembers<T>;
   const childLists = new WeakMap<Node, NodeList<Node>>();

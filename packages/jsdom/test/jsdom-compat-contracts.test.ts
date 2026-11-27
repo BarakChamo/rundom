@@ -448,3 +448,58 @@ describe.each(providers)("$name DOMStringMap and DOMTokenList errors", ({ Constr
     }
   });
 });
+
+describe.each(providers)(
+  "$name EventTarget.prototype.dispatchEvent on nodes",
+  ({ Constructor }) => {
+    it("should propagate through the node's ancestors like Node dispatch", () => {
+      // Given: a parsed tree whose nodes have never dispatched, with bubbling listeners.
+      const { window } = new Constructor(`<div id="p"><span id="c"></span></div>`);
+      const other = new Constructor().window;
+      try {
+        const { document } = window;
+        const log: string[] = [];
+        document.getElementById("p")?.addEventListener("x", () => log.push("p"));
+        document.addEventListener("x", () => log.push("document"));
+        window.addEventListener("x", () => log.push("window"));
+        const child = document.getElementById("c");
+        // When: the base method is called directly, from this Window and from another one.
+        window.EventTarget.prototype.dispatchEvent.call(
+          child,
+          new window.Event("x", { bubbles: true }),
+        );
+        log.push("|");
+        const moved = document.createElement("i");
+        document.getElementById("p")?.append(moved);
+        moved.addEventListener("x", () => log.push("moved"));
+        window.EventTarget.prototype.dispatchEvent.call(
+          moved,
+          new window.Event("x", { bubbles: true }),
+        );
+        log.push("|");
+        other.EventTarget.prototype.dispatchEvent.call(
+          child,
+          new window.Event("x", { bubbles: true }),
+        );
+        // Then: every dispatch reaches the current ancestors, the Document and the Window.
+        expect(log).toEqual([
+          "p",
+          "document",
+          "window",
+          "|",
+          "moved",
+          "p",
+          "document",
+          "window",
+          "|",
+          "p",
+          "document",
+          "window",
+        ]);
+      } finally {
+        window.close();
+        other.close();
+      }
+    });
+  },
+);
