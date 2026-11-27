@@ -1,4 +1,5 @@
 // Protects benchmark evidence from invalid inputs and accidentally comparing incomplete or instrumented work.
+import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import {
   dimensionsSchema,
@@ -8,6 +9,12 @@ import {
   distribution,
   summarize,
 } from "../bench/lab/contracts.js";
+import {
+  budgetSchema,
+  checkBudget,
+  parseInstructions,
+  probeScenarios,
+} from "../bench/lab/probe.js";
 
 it("defaults every per-document construction scenario to eight operations per batch", () => {
   // Given: each parse-html variant builds and closes a whole Window per operation.
@@ -442,4 +449,54 @@ it("excludes a successful worker that exceeded its elapsed deadline", () => {
   expect(rows[0]?.processMs.n).toBe(1);
   expect(rows[0]?.processMs.median).toBe(20);
   expect(rows[0]?.comparable).toBe(false);
+});
+
+it("reads instructions retired from BSD time and perf stat, and reports none elsewhere", () => {
+  // Given: stderr from macOS `/usr/bin/time -l`, Linux `perf stat -x,`, and a host with no counter.
+  // When: the probe extracts the process instruction count.
+  // Then: both counter formats yield the count; plain output yields null rather than zero.
+  expect(parseInstructions("  0.14 real  0.09 user\n  961978942  instructions retired\n")).toBe(
+    961978942,
+  );
+  expect(parseInstructions("1320455811,,instructions:u,812345,100.00,,\n")).toBe(1320455811);
+  expect(parseInstructions("<not supported>,,instructions:u,0,100.00,,\n")).toBeNull();
+  expect(parseInstructions("")).toBeNull();
+});
+
+it("reports deterministic counts outside their budget and unmeasured budgeted scenarios", () => {
+  // Given: a budget on module counts and grammar initialization.
+  const counts = {
+    cjsModules: 11,
+    builtinModules: 234,
+    windowKeys: 504,
+    interfaces: 220,
+    cssGrammarInitialized: 1,
+  };
+  const budget = {
+    "globals-read": {
+      cjsModules: [0, 10] as [number, number],
+      cssGrammarInitialized: [0, 0] as [number, number],
+    },
+    click: {},
+  };
+  // When: globals-read loaded one module too many and initialized the grammar, and click was not run.
+  // Then: each breach is named with its bounds; counts inside every bound pass.
+  expect(checkBudget(budget, { "globals-read": counts })).toEqual([
+    "globals-read cjsModules 11 outside [0, 10]",
+    "globals-read cssGrammarInitialized 1 outside [0, 0]",
+    "click was not measured",
+  ]);
+  expect(
+    checkBudget({ "globals-read": { cjsModules: [0, 11] } }, { "globals-read": counts }),
+  ).toEqual([]);
+});
+
+it("budgets only probe scenarios and deterministic counts", () => {
+  // Given: the checked-in budget used by the qualification workflow.
+  const budget = budgetSchema.parse(
+    JSON.parse(readFileSync(new URL("../bench/lab/probe-budget.json", import.meta.url), "utf8")),
+  );
+  // When/Then: every entry names a real scenario, and the schema admits no timing metric.
+  for (const scenario of Object.keys(budget)) expect(probeScenarios).toContain(scenario);
+  expect(budgetSchema.safeParse({ create: { cpuMs: [0, 1] } }).success).toBe(false);
 });

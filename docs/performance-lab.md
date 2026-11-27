@@ -82,3 +82,18 @@ Completed processes must also satisfy the elapsed process budget, even when exit
 | `python3 qualification/compare.py /absolute/old-run /absolute/new-run [--top=N]` | Two downloaded `qualify.yml` runs: WPT named assertions lost/gained, framework pass/fail and per-test duration deltas, matched throughput and peak RSS. |
 
 Download a run's artifacts with `gh run download <run-id> --dir /absolute/new-run`; `compare.py` expects that layout (`wpt-candidate-*`, `local-wpt-candidate`, `vue`, `svelte`, `mui`, `perf-*`). Assertion and pass/fail sets are exact. Durations, wall time, throughput and RSS come from shared CI hosts and only indicate where to look.
+
+## Load-immune probe
+
+Wall-clock time is unusable on a loaded host. `packages/jsdom/bench/lab/probe.ts` runs each fixed scenario in fresh `node --single-threaded` processes and reports numbers that host load barely moves: CommonJS and built-in modules loaded, which RunDOM artifacts loaded, interfaces and own keys installed on the Window, whether the CSS reference grammar was initialized, and whole-process instructions retired. On macOS instructions come from `/usr/bin/time -l`; on Linux from `perf stat -e instructions:u` when the host exposes the counter. Elsewhere the report degrades to in-process CPU time. Instructions cover the whole process, so subtract the `create` scenario (load plus one styled Window) to get a scenario's own share. Under a load average of 16–29, repeated runs within one invocation stayed within 1% in instructions, and separate invocations of two identical builds differed by up to 2%; probe before and after builds alternately and treat instruction differences under 3% as noise.
+
+Scenarios: `create`, `globals-read` (every own Window property read once, as Vitest's `populateGlobal` does), `first-query`, `first-computed-style`, `visibility-reads` (2,000 ancestor-chain `display` plus `visibility` reads), `click` (2,000), `append-remove` (4,000), `domparser-repeat` (100 parses of a 256-row table) and `window-create-close` (100). Loop sizes are fixed so instruction counts compare across builds.
+
+`packages/jsdom/bench/lab/probe-budget.json` holds generous inclusive `[min, max]` bounds on deterministic counts only; timing is never budgeted. The `probe` job in `qualify.yml` runs the probe with the budget, uploads `probe.json` as the `probe` artifact, and cannot fail the workflow. Tighten a bound when an optimization lowers a count; raise one only with the reason in the commit.
+
+| Command                                                                                      | Use                                                                       |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `node packages/jsdom/bench/lab/probe.ts --out /absolute/probe.json`                          | Probe the current `dist` build; table on stderr, JSON to the file.        |
+| `node packages/jsdom/bench/lab/probe.ts --entry /absolute/other/dist/jsdom.cjs --repeat 5`   | Probe another build, such as a frozen baseline, for a before/after table. |
+| `node packages/jsdom/bench/lab/probe.ts --scenarios globals-read,create`                     | Probe selected scenarios only.                                            |
+| `node packages/jsdom/bench/lab/probe.ts --budget packages/jsdom/bench/lab/probe-budget.json` | Also list counts outside their bounds and exit 1 when any is breached.    |
