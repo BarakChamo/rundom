@@ -94,6 +94,32 @@ describe.each([
       window.close();
     }
   });
+
+  it("exposes named document properties for parsed and later inserted elements", () => {
+    // Given: recurring markup with and without document-named elements.
+    const { window } = new Constructor("");
+    try {
+      const parser = new window.DOMParser();
+      for (let round = 0; round < 3; round++) {
+        const plain = parser.parseFromString(markup, "text/html");
+        const named = parser.parseFromString('<form name="f"></form><img name="i">', "text/html");
+        // When: a named element is read from the parse, or inserted after the first property read.
+        // Then: both documents expose exactly their current named elements.
+        expect(Reflect.get(named, "f")).toBe(named.querySelector("form"));
+        expect(Reflect.get(named, "i")).toBe(named.querySelector("img"));
+        expect(Reflect.get(plain, "late")).toBe(undefined);
+        expect("late" in plain).toBe(false);
+        const image = plain.createElement("img");
+        image.setAttribute("name", "late");
+        plain.body?.append(image);
+        expect(Reflect.get(plain, "late")).toBe(image);
+        image.remove();
+        expect(Reflect.get(plain, "late")).toBe(undefined);
+      }
+    } finally {
+      window.close();
+    }
+  });
 });
 
 describe("RunDOM Document.parseHTMLUnsafe with recurring markup", () => {
