@@ -3212,16 +3212,20 @@ function buildWindow(
     invalidateQueryIndices();
   }
 
+  const documentNamedLocalNames = new Set(["embed", "form", "iframe", "img", "object"]);
   function isDocumentNamedElement(node: Raw.Node): node is Raw.Element {
     return (
       tree.isElementNode(node) &&
       node.namespaceURI === html.NS.HTML &&
-      /^(?:embed|form|iframe|img|object)$/.test(elementLocalName(node))
+      documentNamedLocalNames.has(elementLocalName(node))
     );
   }
 
   function contributesDocumentName(node: Raw.Node): boolean {
+    // Every contribution needs a name or ID attribute; most inserted elements have neither.
     return (
+      tree.isElementNode(node) &&
+      node.attrs.length > 0 &&
       isDocumentNamedElement(node) &&
       (Boolean(attribute(node, "name")) ||
         (elementLocalName(node) === "object" && Boolean(attribute(node, "id"))))
@@ -3230,10 +3234,12 @@ function buildWindow(
 
   function containsDocumentNames(root: Raw.Node): boolean {
     if (contributesDocumentName(root)) return true;
-    if (!("childNodes" in root)) return false;
+    if (!("childNodes" in root) || !root.childNodes.length) return false;
     // Only the finite inserted/removed subtree is visited, never the destination document.
-    for (const node of descendants(root)) if (contributesDocumentName(node)) return true;
-    return false;
+    return (
+      firstQueryDescendant({ root, matches: contributesDocumentName, skipPackedText: true }) !==
+      undefined
+    );
   }
 
   function extractName(
@@ -4172,7 +4178,7 @@ function buildWindow(
       // Cleanup may have repopulated keys before a foreign rename; only resource-free edits preserve them.
       idsChanged: canReenter,
     });
-    if (children.length || removed.length)
+    if ((children.length || removed.length) && (xpathVersions || mutationObserversActive()))
       queueMutation({ type: "childList", target, added: children.slice(), removed });
     if (children.length || removed.length) updateSlotsAfterChildren(target);
     if (!effects || effects.hasDetails) reconcileInsertedDetails(children, target);
@@ -4585,7 +4591,7 @@ function buildWindow(
     );
     if (!target || (!added.length && !replacing)) return;
     const indexedReplacement =
-      added.length === 1 && moving === added[0]
+      replacing && added.length === 1 && moving === added[0]
         ? firstIdReplacement({ target, replacing, candidate: added[0], before })
         : undefined;
     const reactions: (() => void)[] | undefined = hasCustomElements ? [] : undefined;
@@ -4663,14 +4669,16 @@ function buildWindow(
         removed.some(containsSheetOwner),
       idsChanged: false,
     });
-    queueMutation({
-      type: "childList",
-      target,
-      added,
-      removed,
-      ...(previous ? { previous } : {}),
-      ...(before && "parentNode" in before ? { next: before } : {}),
-    });
+    // Records are observable only through XPath result versions or registered observers.
+    if (xpathVersions || mutationObserversActive())
+      queueMutation({
+        type: "childList",
+        target,
+        added,
+        removed,
+        ...(previous ? { previous } : {}),
+        ...(before && "parentNode" in before ? { next: before } : {}),
+      });
     updateSlotsAfterChildren(target);
     reconcileInsertedDetails(added, target);
     finishInsertedContent(added, target);
@@ -11630,10 +11638,19 @@ function buildWindow(
     for (const child of added) {
       if (!tree.isElementNode(child) || (!child.childNodes.length && child.tagName !== "details"))
         continue;
-      for (const node of detailsTree(child)) {
-        const name = openDetailsName(node);
-        if (name) (incoming ??= new Map()).set(node, name);
-      }
+      const rootName = openDetailsName(child);
+      if (rootName) (incoming ??= new Map()).set(child, rootName);
+      if (!child.childNodes.length) continue;
+      // Visits the inserted subtree in tree order; the predicate records and never stops early.
+      firstQueryDescendant({
+        root: child,
+        skipPackedText: true,
+        matches: (node) => {
+          const name = openDetailsName(node);
+          if (name) (incoming ??= new Map()).set(node, name);
+          return false;
+        },
+      });
     }
     if (!incoming) return;
     const openNames = new Set<string>();
@@ -20756,17 +20773,33 @@ function buildWindow(
     return checkedness(node) && (connected(node) || formOwner(node) !== null);
   }
 
+  function pushElementChildren(pending: Raw.Element[], children: readonly Raw.ChildNode[]): void {
+    for (let index = children.length - 1; index >= 0; index--) {
+      const child = children[index];
+      if (child && tree.isElementNode(child)) pending.push(child);
+    }
+  }
+
   function finishInsertedContent(roots: readonly Raw.ChildNode[], parent: Raw.ParentNode): void {
     // Capture the eligible descendants before scripts can mutate or remove later entries.
     const active: Raw.Element[] = [];
     const checked: Raw.Element[] = [];
     let hasStyles = false;
     const scriptsEnabled = options.runScripts === "dangerously";
+    const pending: Raw.Element[] = [];
     for (const root of roots) {
       if (!tree.isElementNode(root)) continue;
-      for (const node of shadowIncludingElements(root)) {
+      pending.push(root);
+      // Same shadow-including preorder as shadowIncludingElements, without generator frames.
+      // Each finite inserted subtree edge is visited once.
+      while (pending.length) {
+        const node = pending.pop();
+        if (!node) break;
+        pushElementChildren(pending, node.childNodes);
+        const shadow = shadowRoots.get(node);
+        if (shadow) pushElementChildren(pending, shadow.childNodes);
         if (insertedElementIsCheckedRadio(node)) checked.push(node);
-        const inline = attribute(node, "style");
+        const inline = node.attrs.length ? attribute(node, "style") : null;
         if (inline && /(?:url|image-set|var)\(/i.test(inline)) styles().captureInlineBase(node);
         if (node.tagName === "style" || node.tagName === "link") hasStyles = true;
         if (isFrame(node) || (scriptsEnabled && elementLocalName(node) === "script"))
@@ -20777,7 +20810,8 @@ function buildWindow(
     for (const node of checked) setChecked(node, true);
     if (hasStyles) for (const root of roots) if (tree.isElementNode(root)) scanInsertedStyles(root);
     // Children-changed steps precede post-connection steps of newly inserted descendants.
-    if (tree.isElementNode(parent)) activateInsertedScript(parent);
+    // Only a script parent can be prepared, which requires scripting.
+    if (scriptsEnabled && tree.isElementNode(parent)) activateInsertedScript(parent);
     for (const node of active) {
       if (!connected(node)) continue;
       if (isFrame(node)) startFrame(node);
