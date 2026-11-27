@@ -2,7 +2,10 @@
 import { describe, expect, it } from "vitest";
 import { JSDOM } from "@run-dom/jsdom";
 
-function element(window: JSDOM["window"], selector: string): HTMLElement {
+function element(
+  window: JSDOM["window"],
+  selector: string,
+): InstanceType<JSDOM["window"]["HTMLElement"]> {
   const found = window.document.querySelector(selector);
   if (!(found instanceof window.HTMLElement)) throw new Error(`Expected HTML ${selector}`);
   return found;
@@ -33,7 +36,11 @@ describe("getComputedStyle var() in evaluated longhands", () => {
         const card = element(window, "p");
         const read = () => {
           const style = window.getComputedStyle(card);
-          return [style.boxShadow, style.maxWidth, style.transitionTimingFunction];
+          return [
+            style.getPropertyValue("box-shadow"),
+            style.getPropertyValue("max-width"),
+            style.getPropertyValue("transition-timing-function"),
+          ];
         };
         const initial = read();
         // When: the ancestor switches theme
@@ -57,7 +64,7 @@ describe("getComputedStyle var() in evaluated longhands", () => {
     // Given: a card whose descendant inherits nothing but whose own tokens come from above
     withWindow(`${sheet}<main class=theme><p class=card></p></main>`, (window) => {
       const card = element(window, "p");
-      const origin = () => window.getComputedStyle(card).transformOrigin;
+      const origin = () => window.getComputedStyle(card).getPropertyValue("transform-origin");
       const before = origin();
       // When: the ancestor overrides a token inline, then the theme rule changes through CSSOM
       element(window, "main").style.setProperty("--origin", "5px 6px");
@@ -75,7 +82,7 @@ describe("getComputedStyle var() in evaluated longhands", () => {
     // Given: a card that declares its own origin token
     withWindow(`${sheet}<main class=theme><p class="card own"></p></main>`, (window) => {
       const card = element(window, "p");
-      const origin = () => window.getComputedStyle(card).transformOrigin;
+      const origin = () => window.getComputedStyle(card).getPropertyValue("transform-origin");
       const own = origin();
       // When: the element loses the class declaring the token
       card.className = "card";
@@ -91,11 +98,14 @@ describe("getComputedStyle var() in evaluated longhands", () => {
       (window) => {
         const card = element(window, "p");
         window.innerWidth = 1000;
-        const narrow = window.getComputedStyle(card).maxWidth;
+        const narrow = window.getComputedStyle(card).getPropertyValue("max-width");
         // When: the viewport grows
         window.innerWidth = 2000;
         // Then: the substituted length follows it
-        expect([narrow, window.getComputedStyle(card).maxWidth]).toEqual(["98px", "198px"]);
+        expect([narrow, window.getComputedStyle(card).getPropertyValue("max-width")]).toEqual([
+          "98px",
+          "198px",
+        ]);
       },
     );
   });
@@ -106,11 +116,11 @@ describe("getComputedStyle var() in evaluated longhands", () => {
       `<style>p{--room:attr(data-room type(<length>));max-width:calc(100% - var(--room));transition:color 1s cubic-bezier(0, 0, 1, 1)}</style><p data-room=3px></p>`,
       (window) => {
         const card = element(window, "p");
-        const first = window.getComputedStyle(card).maxWidth;
+        const first = window.getComputedStyle(card).getPropertyValue("max-width");
         // When: the attribute changes
         card.dataset.room = "9px";
         // Then: the substituted value follows the attribute
-        expect([first, window.getComputedStyle(card).maxWidth]).toEqual([
+        expect([first, window.getComputedStyle(card).getPropertyValue("max-width")]).toEqual([
           "calc(100% - 3px)",
           "calc(100% - 9px)",
         ]);
@@ -129,11 +139,11 @@ describe("getComputedStyle repeated computed writes", () => {
         const read = (selector: string) => {
           const style = window.getComputedStyle(element(window, selector));
           return [
-            style.flex,
-            style.flexBasis,
-            style.transitionDuration,
-            style.fontStyle,
-            style.font,
+            style.getPropertyValue("flex"),
+            style.getPropertyValue("flex-basis"),
+            style.getPropertyValue("transition-duration"),
+            style.getPropertyValue("font-style"),
+            style.getPropertyValue("font"),
           ];
         };
         // Then: each shorthand reflects only that element's longhands
@@ -159,17 +169,22 @@ describe("getComputedStyle reuse for inline-styled elements", () => {
         const paragraph = element(window, "p");
         const read = () => {
           const style = window.getComputedStyle(paragraph);
-          return [style.color, style.opacity, style.fontSize, style.display];
+          return [
+            style.getPropertyValue("color"),
+            style.getPropertyValue("opacity"),
+            style.getPropertyValue("font-size"),
+            style.getPropertyValue("display"),
+          ];
         };
         const steps = [read()];
         // When: the declaration changes through the CSSOM, attributes and the ancestor
-        paragraph.style.opacity = "0.25";
+        paragraph.style.setProperty("opacity", "0.25");
         steps.push(read());
         paragraph.style.cssText = "display:block";
         steps.push(read());
         paragraph.setAttribute("style", "color:rgb(3, 3, 3)");
         steps.push(read());
-        element(window, "main").style.fontSize = "30px";
+        element(window, "main").style.setProperty("font-size", "30px");
         steps.push(read());
         paragraph.removeAttribute("style");
         steps.push(read());
@@ -193,14 +208,14 @@ describe("getComputedStyle reuse for inline-styled elements", () => {
     });
     try {
       const paragraph = element(window, "p");
-      const first = window.getComputedStyle(paragraph).backgroundImage;
+      const first = window.getComputedStyle(paragraph).getPropertyValue("background-image");
       // When: the document URL changes without a tree mutation
       window.history.pushState(null, "", "/deeper/page.html");
       // Then: the declaration keeps its declared base
-      expect([first, window.getComputedStyle(paragraph).backgroundImage]).toEqual([
-        'url("https://example.test/a/a.png")',
-        'url("https://example.test/a/a.png")',
-      ]);
+      expect([
+        first,
+        window.getComputedStyle(paragraph).getPropertyValue("background-image"),
+      ]).toEqual(['url("https://example.test/a/a.png")', 'url("https://example.test/a/a.png")']);
     } finally {
       window.close();
     }
@@ -216,15 +231,19 @@ describe("getComputedStyle reuse beside state selectors", () => {
         const { document } = window;
         const button = element(window, "button");
         const [checkbox, required] = document.querySelectorAll("input");
-        if (!checkbox || !required) throw new Error("Expected two inputs");
+        if (
+          !(checkbox instanceof window.HTMLInputElement) ||
+          !(required instanceof window.HTMLInputElement)
+        )
+          throw new Error("Expected two inputs");
         const read = () => {
           const pressed = window.getComputedStyle(button);
           return [
-            pressed.color,
-            pressed.opacity,
-            pressed.display,
-            window.getComputedStyle(checkbox).opacity,
-            window.getComputedStyle(required).outlineStyle,
+            pressed.getPropertyValue("color"),
+            pressed.getPropertyValue("opacity"),
+            pressed.getPropertyValue("display"),
+            window.getComputedStyle(checkbox).getPropertyValue("opacity"),
+            window.getComputedStyle(required).getPropertyValue("outline-style"),
           ];
         };
         const steps = [read()];
@@ -266,7 +285,11 @@ describe("getComputedStyle reuse across focus changes", () => {
         const read = () =>
           nodes.map((node) => {
             const style = window.getComputedStyle(node);
-            return [style.outlineStyle, style.color, style.backgroundColor].join("/");
+            return [
+              style.getPropertyValue("outline-style"),
+              style.getPropertyValue("color"),
+              style.getPropertyValue("background-color"),
+            ].join("/");
           });
         const focus = (selector: string) => element(window, selector).focus();
         const steps = [read()];
