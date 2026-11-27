@@ -1209,6 +1209,16 @@ const realmTreeOperations = new WeakMap<
     frameWindow: (frame: Raw.Element) => ChildRealm["window"] | null;
     frameSVGDocument: (frame: Raw.Element) => object | null;
     focusViewport: () => void;
+    prepareDispatch: (node: object, event: object) => void;
+    /** The node's own live member objects, which every Window's getter must return. */
+    identity: {
+      childNodes: (node: object) => object;
+      children: (node: object, owner: Raw.ParentNode) => object;
+      classList: (node: object) => object;
+      attributes: (node: object) => object;
+      style: (node: object) => object;
+      dataset: (node: object) => object;
+    };
     insert: (
       target: Raw.ParentNode | null,
       node: Raw.Node,
@@ -3253,8 +3263,26 @@ function buildWindow(
       else setAttributeValue(handle, existing, { name, value });
     },
     replaceData,
+    prepareDispatch: (node, event) =>
+      prepareNodeDispatch(node as Node, event as InstanceType<typeof Event>),
+    identity: {
+      childNodes: (node) => childLists.get(node as Node) ?? createChildList(node as Node),
+      children: (node, owner) => childElements(node as Node, owner),
+      classList: (node) => classLists.get(node as Element) ?? createClassList(node as Element),
+      attributes: (node) =>
+        attributeMaps?.get(node as Element) ?? createAttributeMap(node as Element),
+      style: (node) => styles().inlineStyle(element(node as Node)),
+      dataset: (node) => datasetFor(node as Element),
+    },
   });
   if (options.frameElement) nodeRecord(options.frameElement);
+  /** Members of another Window's node, which jsdom reaches through one shared wrapper. */
+  function foreignIdentity(node: object) {
+    const realm = records.read(node)?.realm;
+    return realm === undefined || realm === token
+      ? undefined
+      : realmTreeOperations.get(realm)?.identity;
+  }
   let revision = 0;
   // The source document already owns these members; invalidation must release affected entries immediately.
   let documentIdLookups = 0;
@@ -4906,6 +4934,35 @@ function buildWindow(
     if (formerParent) refreshCustomFormLifecycle([formerParent, node]);
   }
 
+  function createChildList(node: Node): NodeList<Node> {
+    const foreign = foreignIdentity(node);
+    if (foreign) return foreign.childNodes(node) as NodeList<Node>;
+    const owner = container(node);
+    const list = new NodeList(token, {
+      length: () => owner?.childNodes.length ?? 0,
+      at(index) {
+        const child = owner?.childNodes[index];
+        return child ? wrap(child) : undefined;
+      },
+    });
+    childLists.set(node, list);
+    return list;
+  }
+  function createClassList(node: Element): DOMTokenList {
+    const foreign = foreignIdentity(node);
+    if (foreign) return foreign.classList(node) as DOMTokenList;
+    const list = new DOMTokenList(token, node);
+    classLists.set(node, list);
+    return list;
+  }
+  function createAttributeMap(node: Element): NamedNodeMap {
+    const foreign = foreignIdentity(node);
+    if (foreign) return foreign.attributes(node) as NamedNodeMap;
+    const map = new NamedNodeMap(token, node);
+    (attributeMaps ??= new WeakMap()).set(node, map);
+    return map;
+  }
+
   class Node extends EventTarget {
     declare static readonly ELEMENT_NODE: 1;
     declare static readonly ATTRIBUTE_NODE: 2;
@@ -5100,19 +5157,7 @@ function buildWindow(
       return walkParentNode(this, token, raw, wrap);
     }
     get childNodes(): NodeList<Node> {
-      let list = childLists.get(this);
-      if (!list) {
-        const owner = container(this);
-        list = new NodeList(token, {
-          length: () => owner?.childNodes.length ?? 0,
-          at(index) {
-            const child = owner?.childNodes[index];
-            return child ? wrap(child) : undefined;
-          },
-        });
-        childLists.set(this, list);
-      }
-      return list;
+      return childLists.get(this) ?? createChildList(this);
     }
     get isConnected(): boolean {
       return isDocumentRecord(treeRoot(raw(this), true));
@@ -5256,32 +5301,49 @@ function buildWindow(
       remove(record);
       return child;
     }
-
     override dispatchEvent(event: InstanceType<typeof Event>): boolean {
-      const type = event.type;
-      if (type === "click" || type === "mousedown" || type === "pointerdown" || type === "keydown")
-        noteFocusInput(raw(this), event);
-      // Only dispatch needs wrappers for ancestors; parsing never allocates them.
-      const related = events.relatedTargetOf(event);
-      const relatedRecord = related && nodeRecord(related);
-      if (relatedRecord) {
-        for (
-          let current: Raw.Node | null = relatedRecord.node;
-          current;
-          current = treeParent(current, true)
-        )
-          bindPath(current);
-      }
-      for (
-        let current: Raw.Node | null = raw(this);
-        current;
-        current = treeParent(current, event.composed || Boolean(relatedRecord))
-      ) {
-        bindPath(current);
-      }
-      return super.dispatchEvent(event);
+      prepareNodeDispatch(this, event);
+      return eventTargetDispatch.call(this, event);
     }
   }
+  function prepareNodeDispatch(node: Node, event: InstanceType<typeof Event>): void {
+    const type = event.type;
+    if (type === "click" || type === "mousedown" || type === "pointerdown" || type === "keydown")
+      noteFocusInput(raw(node), event);
+    // Only dispatch needs wrappers for ancestors; parsing never allocates them.
+    const related = events.relatedTargetOf(event);
+    const relatedRecord = related && nodeRecord(related);
+    if (relatedRecord) {
+      for (
+        let current: Raw.Node | null = relatedRecord.node;
+        current;
+        current = treeParent(current, true)
+      )
+        bindPath(current);
+    }
+    for (
+      let current: Raw.Node | null = raw(node);
+      current;
+      current = treeParent(current, event.composed || Boolean(relatedRecord))
+    ) {
+      bindPath(current);
+    }
+  }
+  // EventTarget.prototype.dispatchEvent called directly on a node, from any Window, builds the
+  // same event path as Node dispatch; the node's own Window prepares it.
+  const eventTargetDispatch = EventTarget.prototype.dispatchEvent;
+  Object.defineProperty(EventTarget.prototype, "dispatchEvent", {
+    value: {
+      dispatchEvent(this: unknown, event: InstanceType<typeof Event>): boolean {
+        if (arguments.length === 0) return Reflect.apply(eventTargetDispatch, this, []);
+        const realm = records.read(this as object)?.realm;
+        if (realm === token) prepareNodeDispatch(this as Node, event);
+        else if (realm !== undefined)
+          realmTreeOperations.get(realm)?.prepareDispatch(this as object, event);
+        return eventTargetDispatch.call(this, event);
+      },
+    }.dispatchEvent,
+  });
 
   type Members<T> = CollectionMembers<T>;
   const childLists = new WeakMap<Node, NodeList<Node>>();
@@ -6280,6 +6342,8 @@ function buildWindow(
   function childElements(node: Node, owner: Raw.ParentNode): HTMLCollection {
     let list = elementLists.get(node);
     if (!list) {
+      const foreign = foreignIdentity(node);
+      if (foreign) return foreign.children(node, owner) as HTMLCollection;
       list = new HTMLCollection(token, {
         length() {
           let size = 0;
@@ -6550,7 +6614,7 @@ function buildWindow(
       const value = domString(token);
       const { attributeName, supportedTokens } = tokenList(this);
       if (!supportedTokens)
-        throw new TypeError(`The ${attributeName} attribute has no supported tokens`);
+        throw new TypeError(`${attributeName} attribute has no supported tokens`);
       return supportedTokens.has(asciiLower(value));
     }
     declare entries: () => IterableIterator<[number, string]>;
@@ -6745,12 +6809,7 @@ function buildWindow(
       this.part.value = value;
     }
     get classList(): DOMTokenList {
-      let list = classLists.get(this);
-      if (!list) {
-        list = new DOMTokenList(token, this);
-        classLists.set(this, list);
-      }
-      return list;
+      return classLists.get(this) ?? createClassList(this);
     }
     set classList(value: string) {
       this.classList.value = value;
@@ -6762,13 +6821,7 @@ function buildWindow(
       this.setAttribute("id", value);
     }
     get attributes(): NamedNodeMap {
-      const maps = (attributeMaps ??= new WeakMap());
-      let map = maps.get(this);
-      if (!map) {
-        map = new NamedNodeMap(token, this);
-        maps.set(this, map);
-      }
-      return map;
+      return attributeMaps?.get(this) ?? createAttributeMap(this);
     }
     getAttributeNode(name: string): Attr | null {
       const attr = findAttribute(element(this), String(name));
@@ -6863,7 +6916,13 @@ function buildWindow(
       return existing !== undefined;
     }
     get style(): ReturnType<ReturnType<typeof styles>["inlineStyle"]> {
-      return styles().inlineStyle(element(this));
+      const record = records.read(this);
+      if (record?.realm === token && record.kind === "element")
+        return styles().inlineStyle(record.node);
+      const foreign = foreignIdentity(this);
+      return foreign
+        ? (foreign.style(this) as ReturnType<ReturnType<typeof styles>["inlineStyle"]>)
+        : styles().inlineStyle(element(this));
     }
     set style(value: string) {
       styles().inlineStyle(element(this)).cssText = `${value}`;
@@ -7827,7 +7886,7 @@ function buildWindow(
         /-[a-z]/.test(name) ? null : attribute(record, toAttribute(name));
       const write = (name: string, value: unknown) => {
         if (/-[a-z]/.test(name))
-          throw new DOMException("Invalid dataset property name", "SyntaxError");
+          throw new DOMException(`'${name}' is not a valid property name`, "SyntaxError");
         Element.prototype.setAttribute.call(owner, toAttribute(name), String(value));
         return true;
       };
@@ -7885,6 +7944,8 @@ function buildWindow(
     const map = (datasets ??= new WeakMap());
     let dataset = map.get(owner);
     if (!dataset) {
+      const foreign = foreignIdentity(owner);
+      if (foreign) return foreign.dataset(owner) as DOMStringMap;
       dataset = new DOMStringMap(token, owner);
       map.set(owner, dataset);
     }
@@ -20652,14 +20713,19 @@ function buildWindow(
     return treeRoot(node, true) === source;
   }
 
-  function startStyle(node: Raw.Element): void {
+  function startStyle(node: Raw.Element, base?: string): void {
     const loader = options.loadTextResource;
     if (closed || !loader || node.namespaceURI !== html.NS.HTML || node.tagName !== "link") return;
     const href = attribute(node, "href");
     const isStylesheet = asciiLower(attribute(node, "rel") ?? "")
       .split(/[\t\n\f\r ]+/)
       .includes("stylesheet");
-    const target = href && isStylesheet ? parseElementURL(node, href) : null;
+    const target =
+      href && isStylesheet
+        ? base === undefined
+          ? parseElementURL(node, href)
+          : parseDocumentURL({ value: href, base, encoding: documentEncoding(ownerRecord(node)) })
+        : null;
     if (!target) {
       removeLinkedStylesheet(node);
       return;
@@ -21147,6 +21213,25 @@ function buildWindow(
       startParsedFrames(descendants(source));
   }
 
+  /**
+   * The parser handled elements before the first `<base href>` while the fallback was still the
+   * document base, so their sheets, links and style attributes keep it. Undefined without a base.
+   * Positions are read after parsing, so a script that moved the base mid-load is not replayed.
+   */
+  function baseBeforeFirstBaseElement(): ((node: Raw.Element) => string | undefined) | undefined {
+    const fallback = baseURL(source, "fallback");
+    if (baseURL() === fallback) return;
+    const before = new Set<Raw.Element>();
+    for (const node of descendants(source)) {
+      if (!tree.isElementNode(node)) continue;
+      if (isBaseElement(node) && attribute(node, "href") !== null)
+        return (element) => (before.has(element) ? fallback : undefined);
+      if (node.tagName === "style" || node.tagName === "link" || attribute(node, "style") !== null)
+        before.add(node);
+    }
+    return;
+  }
+
   let parsedDetailsTasksScheduled = false;
   let didFinishInitialInput = false;
   function finishLoading(
@@ -21157,13 +21242,17 @@ function buildWindow(
     const generation = loadGeneration;
     const current = () => !closed && !documentLoadStopped && generation === loadGeneration;
     const keepsEmptyNames = !didFinishInitialInput && options.canKeepInitialDocumentNamesEmpty;
+    const parsedBase =
+      didFinishInitialInput || !(options.hasMarkupStyles || options.hasInlineURLStyles)
+        ? undefined
+        : baseBeforeFirstBaseElement();
     if (!didFinishInitialInput && options.hasInlineURLStyles) {
       for (const node of descendants(source)) {
         if (
           tree.isElementNode(node) &&
           /(?:url|image-set|var)\(/i.test(attribute(node, "style") ?? "")
         )
-          styles().captureInlineBase(node);
+          styles().captureInlineBase(node, parsedBase?.(node));
       }
     }
     didFinishInitialInput = true;
@@ -21182,10 +21271,16 @@ function buildWindow(
     bindBodyHandlers();
     if (!didScanStyles && options.hasMarkupStyles && !closed) {
       didScanStyles = true;
+      if (parsedBase)
+        for (const node of descendants(source)) {
+          const base = tree.isElementNode(node) && node.tagName === "style" && parsedBase(node);
+          if (base && connected(node)) styles().applyInline(node, base);
+        }
       styles().initialize();
       if (options.loadTextResource) {
         for (const child of descendants(source)) {
-          if (tree.isElementNode(child) && child.tagName === "link") startStyle(child);
+          if (tree.isElementNode(child) && child.tagName === "link")
+            startStyle(child, parsedBase?.(child));
         }
       }
     }

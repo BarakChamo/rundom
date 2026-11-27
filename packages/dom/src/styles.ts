@@ -1127,6 +1127,7 @@ function cssInput(value: unknown, replaceEscapedEOF = true): string {
 }
 
 const cssNumericToken = /^[+-]?(?:\d*\.\d+|\d+)(?:e[+-]?\d+)?$/i;
+const alphaValueProperty = /^(?:(?:fill-|stroke-|flood-|stop-)?opacity|shape-image-threshold)$/;
 
 function normalizePropertyInput(property: string, value: string): string {
   if (property.startsWith("--") || /var\(/i.test(value)) return value;
@@ -1176,6 +1177,21 @@ function normalizePropertyInput(property: string, value: string): string {
   }
 }
 
+let shorthandNames: ReadonlyMap<string, readonly (readonly string[])[]> | undefined;
+let shorthandMembers: ReadonlySet<string> | undefined;
+/** Every longhand that some jsdom shorthand other than `all` covers. */
+function coveredLonghands(): ReadonlySet<string> {
+  return (shorthandMembers ??= new Set(
+    [...referenceShorthands()].flatMap(([name, groups]) => (name === "all" ? [] : groups.flat())),
+  ));
+}
+/** jsdom's shorthand table: each shorthand's longhand groups. */
+function referenceShorthands(): ReadonlyMap<string, readonly (readonly string[])[]> {
+  return (shorthandNames ??= require("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js"));
+}
+// Longhands whose shorthand cssstyle stores without separate longhand entries.
+const unstoredLonghand = /^(?:overflow-[xy]|border-image-|background-(?:position|repeat)-[xy]$)/;
+
 const flattenedCSSLonghands = new Map<string, readonly string[]>();
 function shorthandLonghands(
   name: string,
@@ -1224,6 +1240,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     _updating: boolean;
     _onChange: ((text: string) => void) | undefined;
     _setProperty(property: string, value: string, priority: string): void;
+    _removeIndexedProperty(index: number): void;
+    _clearIndexedProperties(): void;
     _borderSetter(property: string, value: unknown, priority: string | undefined): void;
     _positionLonghandSetter(
       property: string,
@@ -1351,6 +1369,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
 
     override _setProperty(property: string, value: string, priority?: string): void {
       this.#serialized = undefined;
+      this.#indexRevision++;
       if (calculationSources?.get(this)?.delete(property)) this.#precisionRevision++;
       shorthandSources?.get(this)?.delete(property);
       if (value && urlDependentValue.test(value)) {
@@ -1451,6 +1470,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
 
     restoreBlock(block: DeclarationBlock): void {
       this.#serialized = undefined;
+      this.#indexRevision++;
       this._values = new Map(block.values);
       this._priorities = new Map(block.priorities);
       this._length = block.properties.length;
@@ -1551,6 +1571,42 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       return shorthand
         ? serializeOutline(text, shorthand, this.getPropertyPriority("outline"))
         : text;
+    }
+    // Advances whenever the stored index list changes.
+    #indexRevision = 0;
+    #publicNames: { revision: number; names: readonly string[] | undefined } | undefined;
+    override _removeIndexedProperty(index: number): void {
+      this.#indexRevision++;
+      super._removeIndexedProperty(index);
+    }
+    override _clearIndexedProperties(): void {
+      this.#indexRevision++;
+      super._clearIndexedProperties();
+    }
+    /**
+     * CSSOM indexes only longhands; cssstyle also indexes the shorthands it stores. A stored
+     * shorthand whose longhands are all stored is hidden, and any other expands in place into
+     * jsdom's longhand order. Undefined when the stored list is already public.
+     */
+    publicNames(): readonly string[] | undefined {
+      if (this._computed) return;
+      if (this.#publicNames?.revision === this.#indexRevision) return this.#publicNames.names;
+      const shorthands = referenceShorthands();
+      let names: string[] | undefined;
+      for (let i = 0; i < this._length && !names; i++)
+        if (shorthands.has(this[i] ?? "")) names = [];
+      if (names) {
+        const listed = new Set<string>();
+        for (let i = 0; i < this._length; i++) {
+          const name = this[i] ?? "";
+          const members = shorthands.get(name)?.flat();
+          if (members?.every((member) => this._values.has(member))) continue;
+          for (const member of members ?? [name]) listed.add(member);
+        }
+        names = [...listed];
+      }
+      this.#publicNames = { revision: this.#indexRevision, names };
+      return names;
     }
     // cssstyle's block serializer only rewrites shorthands and border declarations; a block
     // without them is its declarations in order, which skips its per-call normalization.
@@ -1735,12 +1791,20 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           ? ["background-repeat-x", "background-repeat-y"]
           : name === "outline"
             ? outlineLonghands
-            : (grammarLonghands(name) ?? shorthandLonghands(name, propertyDefinitions));
+            : name === "border"
+              ? // The border shorthand also resets border-image, which its setter stores.
+                [
+                  ...shorthandLonghands(name, propertyDefinitions),
+                  "border-image",
+                  ...(grammarLonghands("border-image") ?? []),
+                ]
+              : (grammarLonghands(name) ?? shorthandLonghands(name, propertyDefinitions));
       if (this._readonly) return super.removeProperty(property);
       if (name.startsWith("background-") && super.getPropertyValue(name))
         super.removeProperty("background");
       if (!longhands.length && !isPhysicalBorder(name)) {
         shorthandSources?.get(this)?.delete(name);
+        if (coveredLonghands().has(name)) this.#releaseStoredShorthands(name);
         return super.removeProperty(property);
       }
       const previous = this.getPropertyValue(name);
@@ -1766,6 +1830,40 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       if (original !== undefined && original !== this.cssText) changed?.(this.cssText);
       return previous;
+    }
+    /** A longhand cssstyle keeps only inside its stored shorthand's value. */
+    #expandedLonghand(longhand: string): string | undefined {
+      for (let i = 0; i < this._length; i++) {
+        const shorthand = this[i];
+        if (!shorthand || !referenceShorthands().get(shorthand)?.flat().includes(longhand))
+          continue;
+        const entries = expandedDeclaration(shorthand, super.getPropertyValue(shorthand))?.entries;
+        const value = entries?.find(([name]) => name === longhand)?.[1];
+        if (value) return value;
+      }
+      return;
+    }
+    // cssstyle serializes a stored shorthand entry over its longhands. CSSOM stores only
+    // longhands, so removing one drops that entry and keeps the shorthand's other longhands.
+    #releaseStoredShorthands(longhand: string): void {
+      for (let i = this._length - 1; i >= 0; i--) {
+        const shorthand = this[i];
+        const groups = shorthand && referenceShorthands().get(shorthand);
+        const members = groups && groups.flat();
+        if (!shorthand || shorthand === "all" || !members?.includes(longhand)) continue;
+        const priority = super.getPropertyPriority(shorthand);
+        let expanded: Map<string, string> | undefined;
+        for (const member of members) {
+          if (member === longhand || this._values.has(member)) continue;
+          const value =
+            this.getPropertyValue(member) ||
+            (expanded ??= new Map(
+              expandedDeclaration(shorthand, super.getPropertyValue(shorthand))?.entries,
+            )).get(member);
+          if (value) this._setProperty(member, value, priority);
+        }
+        super.removeProperty(shorthand);
+      }
     }
     override getPropertyPriority(property: string): string {
       property = canonicalProperty(property);
@@ -1894,6 +1992,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           (child) => super.getPropertyPriority(child),
         );
       const value = super.getPropertyValue(property);
+      if (!value && !this._computed && unstoredLonghand.test(property)) {
+        const expanded = this.#expandedLonghand(property);
+        if (expanded) return expanded;
+      }
       if (!value && !this._computed && /^(?:margin|inset)(?:-block|-inline)?$/.test(property)) {
         const children = propertyDefinitions.get(property)?.longhands;
         if (children?.length) {
@@ -2217,7 +2319,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         (/^-webkit-box-(?:flex|ordinal-group)$/.test(name) ||
           (!name.startsWith("--") &&
             /^[-+]?(?:[0-9]*\.[0-9]+|[0-9]+)(?:e[+-]?[0-9]+)?(?:[a-z]+|%)?$/i.test(value) &&
-            (value.length >= 8 || value === "-0")))
+            (value.length >= 8 ||
+              value === "-0" ||
+              // <alpha-value> percentages specify as numbers.
+              (value.endsWith("%") && alphaValueProperty.test(name)))))
       ) {
         const serialized = specifiedDeclaration(name, value);
         if (serialized !== undefined) value = serialized;
@@ -6822,7 +6927,8 @@ export function createStyles(input: {
     if (existing) delete sheetState(existing.sheet).owner;
     if (elementLocalName(node) === "style") node[stylesheetSourceVersion] = sourceVersion;
     const sheet = createAttachedSheet(href === undefined ? { owner: node } : { owner: node, href });
-    if (href === undefined) sheetState(sheet).base = input.baseURL(input.ownerDocument(node));
+    if (href === undefined)
+      sheetState(sheet).base = base ?? input.baseURL(input.ownerDocument(node));
     encoding ??= input.documentEncoding(node);
     sheetState(sheet).encoding = encoding;
     // Parse diagnostics and import requests are observable at attachment. For a large
@@ -6857,7 +6963,8 @@ export function createStyles(input: {
     if (state.media || media) record.sheet.media = media;
   }
 
-  function inlineStyle(node: Raw.Element): Declaration {
+  /** `base` resolves the attribute's initial URLs; later writes read the live document base. */
+  function inlineStyle(node: Raw.Element, base?: string): Declaration {
     const inline = (inlineStyles ??= new WeakMap());
     const existing = inline.get(node);
     if (existing) return existing.style;
@@ -6871,7 +6978,8 @@ export function createStyles(input: {
       syncing: false,
     };
     inline.set(node, state);
-    inlineBaseReaders.set(state.style, () => input.baseURL(input.ownerDocument(node)));
+    const liveBase = () => input.baseURL(input.ownerDocument(node));
+    inlineBaseReaders.set(state.style, base === undefined ? liveBase : () => base);
     const text = node.attrs.find((attr) => !attr.namespace && attr.name === "style")?.value;
     if (text) {
       const block = parseInlineBlock(text);
@@ -6887,6 +6995,7 @@ export function createStyles(input: {
         }
       } else syncInlineStyle(node);
     }
+    if (base !== undefined) inlineBaseReaders.set(state.style, liveBase);
     const view = publicInlineViews?.get(node);
     if (view) views().materializedInline(view, state.style);
     return state.style;
@@ -6910,7 +7019,7 @@ export function createStyles(input: {
     return view;
   }
 
-  function applyInline(node: Raw.Element): Sheet | null {
+  function applyInline(node: Raw.Element, base?: string): Sheet | null {
     const type = node.attrs.find((attr) => !attr.namespace && attr.name === "type")?.value;
     if (node.namespaceURI !== html.NS.HTML || (type && type.toLowerCase() !== "text/css")) {
       return null;
@@ -6920,7 +7029,7 @@ export function createStyles(input: {
       if (tree.isTextNode(child)) text += child.value;
       else if (tree.isCommentNode(child) && xmlSpecial(child)?.kind === "cdata") text += child.data;
     }
-    return applySheet(node, text);
+    return applySheet(node, text, base);
   }
 
   type CollectionSnapshot = {
