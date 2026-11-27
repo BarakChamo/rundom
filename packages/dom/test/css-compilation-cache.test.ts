@@ -9,11 +9,14 @@ import { Script } from "node:vm";
 import { describe, expect, it } from "vitest";
 
 describe("optional CSS compilation data", () => {
-  for (const mode of ["matched", "missing", "stale", "different-flags"] as const) {
+  for (const mode of ["matched", "missing", "stale", "different-flags", "non-ascii"] as const) {
     it(`executes current source with ${mode} compilation data`, () => {
       // Given: a complete CommonJS source and optional build-host compilation data.
       const directory = mkdtempSync(join(tmpdir(), "run-dom-css-cache-"));
-      const original = 'module.exports = { value: "original", receiver: this === exports };';
+      const original =
+        mode === "non-ascii"
+          ? 'module.exports = { value: "origin\u00e1l \u{1F600}", receiver: this === exports };'
+          : 'module.exports = { value: "original", receiver: this === exports };';
       const current = mode === "stale" ? original.replace("original", "changed!") : original;
       try {
         const filename = join(directory, "css-runtime-implementation.cjs");
@@ -44,7 +47,15 @@ describe("optional CSS compilation data", () => {
         );
         // Then: current source always wins, and the CommonJS receiver remains module.exports.
         expect(output.trim()).toBe(
-          JSON.stringify({ value: mode === "stale" ? "changed!" : "original", receiver: true }),
+          JSON.stringify({
+            value:
+              mode === "stale"
+                ? "changed!"
+                : mode === "non-ascii"
+                  ? "origin\u00e1l \u{1F600}"
+                  : "original",
+            receiver: true,
+          }),
         );
         expect(readFileSync(filename, "utf8")).toBe(current);
       } finally {
