@@ -55,7 +55,7 @@ const providers = [
   { name: "jsdom", environment: "jsdom", dependencies: { jsdom: "31.0.1" } },
   { name: "happy-dom", environment: "happy-dom", dependencies: { "happy-dom": "21.0.4" } },
   ...(options["include-turbo"]
-    ? [{ name: "turbo-dom", environment: "", dependencies: { "@miaskiewicz/turbo-dom": "0.7.1" } }]
+    ? [{ name: "turbo-dom", environment: "", dependencies: { "@miaskiewicz/turbo-dom": "0.8.6" } }]
     : []),
 ];
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -263,7 +263,7 @@ const report = {
   rounds,
   pools,
   versions: { ...common, jsdom: "31.0.1", "happy-dom": "21.0.4", "@run-dom/jsdom": "0.0.1" },
-  ...(options["include-turbo"] ? { turboDOMVersion: "0.7.1" } : {}),
+  ...(options["include-turbo"] ? { turboDOMVersion: "0.8.6" } : {}),
   fixtureSHA256: hash(fixture),
   ...(stressFixture ? { stressFixtureSHA256: hash(stressFixture), testsPerTrial: testCount } : {}),
   driverSHA256: hash(readFileSync(fileURLToPath(import.meta.url))),
