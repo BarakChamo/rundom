@@ -41,11 +41,17 @@ export function prepareScenario(
     observed = 0;
   let cleanup = () => {};
   let run: Prepared["run"];
+  // Window shape is fixed per provider; the first globals-read operation records it for later windows.
+  let globalCount: number | undefined;
   if (scenario === "control") {
     run = (count) => {
       for (let index = 0; index < count; index++) total++;
     };
-  } else if (scenario === "windows-create-close" || scenario.startsWith("parse-html")) {
+  } else if (
+    scenario === "windows-create-close" ||
+    scenario === "globals-read" ||
+    scenario.startsWith("parse-html")
+  ) {
     run = async (count) => {
       for (let index = 0; index < count; index++) {
         const variant =
@@ -58,11 +64,25 @@ export function prepareScenario(
           variant === null
             ? markup
             : markup.replace('id="fixture"', `id="fixture" data-variant="${variant}"`);
-        const window = create(scenario === "windows-create-close" ? "" : source);
+        const window = create(
+          scenario === "windows-create-close" || scenario === "globals-read" ? "" : source,
+        );
         try {
           const document = window.document;
           if (!document.body) failures++;
-          if (scenario !== "windows-create-close") {
+          if (scenario === "globals-read") {
+            // Mirrors Vitest's populateGlobal: one unguarded read of every own Window property.
+            const names = Object.getOwnPropertyNames(window);
+            let read = 0;
+            for (const name of names) {
+              Reflect.get(window, name);
+              read++;
+            }
+            globalCount ??= read;
+            if (read !== globalCount || Reflect.get(window, "document") !== document) failures++;
+            for (const name of ["Node", "Element", "HTMLElement", "Document", "Event"])
+              if (typeof Reflect.get(window, name) !== "function") failures++;
+          } else if (scenario !== "windows-create-close") {
             if (scenario === "parse-html-sparse") {
               for (const row of [0, Math.floor(dimensions.size / 2), dimensions.size - 1]) {
                 const node = document.getElementById(`row${row}`);

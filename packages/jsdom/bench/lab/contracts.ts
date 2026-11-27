@@ -11,6 +11,7 @@ export const providerSchema = z.enum([
 export const scenarioSchema = z.enum([
   "control",
   "windows-create-close",
+  "globals-read",
   "parse-html",
   "parse-html-unique",
   "parse-html-sparse",
@@ -72,6 +73,7 @@ export type Scenario = z.infer<typeof scenarioSchema>;
 export type Mode = z.infer<typeof modeSchema>;
 const constructionScenarios: ReadonlySet<Scenario> = new Set([
   "windows-create-close",
+  "globals-read",
   "clone-subtree",
   "serialize",
 ]);

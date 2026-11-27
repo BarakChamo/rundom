@@ -21,6 +21,7 @@ it("defaults every per-document construction scenario to eight operations per ba
     "parse-html-update",
     "parse-html-unique",
     "windows-create-close",
+    "globals-read",
     "clone-subtree",
     "serialize",
   ] as const)
@@ -125,8 +126,8 @@ it("checks query invalidation, event delivery and independent windows against a 
     import assert from 'node:assert/strict';
     import { prepareScenario } from './bench/lab/scenarios.ts';
     import { dimensionsSchema } from './bench/lab/contracts.ts';
-    for (const name of ['list-reconcile','interaction-state','parse-html-unique','parse-html-rotate','parse-html-traverse','query-after-mutation','query-diverse','query-batched-mutation','query-all-iterate','query-snapshot','events-dispatch','events-default-action','mutation-observer','style-rule-invalidation','style-inheritance','style-snapshot','windows-live','windows-style-live']) {
-      const scenario = prepareScenario(name, markup => new JSDOM(markup).window, dimensionsSchema.parse({size:2,windows:2}), process.cwd());
+    for (const name of ['globals-read','list-reconcile','interaction-state','parse-html-unique','parse-html-rotate','parse-html-traverse','query-after-mutation','query-diverse','query-batched-mutation','query-all-iterate','query-snapshot','events-dispatch','events-default-action','mutation-observer','style-rule-invalidation','style-inheritance','style-snapshot','windows-live','windows-style-live']) {
+      const scenario = prepareScenario(name, markup => new JSDOM(markup, {url:'https://example.test/'}).window, dimensionsSchema.parse({size:2,windows:2}), process.cwd());
       try { await scenario.run(1); assert.throws(()=>scenario.verify(2),/different operation count/); scenario.verify(1); await scenario.run(5); scenario.verify(6); } finally { await scenario.close(); }
     }
   `;
@@ -245,6 +246,33 @@ it("rejects stale parse inputs and omitted full-row reads", async () => {
     ]) {
       const scenario=prepareScenario(name,create,dimensionsSchema.parse({size:2}),process.cwd());
       try { await scenario.run(3); assert.throws(()=>scenario.verify(3),/did not perform equal checked work/); }
+      finally { await scenario.close(); }
+    }
+  `;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  expect(result.status, result.stderr).toBe(0);
+});
+
+it("rejects a missing constructor or a drifting global count while reading every Window global", async () => {
+  // Given: Vitest reads every own Window property per test file, so a cheap partial Window must not pass.
+  // When: one provider omits HTMLElement and another adds a global to every later Window.
+  // Then: both runs fail the equal-checked-work verification.
+  const { spawnSync } = await import("node:child_process");
+  const script = `
+    import assert from 'node:assert/strict';
+    import { JSDOM } from '@run-dom/jsdom';
+    import { prepareScenario } from './bench/lab/scenarios.ts';
+    import { dimensionsSchema } from './bench/lab/contracts.ts';
+    let created=0;
+    for (const create of [
+      markup=>{const window=new JSDOM(markup,{url:'https://example.test/'}).window;delete window.HTMLElement;return window;},
+      markup=>{const window=new JSDOM(markup,{url:'https://example.test/'}).window;if(created++)window.extraGlobal=1;return window;}
+    ]) {
+      const scenario=prepareScenario('globals-read',create,dimensionsSchema.parse({size:2}),process.cwd());
+      try { await scenario.run(2); assert.throws(()=>scenario.verify(2),/did not perform equal checked work/); }
       finally { await scenario.close(); }
     }
   `;
