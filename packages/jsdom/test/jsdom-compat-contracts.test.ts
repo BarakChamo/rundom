@@ -559,3 +559,26 @@ describe.each(providers)("$name declaration block shorthand serialization", ({ C
     }
   });
 });
+
+describe.each(providers)("$name outline shorthand serialization", ({ Constructor }) => {
+  it.each([
+    ["outline: none", "medium"],
+    ["outline: 2px dotted blue", "2px dotted blue"],
+    ["outline: blue dotted 2px", "2px dotted blue"],
+    ["outline: auto", "auto"],
+    ["outline: thin dashed currentcolor !important", "thin dashed currentcolor"],
+  ])("should serialize %j as width, style, color without initial components", (input, value) => {
+    // Given: an element whose style attribute declares the outline shorthand.
+    const { window } = new Constructor(`<div style="${input}"></div>`);
+    try {
+      const style = htmlElement(window, window.document.querySelector("div")).style;
+      // Then: the shorthand value and the block use the grammar's component order.
+      expect(style.getPropertyValue("outline")).toBe(value);
+      expect(style.cssText).toBe(
+        `outline: ${value}${input.endsWith("!important") ? " !important" : ""};`,
+      );
+    } finally {
+      window.close();
+    }
+  });
+});
