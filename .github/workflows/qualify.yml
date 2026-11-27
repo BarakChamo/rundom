@@ -2,6 +2,8 @@ name: jsdom 31 qualification
 on:
   push:
     branches: [qualification/jsdom-31-0-1]
+  pull_request:
+    branches: [qualification/jsdom-31-0-1]
 permissions:
   contents: read
 jobs:
