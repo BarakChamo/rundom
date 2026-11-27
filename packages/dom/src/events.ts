@@ -295,10 +295,10 @@ export function createEvents(
       return eventRecord(this).trust === true;
     },
   };
-  const trustDescriptor = {
-    ...Object.getOwnPropertyDescriptor(trustGetter, "isTrusted"),
-    configurable: false,
-  };
+  const trustGet = Object.getOwnPropertyDescriptor(trustGetter, "isTrusted")?.get;
+  if (!trustGet) throw new Error("The isTrusted getter must exist");
+  // Omitted set/configurable default to undefined/false; the smaller descriptor converts faster.
+  const trustDescriptor = { get: trustGet, enumerable: true };
 
   let cancelBeforeUnload: (event: Event) => void;
   class Event {
