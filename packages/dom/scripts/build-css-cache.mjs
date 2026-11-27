@@ -38,12 +38,12 @@ cacheArtifact("css-runtime", (runtime) => {
     Reflect.get(runtime, name);
 });
 // Module initialization runs once per process, so its compiled factories are worth caching.
-// Interfaces come first: the engine's wrapper requests resolve to this registered instance.
-// build-css-runtime.mjs passes the bundled wrapper paths as a JSON argument.
-const interfacePaths = JSON.parse(process.argv[2] ?? "[]");
-cacheArtifact("css-reference-interfaces", (interfaces) => {
-  for (const path of interfacePaths) interfaces.load(path);
-});
+// Table artifacts come first, so the engine's requests into them resolve to these registered
+// instances. build-css-runtime.mjs passes each table artifact's module paths as a JSON argument.
+for (const [name, paths] of Object.entries(JSON.parse(process.argv[2] ?? "{}")))
+  cacheArtifact(name, (table) => {
+    for (const path of paths) table.load(path);
+  });
 cacheArtifact("css-reference", (reference) => {
   for (const path of [
     "lib/jsdom/living/css/CSSStyleDeclaration-impl.js",

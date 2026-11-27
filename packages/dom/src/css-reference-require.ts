@@ -9,11 +9,20 @@ const requireArtifact = createNodeRequire(import.meta.url);
 type Artifact = { load(path: string): unknown };
 let reference: Artifact | undefined;
 let interfaces: Artifact | undefined;
+let properties: (Artifact & { has(path: string): boolean }) | undefined;
 
-// Interface wrappers live in a small artifact so reading CSSOM globals never loads the engine.
+// Interface wrappers and property tables live in small artifacts, so reading CSSOM globals or
+// resolving declarations that need only the property tables never loads the engine.
 function load(path: string): unknown {
-  return path.startsWith(interfacePrefix)
-    ? (interfaces ??= requireArtifact("./css-reference-interfaces.cjs") as Artifact).load(path)
+  if (path.startsWith(interfacePrefix))
+    return (interfaces ??= requireArtifact("./css-reference-interfaces.cjs") as Artifact).load(
+      path,
+    );
+  properties ??= requireArtifact("./css-reference-properties.cjs") as Artifact & {
+    has(path: string): boolean;
+  };
+  return properties.has(path)
+    ? properties.load(path)
     : (reference ??= requireArtifact("./css-reference.cjs") as Artifact).load(path);
 }
 

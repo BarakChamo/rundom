@@ -121,20 +121,76 @@ const referencePlugins = [
     },
   },
 ];
-// Reading interface objects must not load the CSS engine, so the generated IDL wrappers RunDOM
-// names ship as css-reference-interfaces and everything else as css-reference. Requests that cross
-// between the two become proxies to the other artifact's load(), keeping one reference module graph.
+// The reference graph is partitioned so each first use loads only what it needs: reading interface
+// objects loads the generated IDL wrappers RunDOM names (css-reference-interfaces), resolving simple
+// declarations loads the property tables (css-reference-properties), and everything else ships as
+// the engine (css-reference). Requests that cross artifacts become proxies to the owning artifact's
+// load(), keeping one reference module graph.
 const referencePrefix = "rundom-css-reference/";
 const packageRoot = dirname(
   realpathSync(fileURLToPath(import.meta.resolve("rundom-css-reference/package.json"))),
 );
 const packagePath = (path) => relative(packageRoot, path).split(sep).join("/");
-function crossArtifactRequests(target, crosses, requested) {
+const propertyRoots = [
+  "lib/generated/css-property-definitions.js",
+  "lib/jsdom/living/css/properties/shorthands.js",
+];
+
+// The whole reference graph, built once in memory, gives the import edges the partition follows.
+const graph = await Bun.build({
+  entrypoints: [referenceEntry],
+  target: "node",
+  format: "cjs",
+  packages: "bundle",
+  metafile: true,
+  plugins: referencePlugins,
+});
+if (!graph.success) throw new AggregateError(graph.logs, "CSS reference graph failed");
+const files = new Map(
+  Object.entries(graph.metafile.inputs)
+    .filter(([input]) => existsSync(input))
+    .map(([input, { imports }]) => [realpathSync(resolve(input)), imports]),
+);
+const importsOf = (file) =>
+  files
+    .get(file)
+    .filter(({ path, external }) => !external && existsSync(path))
+    .map(({ path }) => realpathSync(resolve(path)))
+    .filter((path) => files.has(path));
+function closure(roots, follows) {
+  const reached = new Set(roots);
+  for (const file of reached)
+    for (const imported of importsOf(file)) if (follows(imported)) reached.add(imported);
+  return reached;
+}
+const wrapperDirectory = join(packageRoot, "lib", "generated", "idl") + sep;
+const isWrapper = (file) => file.startsWith(wrapperDirectory);
+// Wrappers defer their implementation imports, so the interface closure follows wrappers only;
+// the 1.6 MB CSSStyleProperties wrapper stays with the engine that creates it.
+const interfaceFiles = closure(importsOf(referenceEntry).filter(isWrapper), isWrapper);
+const propertyFiles = closure(
+  propertyRoots.map((path) => join(packageRoot, path)),
+  (file) => file.startsWith(packageRoot + sep),
+);
+if (
+  [...propertyFiles].some(isWrapper) ||
+  [...propertyFiles].some((file) => interfaceFiles.has(file))
+)
+  throw new Error("CSS reference property tables unexpectedly import interfaces");
+const artifactOf = (file) =>
+  interfaceFiles.has(file)
+    ? "css-reference-interfaces"
+    : propertyFiles.has(file)
+      ? "css-reference-properties"
+      : "css-reference";
+const requests = new Map([["css-reference", new Set()]]);
+
+function crossArtifactRequests(own) {
   const namespace = "css-reference-artifact";
   return {
-    name: `requests-into-${target}`,
+    name: `requests-from-${own}`,
     setup(build) {
-      build.onResolve({ filter: /^\.\/css-reference(?:-interfaces)?\.cjs$/ }, ({ path }) => ({
+      build.onResolve({ filter: /^\.\/css-reference(?:-[a-z]+)?\.cjs$/ }, ({ path }) => ({
         path,
         external: true,
       }));
@@ -146,97 +202,75 @@ function crossArtifactRequests(target, crosses, requested) {
               : path,
           ),
         );
-        if (!crosses(file)) return;
-        requested.add(packagePath(file));
-        return { path: packagePath(file), namespace };
+        if (!file.startsWith(packageRoot + sep) || artifactOf(file) === own) return;
+        const target = artifactOf(file);
+        requests.get(target)?.add(packagePath(file));
+        return { path: `${target}:${packagePath(file)}`, namespace };
       });
-      build.onLoad({ filter: /.*/, namespace }, ({ path }) => ({
-        contents: `module.exports = require("./${target}.cjs").load(${JSON.stringify(path)});`,
-        loader: "js",
-      }));
+      build.onLoad({ filter: /.*/, namespace }, ({ path }) => {
+        const [target, request] = path.split(":");
+        return {
+          contents: `module.exports = require("./${target}.cjs").load(${JSON.stringify(request)});`,
+          loader: "js",
+        };
+      });
     },
   };
 }
-// The whole reference graph, built once in memory, tells which wrappers RunDOM names and what they import.
-const graph = await Bun.build({
-  entrypoints: [referenceEntry],
-  target: "node",
-  format: "cjs",
-  packages: "bundle",
-  metafile: true,
-  plugins: referencePlugins,
-});
-if (!graph.success) throw new AggregateError(graph.logs, "CSS reference graph failed");
-// Interfaces are the wrappers RunDOM names plus the wrappers they import; the rest (notably the
-// 1.6 MB CSSStyleProperties wrapper) stay with the engine that creates them.
-const wrapperDirectory = join(packageRoot, "lib", "generated", "idl") + sep;
-const inputFile = (input) => realpathSync(resolve(input));
-const wrapperInputs = Object.entries(graph.metafile.inputs).filter(
-  ([input]) => existsSync(input) && inputFile(input).startsWith(wrapperDirectory),
-);
-const wrapperImports = new Map(
-  wrapperInputs.map(([input, { imports }]) => [input, imports.map(({ path }) => path)]),
-);
-const interfaceInputs = new Set(
-  graph.metafile.inputs[relative(process.cwd(), referenceEntry)].imports
-    .map(({ path }) => path)
-    .filter((input) => wrapperImports.has(input)),
-);
-for (const input of interfaceInputs)
-  for (const imported of wrapperImports.get(input))
-    if (wrapperImports.has(imported)) interfaceInputs.add(imported);
-const interfaceFiles = new Set([...interfaceInputs].map(inputFile));
-const isInterface = (file) => interfaceFiles.has(file);
-const interfacePaths = [...interfaceFiles].map(packagePath).sort();
-const engineRequests = new Set();
-const interfaceEntry = "css-reference-interfaces-entry";
-const interfaces = await Bun.build({
-  entrypoints: [interfaceEntry],
-  outdir: "dist",
-  naming: "css-reference-interfaces-implementation.cjs",
-  target: "node",
-  format: "cjs",
-  packages: "bundle",
-  minify: { whitespace: true, syntax: true },
-  sourcemap: "linked",
-  plugins: [
-    {
-      name: "interface-entry",
-      setup(build) {
-        build.onResolve({ filter: new RegExp(`^${interfaceEntry}$`) }, ({ path }) => ({
-          path,
-          namespace: interfaceEntry,
-        }));
-        build.onLoad({ filter: /.*/, namespace: interfaceEntry }, () => ({
-          contents: `const modules = {\n${interfacePaths
-            .map(
-              (path) =>
-                `  ${JSON.stringify(path)}: () => require(${JSON.stringify(join(packageRoot, path))}),`,
-            )
-            .join("\n")}\n};
+
+const tableArtifacts = {
+  "css-reference-interfaces": interfaceFiles,
+  "css-reference-properties": propertyFiles,
+};
+const tablePaths = {};
+for (const [name, members] of Object.entries(tableArtifacts)) {
+  const paths = (tablePaths[name] = [...members].map(packagePath).sort());
+  const entry = `${name}-entry`;
+  const built = await Bun.build({
+    entrypoints: [entry],
+    outdir: "dist",
+    naming: `${name}-implementation.cjs`,
+    target: "node",
+    format: "cjs",
+    packages: "bundle",
+    // Identifier minification renames generated interface classes, whose names are observable.
+    minify: { whitespace: true, syntax: true },
+    sourcemap: "linked",
+    plugins: [
+      {
+        name: "table-entry",
+        setup(build) {
+          build.onResolve({ filter: new RegExp(`^${entry}$`) }, ({ path }) => ({
+            path,
+            namespace: entry,
+          }));
+          build.onLoad({ filter: /.*/, namespace: entry }, () => ({
+            contents: `const modules = {\n${paths
+              .map(
+                (path) =>
+                  `  ${JSON.stringify(path)}: () => require(${JSON.stringify(join(packageRoot, path))}),`,
+              )
+              .join("\n")}\n};
 module.exports = {
+  has: (path) => Object.hasOwn(modules, path),
   load(path) {
     const loadModule = Object.hasOwn(modules, path) ? modules[path] : undefined;
-    if (!loadModule) throw new Error(\`RunDOM does not bundle CSS reference interface \${path}\`);
+    if (!loadModule) throw new Error(\`RunDOM does not bundle CSS reference module \${path} in ${name}\`);
     return loadModule();
   },
 };
 `,
-          loader: "js",
-          resolveDir: packageRoot,
-        }));
+            loader: "js",
+            resolveDir: packageRoot,
+          }));
+        },
       },
-    },
-    crossArtifactRequests(
-      "css-reference",
-      (file) => !isInterface(file) && file.startsWith(packageRoot + sep),
-      engineRequests,
-    ),
-    ...referencePlugins,
-  ],
-});
-if (!interfaces.success)
-  throw new AggregateError(interfaces.logs, "CSS reference interface build failed");
+      crossArtifactRequests(name),
+      ...referencePlugins,
+    ],
+  });
+  if (!built.success) throw new AggregateError(built.logs, `${name} build failed`);
+}
 const reference = await Bun.build({
   entrypoints: [referenceEntry],
   outdir: "dist",
@@ -253,7 +287,9 @@ const reference = await Bun.build({
       name: "interface-implementations",
       setup(build) {
         build.onLoad({ filter: /[\\/]src[\\/]css-reference-runtime\.ts$/ }, ({ path }) => ({
-          contents: `${readFileSync(path, "utf8")}\nObject.assign(modules, {\n${[...engineRequests]
+          contents: `${readFileSync(path, "utf8")}\nObject.assign(modules, {\n${[
+            ...requests.get("css-reference"),
+          ]
             .sort()
             .map(
               (request) =>
@@ -264,12 +300,12 @@ const reference = await Bun.build({
         }));
       },
     },
-    crossArtifactRequests("css-reference-interfaces", isInterface, new Set()),
+    crossArtifactRequests("css-reference"),
     ...referencePlugins,
   ],
 });
 if (!reference.success) throw new AggregateError(reference.logs, "CSS reference build failed");
 
-execFileSync("node", ["scripts/build-css-cache.mjs", JSON.stringify(interfacePaths)], {
+execFileSync("node", ["scripts/build-css-cache.mjs", JSON.stringify(tablePaths)], {
   stdio: "inherit",
 });

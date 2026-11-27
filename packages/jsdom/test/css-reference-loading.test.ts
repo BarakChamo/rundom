@@ -75,6 +75,29 @@ describe("Window CSS reference loading", () => {
     expect(output).toBe("verified");
   });
 
+  it("resolves simple computed styles without loading the CSS engine artifact", () => {
+    const output = runIsolated(`
+      // Given: a stylesheet of plain longhands and a border shorthand
+      const { window } = new JSDOM(\`<!doctype html><style>
+        p { width: 10px; position: absolute; top: 0; border: 1px solid red; color: rgba(0, 0, 0, 0.5); }
+      </style><p>x</p>\`);
+      // When: computed values are read for the first time in the process
+      const computed = window.getComputedStyle(window.document.querySelector("p"));
+      // Then: values resolve from the property tables alone
+      assert.equal(computed.width, "10px");
+      assert.equal(computed.borderTopColor, "rgb(255, 0, 0)");
+      assert.equal(computed.color, "rgba(0, 0, 0, 0.5)");
+      const artifacts = Object.keys(require.cache)
+        .filter((path) => path.startsWith(${JSON.stringify(domDist + "/css-reference")}))
+        .map((path) => path.slice(${JSON.stringify(domDist.length + 1)}));
+      assert.deepEqual(artifacts, ["css-reference-properties.cjs"]);
+      assert.deepEqual(rawReferenceModules(), []);
+      window.close();
+      process.stdout.write("verified");
+    `);
+    expect(output).toBe("verified");
+  });
+
   it("reflects the same descriptor interfaces before and after the CSS engine loads", () => {
     // Given: descriptor interface shapes read in one process that never loads the engine,
     // and in one where another Window parsed descriptor rules first
