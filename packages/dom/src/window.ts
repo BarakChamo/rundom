@@ -1209,6 +1209,15 @@ const realmTreeOperations = new WeakMap<
     frameWindow: (frame: Raw.Element) => ChildRealm["window"] | null;
     frameSVGDocument: (frame: Raw.Element) => object | null;
     focusViewport: () => void;
+    /** The node's own live member objects, which every Window's getter must return. */
+    identity: {
+      childNodes: (node: object) => object;
+      children: (node: object, owner: Raw.ParentNode) => object;
+      classList: (node: object) => object;
+      attributes: (node: object) => object;
+      style: (node: object) => object;
+      dataset: (node: object) => object;
+    };
     insert: (
       target: Raw.ParentNode | null,
       node: Raw.Node,
@@ -3253,8 +3262,24 @@ function buildWindow(
       else setAttributeValue(handle, existing, { name, value });
     },
     replaceData,
+    identity: {
+      childNodes: (node) => childLists.get(node as Node) ?? createChildList(node as Node),
+      children: (node, owner) => childElements(node as Node, owner),
+      classList: (node) => classLists.get(node as Element) ?? createClassList(node as Element),
+      attributes: (node) =>
+        attributeMaps?.get(node as Element) ?? createAttributeMap(node as Element),
+      style: (node) => styles().inlineStyle(element(node as Node)),
+      dataset: (node) => datasetFor(node as Element),
+    },
   });
   if (options.frameElement) nodeRecord(options.frameElement);
+  /** Members of another Window's node, which jsdom reaches through one shared wrapper. */
+  function foreignIdentity(node: object) {
+    const realm = records.read(node)?.realm;
+    return realm === undefined || realm === token
+      ? undefined
+      : realmTreeOperations.get(realm)?.identity;
+  }
   let revision = 0;
   // The source document already owns these members; invalidation must release affected entries immediately.
   let documentIdLookups = 0;
@@ -4906,6 +4931,35 @@ function buildWindow(
     if (formerParent) refreshCustomFormLifecycle([formerParent, node]);
   }
 
+  function createChildList(node: Node): NodeList<Node> {
+    const foreign = foreignIdentity(node);
+    if (foreign) return foreign.childNodes(node) as NodeList<Node>;
+    const owner = container(node);
+    const list = new NodeList(token, {
+      length: () => owner?.childNodes.length ?? 0,
+      at(index) {
+        const child = owner?.childNodes[index];
+        return child ? wrap(child) : undefined;
+      },
+    });
+    childLists.set(node, list);
+    return list;
+  }
+  function createClassList(node: Element): DOMTokenList {
+    const foreign = foreignIdentity(node);
+    if (foreign) return foreign.classList(node) as DOMTokenList;
+    const list = new DOMTokenList(token, node);
+    classLists.set(node, list);
+    return list;
+  }
+  function createAttributeMap(node: Element): NamedNodeMap {
+    const foreign = foreignIdentity(node);
+    if (foreign) return foreign.attributes(node) as NamedNodeMap;
+    const map = new NamedNodeMap(token, node);
+    (attributeMaps ??= new WeakMap()).set(node, map);
+    return map;
+  }
+
   class Node extends EventTarget {
     declare static readonly ELEMENT_NODE: 1;
     declare static readonly ATTRIBUTE_NODE: 2;
@@ -5100,19 +5154,7 @@ function buildWindow(
       return walkParentNode(this, token, raw, wrap);
     }
     get childNodes(): NodeList<Node> {
-      let list = childLists.get(this);
-      if (!list) {
-        const owner = container(this);
-        list = new NodeList(token, {
-          length: () => owner?.childNodes.length ?? 0,
-          at(index) {
-            const child = owner?.childNodes[index];
-            return child ? wrap(child) : undefined;
-          },
-        });
-        childLists.set(this, list);
-      }
-      return list;
+      return childLists.get(this) ?? createChildList(this);
     }
     get isConnected(): boolean {
       return isDocumentRecord(treeRoot(raw(this), true));
@@ -6280,6 +6322,8 @@ function buildWindow(
   function childElements(node: Node, owner: Raw.ParentNode): HTMLCollection {
     let list = elementLists.get(node);
     if (!list) {
+      const foreign = foreignIdentity(node);
+      if (foreign) return foreign.children(node, owner) as HTMLCollection;
       list = new HTMLCollection(token, {
         length() {
           let size = 0;
@@ -6745,12 +6789,7 @@ function buildWindow(
       this.part.value = value;
     }
     get classList(): DOMTokenList {
-      let list = classLists.get(this);
-      if (!list) {
-        list = new DOMTokenList(token, this);
-        classLists.set(this, list);
-      }
-      return list;
+      return classLists.get(this) ?? createClassList(this);
     }
     set classList(value: string) {
       this.classList.value = value;
@@ -6762,13 +6801,7 @@ function buildWindow(
       this.setAttribute("id", value);
     }
     get attributes(): NamedNodeMap {
-      const maps = (attributeMaps ??= new WeakMap());
-      let map = maps.get(this);
-      if (!map) {
-        map = new NamedNodeMap(token, this);
-        maps.set(this, map);
-      }
-      return map;
+      return attributeMaps?.get(this) ?? createAttributeMap(this);
     }
     getAttributeNode(name: string): Attr | null {
       const attr = findAttribute(element(this), String(name));
@@ -6863,7 +6896,13 @@ function buildWindow(
       return existing !== undefined;
     }
     get style(): ReturnType<ReturnType<typeof styles>["inlineStyle"]> {
-      return styles().inlineStyle(element(this));
+      const record = records.read(this);
+      if (record?.realm === token && record.kind === "element")
+        return styles().inlineStyle(record.node);
+      const foreign = foreignIdentity(this);
+      return foreign
+        ? (foreign.style(this) as ReturnType<ReturnType<typeof styles>["inlineStyle"]>)
+        : styles().inlineStyle(element(this));
     }
     set style(value: string) {
       styles().inlineStyle(element(this)).cssText = `${value}`;
@@ -7885,6 +7924,8 @@ function buildWindow(
     const map = (datasets ??= new WeakMap());
     let dataset = map.get(owner);
     if (!dataset) {
+      const foreign = foreignIdentity(owner);
+      if (foreign) return foreign.dataset(owner) as DOMStringMap;
       dataset = new DOMStringMap(token, owner);
       map.set(owner, dataset);
     }

@@ -158,13 +158,13 @@ describe.each(providers)(
   "$name parsed stylesheets before a later <base href>",
   ({ Constructor, intercept }) => {
     const markup =
-    `<!doctype html><html><head>` +
-    `<style>@import "imp.css"; .a { background-image: url(a.png) }</style>` +
-    `<link rel="stylesheet" href="l.css">` +
-    `</head><body><div class="a" style="list-style-image: url(i.png)"></div>` +
-    `<base href="http://other.example/sub/">` +
-    `<style>.b { background-image: url(b.png) }</style>` +
-    `<div class="b" style="list-style-image: url(j.png)"></div><p></p></body></html>`;
+      `<!doctype html><html><head>` +
+      `<style>@import "imp.css"; .a { background-image: url(a.png) }</style>` +
+      `<link rel="stylesheet" href="l.css">` +
+      `</head><body><div class="a" style="list-style-image: url(i.png)"></div>` +
+      `<base href="http://other.example/sub/">` +
+      `<style>.b { background-image: url(b.png) }</style>` +
+      `<div class="b" style="list-style-image: url(j.png)"></div><p></p></body></html>`;
 
     it("should resolve earlier sheets, links and style attributes against the document URL", async () => {
       // Given: a document whose first sheet, link and styled element precede its <base href>.
@@ -233,6 +233,61 @@ describe.each(providers)(
         );
       } finally {
         window.close();
+      }
+    });
+  },
+);
+
+describe.each(providers)(
+  "$name members read through another Window's getters",
+  ({ Constructor }) => {
+    function getter(prototype: object, name: string): (this: unknown) => unknown {
+      for (
+        let current: object | null = prototype;
+        current;
+        current = Object.getPrototypeOf(current)
+      ) {
+        const read = Object.getOwnPropertyDescriptor(current, name)?.get;
+        if (read) return read;
+      }
+      throw new Error(`No ${name} getter`);
+    }
+
+    it("should return the node's own live objects, not new ones from the calling Window", () => {
+      // Given: an element from Window A and the interface prototypes of Window B.
+      const a = new Constructor().window;
+      const b = new Constructor().window;
+      try {
+        const element = a.document.createElement("div");
+        element.innerHTML = "<p></p>";
+        element.className = "c";
+        element.dataset.x = "1";
+        const fromB = {
+          childNodes: getter(b.Node.prototype, "childNodes"),
+          children: getter(b.Element.prototype, "children"),
+          classList: getter(b.Element.prototype, "classList"),
+          attributes: getter(b.Element.prototype, "attributes"),
+          style: getter(b.document.createElement("div"), "style"),
+          dataset: getter(b.HTMLElement.prototype, "dataset"),
+        };
+        // When: B's getter runs first, then A's, then B's again.
+        for (const [name, read] of Object.entries(fromB)) {
+          const first = read.call(element);
+          // Then: every read yields A's single object with A's prototype.
+          expect([name, first === Reflect.get(element, name)]).toEqual([name, true]);
+          expect([name, read.call(element) === first]).toEqual([name, true]);
+          expect([
+            name,
+            Object.getPrototypeOf(first) === Object.getPrototypeOf(Reflect.get(element, name)),
+          ]).toEqual([name, true]);
+        }
+        expect(Object.getPrototypeOf(fromB.childNodes.call(element))).toBe(a.NodeList.prototype);
+        // Then: the borrowed objects stay live views of A's element.
+        (fromB.style.call(element) as CSSStyleDeclaration).color = "red";
+        expect(element.getAttribute("style")).toBe("color: red;");
+      } finally {
+        a.close();
+        b.close();
       }
     });
   },
