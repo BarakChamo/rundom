@@ -149,3 +149,60 @@ describe("getComputedStyle repeated computed writes", () => {
     );
   });
 });
+
+describe("getComputedStyle reuse for inline-styled elements", () => {
+  it("should follow every way an inline declaration can change", () => {
+    // Given: an inline-styled element inside an inline-styled ancestor, read once
+    withWindow(
+      `<style>p{color:rgb(1, 1, 1)}</style><main style="font-size:20px"><p style="color:rgb(2, 2, 2);opacity:0.5">x</p></main>`,
+      (window) => {
+        const paragraph = element(window, "p");
+        const read = () => {
+          const style = window.getComputedStyle(paragraph);
+          return [style.color, style.opacity, style.fontSize, style.display];
+        };
+        const steps = [read()];
+        // When: the declaration changes through the CSSOM, attributes and the ancestor
+        paragraph.style.opacity = "0.25";
+        steps.push(read());
+        paragraph.style.cssText = "display:block";
+        steps.push(read());
+        paragraph.setAttribute("style", "color:rgb(3, 3, 3)");
+        steps.push(read());
+        element(window, "main").style.fontSize = "30px";
+        steps.push(read());
+        paragraph.removeAttribute("style");
+        steps.push(read());
+        // Then: each read reflects the current declarations
+        expect(steps).toEqual([
+          ["rgb(2, 2, 2)", "0.5", "20px", "block"],
+          ["rgb(2, 2, 2)", "0.25", "20px", "block"],
+          ["rgb(1, 1, 1)", "1", "20px", "block"],
+          ["rgb(3, 3, 3)", "1", "20px", "block"],
+          ["rgb(3, 3, 3)", "1", "30px", "block"],
+          ["rgb(1, 1, 1)", "1", "30px", "block"],
+        ]);
+      },
+    );
+  });
+
+  it("should keep inline URLs resolved against the base current when they were declared", () => {
+    // Given: an inline image URL read once
+    const { window } = new JSDOM(`<p style="background-image:url(a.png)"></p>`, {
+      url: "https://example.test/a/index.html",
+    });
+    try {
+      const paragraph = element(window, "p");
+      const first = window.getComputedStyle(paragraph).backgroundImage;
+      // When: the document URL changes without a tree mutation
+      window.history.pushState(null, "", "/deeper/page.html");
+      // Then: the declaration keeps its declared base
+      expect([first, window.getComputedStyle(paragraph).backgroundImage]).toEqual([
+        'url("https://example.test/a/a.png")',
+        'url("https://example.test/a/a.png")',
+      ]);
+    } finally {
+      window.close();
+    }
+  });
+});

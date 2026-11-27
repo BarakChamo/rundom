@@ -8665,15 +8665,10 @@ export function createStyles(input: {
         !!previous.userAgentFocus === userAgentFocus &&
         previous.userAgentDirection === userAgentDirection &&
         previous.userAgentHiddenInput === hiddenInput;
-      // Inline declaration provenance, automatic direction and shadow styling retain
-      // the complete path; serialized attribute equality alone cannot certify them.
-      if (
-        reusableEligible &&
-        (userAgentDirection !== undefined ||
-          input.shadowRoot(element) ||
-          (inlineStyles?.get(element)?.style._length ?? 0) !== 0 ||
-          element.attrs.some((attr) => !attr.namespace && attr.name === "style" && attr.value))
-      )
+      // Automatic direction and shadow styling retain the complete path. Inline declarations
+      // can certify: every change to them rewrites the style attribute, which advances the
+      // style revision, and their URL bases are fixed when declared.
+      if (reusableEligible && (userAgentDirection !== undefined || input.shadowRoot(element)))
         reusableEligible = false;
       let borderColorBlock = 0;
       let collectLosers = false,
