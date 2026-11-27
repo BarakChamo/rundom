@@ -400,3 +400,23 @@ describe.each(providers)("$name declaration indices after shorthand writes", ({ 
     }
   });
 });
+
+describe.each(providers)("$name DOMStringMap and DOMTokenList errors", ({ Constructor }) => {
+  it("should throw jsdom's messages for invalid dataset names and unsupported token checks", () => {
+    // Given: an element, and an anchor whose relList defines no supported tokens.
+    const { window } = new Constructor();
+    try {
+      const element = window.document.createElement("div");
+      const anchor = window.document.createElement("a");
+      // When/Then: each invalid operation throws jsdom's type and message.
+      expect(() => {
+        element.dataset["a-b"] = "x";
+      }).toThrow("'a-b' is not a valid property name");
+      expect(() => anchor.relList.supports("noopener")).toThrow(
+        "rel attribute has no supported tokens",
+      );
+    } finally {
+      window.close();
+    }
+  });
+});

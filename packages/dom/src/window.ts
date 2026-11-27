@@ -6594,7 +6594,7 @@ function buildWindow(
       const value = domString(token);
       const { attributeName, supportedTokens } = tokenList(this);
       if (!supportedTokens)
-        throw new TypeError(`The ${attributeName} attribute has no supported tokens`);
+        throw new TypeError(`${attributeName} attribute has no supported tokens`);
       return supportedTokens.has(asciiLower(value));
     }
     declare entries: () => IterableIterator<[number, string]>;
@@ -7866,7 +7866,7 @@ function buildWindow(
         /-[a-z]/.test(name) ? null : attribute(record, toAttribute(name));
       const write = (name: string, value: unknown) => {
         if (/-[a-z]/.test(name))
-          throw new DOMException("Invalid dataset property name", "SyntaxError");
+          throw new DOMException(`'${name}' is not a valid property name`, "SyntaxError");
         Element.prototype.setAttribute.call(owner, toAttribute(name), String(value));
         return true;
       };
