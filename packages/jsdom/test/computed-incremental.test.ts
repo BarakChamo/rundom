@@ -118,3 +118,34 @@ describe("getComputedStyle var() in evaluated longhands", () => {
     );
   });
 });
+
+describe("getComputedStyle repeated computed writes", () => {
+  it("should serialize shorthands from each element's own longhands when values repeat", () => {
+    // Given: two elements sharing longhand values, one of them with a complete flex and font family
+    withWindow(
+      `<style>.a{flex-basis:22px;transition-duration:0.25s;opacity:0.5;font-style:italic} .b{flex-grow:3;flex-shrink:2;flex-basis:22px;transition-duration:0.25s;font-style:italic;font-size:20px;font-family:serif}</style><p class=a></p><p class=b></p>`,
+      (window) => {
+        // When: both are read in turn, the second reusing values the first validated
+        const read = (selector: string) => {
+          const style = window.getComputedStyle(element(window, selector));
+          return [
+            style.flex,
+            style.flexBasis,
+            style.transitionDuration,
+            style.fontStyle,
+            style.font,
+          ];
+        };
+        // Then: each shorthand reflects only that element's longhands
+        expect(read(".a")).toEqual([
+          "0 1 22px",
+          "22px",
+          "0.25s",
+          "italic",
+          "italic 16px monospace",
+        ]);
+        expect(read(".b")).toEqual(["3 2 22px", "22px", "0.25s", "italic", "italic 20px serif"]);
+      },
+    );
+  });
+});

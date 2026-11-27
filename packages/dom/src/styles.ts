@@ -7759,6 +7759,41 @@ export function createStyles(input: {
     return { resolveValue, expandPending, substitution, registrations };
   }
 
+  // A computed write whose validation stores exactly its own normalized longhand, with no
+  // provenance, is replayed from that text instead of re-validating per element.
+  const validatedWrites = new Map<string, string | null>();
+  // cssstyle's border, flex and box longhand setters rebuild their shorthand from sibling state.
+  const statefulSetter =
+    /^(?:border(?:-(?:top|right|bottom|left))?(?:-(?:width|style|color))?|flex(?:-(?:grow|shrink|basis))?|(?:margin|padding)(?:-(?:top|right|bottom|left))?)$/;
+  function setComputedProperty(style: ComputedDeclaration, name: string, value: string): void {
+    const key = name + "\0" + value;
+    let stored = validatedWrites.get(key);
+    if (stored === undefined) {
+      if (key.length > 512 || statefulSetter.test(name)) {
+        style.setProperty(name, value);
+        return;
+      }
+      const probe = declaration();
+      probe.setProperty(name, value);
+      const text = probe._values.get(name);
+      stored =
+        probe._length === 1 &&
+        probe[0] === name &&
+        text !== undefined &&
+        probe.getPropertyPriority(name) === "" &&
+        !shorthandSources?.get(probe)?.size &&
+        !calculationSources?.get(probe)?.size &&
+        !declarationBases?.get(probe)?.size &&
+        !borderColorSourceOrder.has(probe)
+          ? text
+          : null;
+      if (validatedWrites.size >= 4096) validatedWrites.clear();
+      validatedWrites.set(key, stored);
+    }
+    if (stored === null) style.setProperty(name, value);
+    else style._setProperty(name, stored, "");
+  }
+
   // Resolution reads only named parent values, so a captured subset can stand in for the parent.
   type ParentValues = Pick<ComputedDeclaration, "getPropertyValue">;
   type ResolutionValues = {
@@ -7898,7 +7933,7 @@ export function createStyles(input: {
             );
       if (value === undefined) {
         const inheritedValue = inherited.has(name) && prior?.getPropertyValue(name);
-        if (inheritedValue) result.setProperty(name, inheritedValue);
+        if (inheritedValue) setComputedProperty(result, name, inheritedValue);
         continue;
       }
       if (isCustomProperty && /^(?:initial|inherit|unset|revert-layer)$/i.test(value)) continue;
@@ -7928,7 +7963,7 @@ export function createStyles(input: {
               ? (partialAncestors?.get(prior)?.complete() ?? prior)
               : prior;
           const inheritedValue = shouldInherit ? source?.getPropertyValue(name) : undefined;
-          if (inheritedValue) result.setProperty(name, inheritedValue);
+          if (inheritedValue) setComputedProperty(result, name, inheritedValue);
           continue;
         }
       }
@@ -7944,7 +7979,7 @@ export function createStyles(input: {
             ? (projected?.values.get(name) ?? prior?.getPropertyValue(name))
             : undefined;
         const fallback = userAgentValue || inheritedValue || (name === "font-size" ? "16px" : "");
-        if (fallback) result.setProperty(name, fallback);
+        if (fallback) setComputedProperty(result, name, fallback);
         continue;
       }
       if (isCustomProperty) {
@@ -7970,7 +8005,7 @@ export function createStyles(input: {
         continue;
       }
       if (name === "flex-basis") {
-        result.setProperty(name, simplifyCSSCalculation(value));
+        setComputedProperty(result, name, simplifyCSSCalculation(value));
         continue;
       }
       if (name === "font-weight") {
@@ -8012,7 +8047,7 @@ export function createStyles(input: {
         const length = computeNumericValue(value, () => currentViewport);
         const computed =
           name === "outline-width" ? snapOutlineWidth(length, currentViewport.resolution) : length;
-        result.setProperty(name, computed);
+        setComputedProperty(result, name, computed);
         continue;
       }
       if (name === "outline-color" && value.toLowerCase() === "auto") {
@@ -8027,7 +8062,8 @@ export function createStyles(input: {
       // System colors compute in their declaring element's scheme; currentColor
       // paint references retain the target's foreground dependency.
       const paint = target && (name === "fill" || name === "stroke");
-      result.setProperty(
+      setComputedProperty(
+        result,
         name,
         paint
           ? resolveColor(computed, { currentColor: color, colorScheme, fallback: computed })
