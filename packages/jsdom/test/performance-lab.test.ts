@@ -4,9 +4,29 @@ import {
   dimensionsSchema,
   requestSchema,
   resultSchema,
+  defaultOperations,
   distribution,
   summarize,
 } from "../bench/lab/contracts.js";
+
+it("defaults every per-document construction scenario to eight operations per batch", () => {
+  // Given: each parse-html variant builds and closes a whole Window per operation.
+  // When: no explicit --operations value is given.
+  // Then: they share the eight-operation creation/parsing default; selection-only work keeps 512.
+  for (const scenario of [
+    "parse-html",
+    "parse-html-rotate",
+    "parse-html-sparse",
+    "parse-html-traverse",
+    "parse-html-update",
+    "parse-html-unique",
+    "windows-create-close",
+    "clone-subtree",
+    "serialize",
+  ] as const)
+    expect(defaultOperations(scenario), scenario).toBe(8);
+  expect(defaultOperations("query-simple")).toBe(512);
+});
 
 it("rejects unbounded dimensions and unknown runtime selection", () => {
   // Given/When/Then: command data cannot silently change the bounded workload or parser selection.
