@@ -4719,7 +4719,15 @@ function buildWindow(
       for (const member of added) tree.appendChild(target, member);
     }
     const sourceChanged = invalidateStyleSource(target);
-    for (const child of added) invalidateDocumentIdsIn(child);
+    // Only the source document's ordinary tree is indexed. A subtree entering another tree has its
+    // IDs invalidated once it reaches the source document; the root walk is paid only for subtrees.
+    if (
+      documentIdIndex &&
+      added.some((child) => "childNodes" in child && child.childNodes.length) &&
+      treeRoot(target) !== source
+    )
+      earlyDocumentId = undefined;
+    else for (const child of added) invalidateDocumentIdsIn(child);
     // The old first member and its replacement occupied the same slot. A reentrant
     // edit or an index eviction invalidates that proof before it can be published.
     if (
