@@ -1267,7 +1267,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     let accepted = acceptedValues.get(key);
     if (accepted !== undefined) return accepted;
     accepted = parsePropertyValue(name, value) !== undefined;
-    if (acceptedValues.size >= 1024)
+    if (acceptedValues.size >= 4096)
       for (const oldest of acceptedValues.keys()) {
         acceptedValues.delete(oldest);
         break;

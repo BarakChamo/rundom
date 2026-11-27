@@ -59,7 +59,8 @@ function parseDeclaration(name: string, value: string, important = false): unkno
   if (!isFailure(result)) return result;
 }
 
-const maximumSpecifiedEntries = 1024;
+// The same bound as cssstyle's parse LRU: a two-property animation cycle fits.
+const maximumSpecifiedEntries = 4096;
 const maximumSpecifiedValueLength = 256;
 const specifiedValues = new Map<string, string | undefined>();
 
