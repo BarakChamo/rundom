@@ -3461,8 +3461,9 @@ function buildWindow(
       realmTreeOperations.get(realm)?.enableForeignCapabilities();
   }
 
-  function nodeRecord(node: object) {
-    const record = records.read(node);
+  /** `mayBeOther` uses the brand check: a failed private read on a non-node costs a thrown TypeError. */
+  function nodeRecord(node: object, mayBeOther = false) {
+    const record = mayBeOther ? records.get(node) : records.read(node);
     if (record && record.realm !== token) enableForeignCapabilities(record.realm);
     return record;
   }
@@ -5335,7 +5336,8 @@ function buildWindow(
     value: {
       dispatchEvent(this: unknown, event: InstanceType<typeof Event>): boolean {
         if (arguments.length === 0) return Reflect.apply(eventTargetDispatch, this, []);
-        const realm = records.read(this as object)?.realm;
+        // Brand check: non-node targets (Window, AbortSignal, ...) would make a private read throw.
+        const realm = records.get(this as object)?.realm;
         if (realm === token) prepareNodeDispatch(this as Node, event);
         else if (realm !== undefined)
           realmTreeOperations.get(realm)?.prepareDispatch(this as object, event);
@@ -9313,7 +9315,8 @@ function buildWindow(
     const limit = event.bubbles ? path.length : 1;
     for (let index = 0; index < limit; index++) {
       const target = path[index];
-      const node = target && nodeRecord(target)?.node;
+      // Only the last entry can be a non-node (the Window).
+      const node = target && nodeRecord(target, index === path.length - 1)?.node;
       if (!node || !tree.isElementNode(node) || node.namespaceURI !== html.NS.HTML) continue;
       const type = isInput(node) ? inputType(node) : null;
       if (type === "checkbox" || type === "radio") return checkableActivation(node, type);

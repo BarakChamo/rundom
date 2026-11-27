@@ -173,6 +173,50 @@ describe.each([
     }
   });
 
+  it("activates controls at any path position, in detached and adopted trees", () => {
+    // Given: a detached checkbox, a detached label root around a checkbox, and a checkbox
+    // created in another Window then adopted into a detached tree of this one.
+    const { window } = new Constructor("<p></p>");
+    const other = new Constructor("").window;
+    try {
+      const checkbox = (doc: TestWindow["document"]) => {
+        const created = doc.createElement("input");
+        if (!(created instanceof doc.defaultView!.HTMLInputElement))
+          throw new Error("Expected input");
+        created.type = "checkbox";
+        return created;
+      };
+      const lone = checkbox(window.document);
+      const label = window.document.createElement("label");
+      const labeled = checkbox(window.document);
+      const span = window.document.createElement("span");
+      label.append(labeled, span);
+      const foreign = checkbox(other.document);
+      const host = window.document.createElement("div");
+      host.append(window.document.adoptNode(foreign));
+      const windowEvents: string[] = [];
+      window.addEventListener("ping", (event) => windowEvents.push(event.type));
+      // When: each is clicked, and non-node targets dispatch.
+      lone.click();
+      span.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      foreign.click();
+      window.dispatchEvent(new window.Event("ping"));
+      const signal = new window.AbortController().signal;
+      let aborted = 0;
+      signal.addEventListener("abort", () => aborted++);
+      signal.dispatchEvent(new window.Event("abort"));
+      // Then: activation runs for the last path entry and through labels; other targets deliver.
+      expect(lone.checked).toBe(true);
+      expect(labeled.checked).toBe(true);
+      expect(foreign.checked).toBe(true);
+      expect(windowEvents).toEqual(["ping"]);
+      expect(aborted).toBe(1);
+    } finally {
+      other.close();
+      window.close();
+    }
+  });
+
   it("cancels checkbox activation when an onclick handler returns false", () => {
     // Given: a checkbox whose only listener is an onclick property returning false.
     const { window } = new Constructor("<input type=checkbox id=a>");
