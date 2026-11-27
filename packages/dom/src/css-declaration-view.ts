@@ -149,6 +149,14 @@ function cssString(value: unknown): string {
   if (typeof value === "symbol") throw new TypeError("Cannot convert a Symbol to a string");
   return String(value).toWellFormed();
 }
+const upperASCII = /[A-Z]/;
+/** CSSOM matches standard property names ASCII case-insensitively; custom properties are exact. */
+function propertyName(value: unknown): string {
+  const name = cssString(value);
+  return upperASCII.test(name) && !name.startsWith("--")
+    ? name.replace(/[A-Z]+/g, (letters) => letters.toLowerCase())
+    : name;
+}
 function indexOf(key: PropertyKey): number | undefined {
   if (typeof key !== "string" || key === "") return;
   const first = key.charCodeAt(0);
@@ -286,12 +294,12 @@ export function createDeclarationViews(input: {
     getPropertyValue(property: string): string {
       const style = receiver(this);
       if (arguments.length === 0) throw new TypeError("1 argument required, but only 0 present.");
-      return style.getPropertyValue(cssString(property));
+      return style.getPropertyValue(propertyName(property));
     }
     getPropertyPriority(property: string): string {
       const style = receiver(this);
       if (arguments.length === 0) throw new TypeError("1 argument required, but only 0 present.");
-      return style.getPropertyPriority(cssString(property));
+      return style.getPropertyPriority(propertyName(property));
     }
     setProperty(property: string, value: string, priority = ""): void {
       const style = receiver(this);
@@ -306,7 +314,7 @@ export function createDeclarationViews(input: {
     removeProperty(property: string): string {
       const style = receiver(this);
       if (arguments.length === 0) throw new TypeError("1 argument required, but only 0 present.");
-      return style.removeProperty(cssString(property));
+      return style.removeProperty(propertyName(property));
     }
     get cssText(): string {
       return receiver(this).cssText;
