@@ -68,7 +68,7 @@ export function prepareCohort(options: { from?: string | undefined } = {}): Coho
     "run-dom": local,
     jsdom: { jsdom: "31.0.1" },
     "happy-dom": { "happy-dom": "21.0.4" },
-    "turbo-dom": { "@miaskiewicz/turbo-dom": "0.7.1" },
+    "turbo-dom": { "@miaskiewicz/turbo-dom": "0.8.6" },
     tools: { zod: "4.6.7" },
   };
   for (const [name, dependencies] of Object.entries(consumers)) {
@@ -151,7 +151,7 @@ export function prepareCohort(options: { from?: string | undefined } = {}): Coho
       candidate: "0.0.1",
       jsdom: "31.0.1",
       happyDOM: "21.0.4",
-      turboDOM: "0.7.1",
+      turboDOM: "0.8.6",
       testingLibrary: "10.4.2",
     },
   });

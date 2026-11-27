@@ -9,6 +9,7 @@ import { parseArgs } from "node:util";
 import { z } from "zod";
 import {
   cohortSchema,
+  defaultOperations,
   dimensionsSchema,
   modeSchema,
   providerSchema,
@@ -303,19 +304,9 @@ export async function runLaboratory(args: readonly string[]): Promise<void> {
         async function trial(provider: Provider, scenario: Scenario, round: number): Promise<void> {
           const output = join(directory, `${scenario}-${provider}-${round}`);
           mkdirSync(output);
-          const isHeavy = [
-            "parse-html",
-            "windows-create-close",
-            "clone-subtree",
-            "serialize",
-          ].includes(scenario);
           const dimensions = {
             ...baseDimensions,
-            operations: values.operations
-              ? baseDimensions.operations
-              : isHeavy
-                ? 8
-                : baseDimensions.operations,
+            operations: values.operations ? baseDimensions.operations : defaultOperations(scenario),
           };
           const request = requestSchema.parse({
             provider,

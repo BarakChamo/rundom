@@ -61,7 +61,7 @@
         "whatwg-mimetype": "5.0.0",
       },
       "devDependencies": {
-        "@miaskiewicz/turbo-dom": "0.7.1",
+        "@miaskiewicz/turbo-dom": "0.8.6",
         "@run-dom/html-parser": "workspace:*",
         "@testing-library/dom": "10.4.2",
         "happy-dom": "21.0.4",
@@ -153,7 +153,7 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@miaskiewicz/turbo-dom": ["@miaskiewicz/turbo-dom@0.7.1", "", { "peerDependencies": { "jest-environment-node": ">=29", "vitest": ">=1" }, "optionalPeers": ["jest-environment-node", "vitest"] }, "sha512-GAdO1lMnZqGsPL0U8ijwtJs5BCS7N3AHYONGImJRUuFjoODv4BQW6CeEKrTWHq8pT6pLd4NsmxE4WfRs9IJWCQ=="],
+    "@miaskiewicz/turbo-dom": ["@miaskiewicz/turbo-dom@0.8.6", "", { "peerDependencies": { "jest-environment-node": ">=29", "vitest": ">=1" }, "optionalPeers": ["jest-environment-node", "vitest"] }, "sha512-3QzWJ7QxqIvXHZSMEW7EIdlS6I5yRYLTVjQQMjk/SrKwIMXN4bEqQk65hSjkqeLxyrCJSqkLK8RQ55WI05losQ=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.156.0", "", {}, "sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw=="],
 

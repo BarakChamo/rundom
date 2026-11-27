@@ -41,7 +41,11 @@ function takeOwnedFragment(parser: Parser<Raw.DefaultTreeAdapterMap>): Raw.Docum
   const children = root.childNodes;
   root.childNodes = [];
   fragment.childNodes = children;
-  for (const child of children) child.parentNode = fragment;
+  // Indexed iteration avoids an iterator result per child while this frame is unoptimized.
+  for (let index = 0; index < children.length; index++) {
+    const child = children[index];
+    if (child) child.parentNode = fragment;
+  }
   return fragment;
 }
 
@@ -110,8 +114,9 @@ export function parseHTMLReplacement({
   function recordIds(attrs: Raw.Element["attrs"]): void {
     const ids = effects.ids;
     if (!ids) return;
-    for (const attr of attrs) {
-      if (attr.name !== "id" || attr.namespace || !attr.value) continue;
+    for (let index = 0; index < attrs.length; index++) {
+      const attr = attrs[index];
+      if (!attr || attr.name !== "id" || attr.namespace || !attr.value) continue;
       ids.add(attr.value);
       if (ids.size > maximumReplacementIds) {
         effects.ids = undefined;
