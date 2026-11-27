@@ -324,7 +324,6 @@ function buildSubstitutionFrame(
     }
     return parser.parseDestructuredDeclaration(name, text, important, element);
   }
-  const declarations = new Map<string, unknown>();
   const expanded = new Map<string, ReadonlyMap<string, unknown>>();
   function expandShorthand(name: string, text: string, important: boolean) {
     const key = name + (important ? "!" : "\0") + text;
@@ -340,20 +339,49 @@ function buildSubstitutionFrame(
     }
     return components;
   }
-  for (const [name, text] of values) {
+  // A read touches few winners (inherited frames carry every computed value), so each winner
+  // is parsed on first lookup. Parsing is pure except for random-item draws, which stay eager
+  // and in declaration order.
+  const parsedWinners = new Map<string, unknown>();
+  const removed = new Set<string>();
+  function declaredWinner(name: string): unknown {
+    if (removed.has(name)) return;
+    if (parsedWinners.has(name)) return parsedWinners.get(name);
+    const text = values.get(name);
+    if (text === undefined) return;
     const shorthand = shorthands?.get(name);
-    if (shorthand) {
-      const component = expandShorthand(shorthand, text, false)?.get(name);
-      if (component) declarations.set(name, component);
-      continue;
+    let parsed: unknown;
+    if (shorthand) parsed = expandShorthand(shorthand, text, false)?.get(name);
+    else {
+      parsed = parseWinner(name, text, false);
+      if (isFailure(parsed)) parsed = undefined;
     }
-    const parsed = parseWinner(name, text, false);
-    if (!isFailure(parsed)) declarations.set(name, parsed);
+    parsedWinners.set(name, parsed);
+    return parsed;
   }
+  const declarations = {
+    get: declaredWinner,
+    has: (name: string) => declaredWinner(name) !== undefined,
+    *values() {
+      for (const name of values.keys()) {
+        const declaration = declaredWinner(name);
+        if (declaration !== undefined) yield declaration;
+      }
+    },
+    delete: (name: string) => removed.add(name),
+  };
+  for (const [name, text] of values) if (/\brandom(?:-item)?\(/i.test(text)) declaredWinner(name);
   // Initialize upstream's cycle guard and caches, then supply the already-matched cascade.
   resolver.hasResolvedStyle(element);
   const state = getDocumentStyleState(document).elements.get(element)!;
-  function styleSource(block: Map<string, unknown>, base: (name: string) => string | undefined) {
+  function styleSource(
+    block: {
+      get(name: string): unknown;
+      has(name: string): boolean;
+      values(): Iterable<unknown>;
+    },
+    base: (name: string) => string | undefined,
+  ) {
     return {
       _getBaseURL: base,
       _getParsedDeclaration: (name: string) => block.get(name),
