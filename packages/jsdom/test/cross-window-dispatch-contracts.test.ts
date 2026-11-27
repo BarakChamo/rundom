@@ -211,4 +211,28 @@ describe("EventTarget.dispatchEvent across Windows", () => {
       log.push(`checked:${box.checked}`);
     });
   });
+  it("follows a node adopted into another Window's tree and back on each dispatch", () => {
+    expectParity((a, b, log) => {
+      // Given: Window B's leaf with listeners on both Windows' containers.
+      const leaf = byId(b, "leaf");
+      for (const [window, label] of [
+        [a, "a"],
+        [b, "b"],
+      ] as const)
+        listen(window, byId(window, "mid"), "x", (e: AnyEvent) => log.push(step([a, b], label, e)));
+      // When: the leaf is dispatched on, moved into Window A's tree, dispatched on through both
+      // Windows' prototypes, then moved back and dispatched on again.
+      dispatch(b, leaf, new b.Event("x", { bubbles: true }));
+      byId(a, "mid").append(leaf);
+      dispatch(b, leaf, new b.Event("x", { bubbles: true }));
+      dispatch(a, leaf, new a.Event("x", { bubbles: true }));
+      Reflect.apply(b.EventTarget.prototype.dispatchEvent, leaf, [
+        new a.Event("x", { bubbles: true }),
+      ]);
+      byId(b, "mid").append(leaf);
+      dispatch(a, leaf, new a.Event("x", { bubbles: true }));
+      // Then: every dispatch reaches the container that holds the leaf at that moment.
+      log.push(`owner:${leaf.ownerDocument === a.document ? "a" : "b"}`);
+    });
+  });
 });
