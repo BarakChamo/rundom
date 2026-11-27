@@ -1185,6 +1185,22 @@ function coveredLonghands(): ReadonlySet<string> {
     [...referenceShorthands()].flatMap(([name, groups]) => (name === "all" ? [] : groups.flat())),
   ));
 }
+let shorthandsByLonghand: ReadonlyMap<string, readonly (readonly string[])[]> | undefined;
+/** For each longhand, the flattened members of every jsdom shorthand other than `all` covering it. */
+function containingShorthands(): ReadonlyMap<string, readonly (readonly string[])[]> {
+  if (shorthandsByLonghand) return shorthandsByLonghand;
+  const result = new Map<string, (readonly string[])[]>();
+  for (const [name, groups] of referenceShorthands()) {
+    if (name === "all") continue;
+    const members = groups.flat();
+    for (const member of members) {
+      const lists = result.get(member);
+      if (lists) lists.push(members);
+      else result.set(member, [members]);
+    }
+  }
+  return (shorthandsByLonghand = result);
+}
 /** jsdom's shorthand table: each shorthand's longhand groups. */
 function referenceShorthands(): ReadonlyMap<string, readonly (readonly string[])[]> {
   return (shorthandNames ??= require("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js"));
@@ -1485,13 +1501,22 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const ordered = orderedStyles.get(this);
       if (ordered) return ordered.cssText;
       let text = this.#plainBlockText() ?? super.cssText;
-      if (shorthandSources?.get(this)?.size) {
+      const pending = shorthandSources?.get(this)?.size;
+      if (pending || this.#completesShorthand()) {
         // CSSOM deliberately hides the value of a longhand with a pending shorthand.
         // Feed its specified source into the serializer while preserving original order.
         const declarations: string[] = [];
         for (let i = 0; i < this._length; i++) {
           const name = this[i];
           if (!name) continue;
+          // cssstyle appends the shorthands it stores; CSSOM declares only their longhands.
+          if (
+            !pending &&
+            referenceShorthands()
+              .get(name)
+              ?.every((group) => group.every((member) => this._values.has(member)))
+          )
+            continue;
           const value = shorthandSources?.get(this)?.has(name)
             ? "initial"
             : super.getPropertyValue(name);
@@ -1607,6 +1632,17 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       this.#publicNames = { revision: this.#indexRevision, names };
       return names;
+    }
+    // CSSOM serializes a shorthand in place of its longhands once all of them are declared.
+    #completesShorthand(): boolean {
+      if (this._computed) return false;
+      const containing = containingShorthands();
+      for (let i = 0; i < this._length; i++) {
+        const lists = containing.get(this[i] ?? "");
+        if (lists?.some((members) => members.every((member) => this._values.has(member))))
+          return true;
+      }
+      return false;
     }
     // cssstyle's block serializer only rewrites shorthands and border declarations; a block
     // without them is its declarations in order, which skips its per-call normalization.
@@ -2483,10 +2519,13 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         /^(?:inherit|initial|unset|revert(?:-layer|-rule)?)$/i.test(value)
       ) {
         this.#removeProperty(name);
-        for (const child of propertyDefinitions.get(name)?.longhands ?? [])
+        // CSSOM lists the position axes directly after background-image.
+        for (const child of propertyDefinitions.get(name)?.longhands ?? []) {
           this._setProperty(child, value.toLowerCase(), priority);
-        for (const axis of backgroundPositionAxes)
-          this._setProperty(axis, value.toLowerCase(), priority);
+          if (child === "background-image")
+            for (const axis of backgroundPositionAxes)
+              this._setProperty(axis, value.toLowerCase(), priority);
+        }
         this._setProperty(name, value.toLowerCase(), priority);
         return;
       }

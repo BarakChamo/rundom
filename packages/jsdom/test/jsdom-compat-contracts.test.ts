@@ -503,3 +503,82 @@ describe.each(providers)(
     });
   },
 );
+
+describe.each(providers)("$name declaration block shorthand serialization", ({ Constructor }) => {
+  it.each([
+    ["flex: 1", "flex: 1 1 0%;"],
+    ["gap: 1px 2px", "gap: 1px 2px;"],
+    ["inset: 0", "inset: 0px;"],
+    ["top: 0; right: 0; bottom: 0; left: 0", "inset: 0px;"],
+    ["grid-area: 1 / 2", "grid-area: 1 / 2;"],
+    ["columns: 2", "columns: 2;"],
+    ["list-style: none", "list-style: none;"],
+    ["place-items: center", "place-items: center;"],
+    ["transition: opacity 0.3s", "transition: opacity 0.3s;"],
+    ["text-decoration: underline dotted red", "text-decoration: underline dotted red;"],
+    ["text-align: center", "text-align: center;"],
+    ["white-space: nowrap", "white-space: nowrap;"],
+    ["vertical-align: middle", "vertical-align: middle;"],
+    ["box-shadow: 0 0 1px red", "box-shadow: red 0px 0px 1px;"],
+    ["font: 12px serif", "font: 12px serif;"],
+    ["flex: initial", "flex: initial;"],
+    ["flex: 1 !important; flex-grow: 2", "flex: 1 1 0% !important;"],
+    ["flex-grow: 1; color: red; flex-shrink: 1; flex-basis: 0%", "flex: 1 1 0%; color: red;"],
+    ["top: 1px; color: red", "top: 1px; color: red;"],
+  ])("should serialize %j as %j inline, in the attribute and in a rule", (input, expected) => {
+    // Given: a rule and an element declaring every longhand of a shorthand.
+    const { window } = new Constructor(`<style>.r { ${input} }</style><div></div>`);
+    try {
+      const element = htmlElement(window, window.document.querySelector("div"));
+      // When: the same block is written through cssText.
+      element.style.cssText = input;
+      // Then: each declaration block serializes the shorthand in place of its longhands.
+      expect(element.style.cssText).toBe(expected);
+      expect(element.getAttribute("style")).toBe(expected);
+      expect(firstRule(window).style.cssText).toBe(expected);
+    } finally {
+      window.close();
+    }
+  });
+
+  it("should list a CSS-wide background keyword's position axes after background-image", () => {
+    // Given: an element whose style attribute sets background to a CSS-wide keyword.
+    const { window } = new Constructor(`<div style="background: inherit"></div>`);
+    try {
+      const style = htmlElement(window, window.document.querySelector("div")).style;
+      // Then: the indices follow jsdom's expansion order and the block collapses.
+      expect([style[0], style[1], style[2], style[3]]).toEqual([
+        "background-image",
+        "background-position-x",
+        "background-position-y",
+        "background-size",
+      ]);
+      expect(style.cssText).toBe("background: inherit;");
+    } finally {
+      window.close();
+    }
+  });
+});
+
+describe.each(providers)("$name outline shorthand serialization", ({ Constructor }) => {
+  it.each([
+    ["outline: none", "medium"],
+    ["outline: 2px dotted blue", "2px dotted blue"],
+    ["outline: blue dotted 2px", "2px dotted blue"],
+    ["outline: auto", "auto"],
+    ["outline: thin dashed currentcolor !important", "thin dashed currentcolor"],
+  ])("should serialize %j as width, style, color without initial components", (input, value) => {
+    // Given: an element whose style attribute declares the outline shorthand.
+    const { window } = new Constructor(`<div style="${input}"></div>`);
+    try {
+      const style = htmlElement(window, window.document.querySelector("div")).style;
+      // Then: the shorthand value and the block use the grammar's component order.
+      expect(style.getPropertyValue("outline")).toBe(value);
+      expect(style.cssText).toBe(
+        `outline: ${value}${input.endsWith("!important") ? " !important" : ""};`,
+      );
+    } finally {
+      window.close();
+    }
+  });
+});

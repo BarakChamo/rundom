@@ -1514,13 +1514,13 @@ it("exposes outline longhands in a writable declaration and removes them with th
 
     // When a longhand is edited, the shorthand reflects the new value.
     style.setProperty("outline-color", "green", "important");
-    expect(style.getPropertyValue("outline")).toBe("green ridge 3px");
+    expect(style.getPropertyValue("outline")).toBe("3px ridge green");
     expect(window.getComputedStyle(target).getPropertyValue("outline-color")).toBe(
       "rgb(0, 128, 0)",
     );
 
     // Then removing the shorthand clears all its components.
-    expect(style.removeProperty("outline")).toBe("green ridge 3px");
+    expect(style.removeProperty("outline")).toBe("3px ridge green");
     expect(style.length).toBe(0);
   } finally {
     window.close();
@@ -1538,7 +1538,7 @@ it("preserves source order and priority across repeated outline declarations in 
       "outline: solid red; color: lime; outline-color: blue; outline: dotted green";
     expect(target.style.getPropertyValue("outline-color")).toBe("green");
     expect(target.style.getPropertyValue("color")).toBe("lime");
-    expect(target.style.cssText).toContain("outline: green dotted;");
+    expect(target.style.cssText).toContain("outline: dotted green;");
     target.style.cssText = target.style.cssText;
     expect(target.style.getPropertyValue("outline-color")).toBe("green");
 
