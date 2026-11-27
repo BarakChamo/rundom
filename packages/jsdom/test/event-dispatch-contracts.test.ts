@@ -217,6 +217,31 @@ describe.each([
     }
   });
 
+  it("routes slotted, window and signal events once the Window has a shadow root", () => {
+    // Given: a host whose shadow root slots its light child, plus listeners on the slot and window.
+    const { window } = new Constructor("<div id=h><span id=s>x</span></div>");
+    try {
+      const host = element(window, "h");
+      const shadow = host.attachShadow({ mode: "open" });
+      shadow.innerHTML = "<slot></slot>";
+      const seen: string[] = [];
+      shadow.querySelector("slot")?.addEventListener("ping", () => seen.push("slot"));
+      window.addEventListener("ping", (event) =>
+        seen.push(`window:${event.composedPath().length}`),
+      );
+      const signal = new window.AbortController().signal;
+      signal.addEventListener("ping", () => seen.push("signal"));
+      // When: events are dispatched on the slotted child, the window and an AbortSignal.
+      element(window, "s").dispatchEvent(new window.Event("ping", { bubbles: true }));
+      window.dispatchEvent(new window.Event("ping"));
+      signal.dispatchEvent(new window.Event("ping"));
+      // Then: the slotted path reaches the slot and the window; other targets deliver directly.
+      expect(seen).toEqual(["slot", "window:8", "window:1", "signal"]);
+    } finally {
+      window.close();
+    }
+  });
+
   it("cancels checkbox activation when an onclick handler returns false", () => {
     // Given: a checkbox whose only listener is an onclick property returning false.
     const { window } = new Constructor("<input type=checkbox id=a>");

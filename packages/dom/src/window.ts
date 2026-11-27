@@ -4155,7 +4155,8 @@ function buildWindow(
 
   function eventAssignedSlot(target: object): Node | undefined {
     if (!hasShadowRoots) return undefined;
-    const node = nodeRecord(target)?.node;
+    // Every path entry and non-node target (Window, AbortSignal, ...) arrives here.
+    const node = nodeRecord(target, true)?.node;
     const slot = node && assignedSlot(node);
     if (!slot) return undefined;
     bindPath(slot, true);
