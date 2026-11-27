@@ -250,3 +250,79 @@ describe("getComputedStyle reuse beside state selectors", () => {
     );
   });
 });
+
+describe("getComputedStyle reuse across focus changes", () => {
+  it("should follow focus rings, :focus, :focus-within and inheritance as focus moves", () => {
+    // Given: focusable controls under a :focus-within container and a :focus parent with a child
+    withWindow(
+      `<style>.p:focus{color:rgb(9, 0, 0)} .w:focus-within{background-color:rgb(0, 9, 0)} b{color:rgb(1, 1, 1)}</style><div class=w><button id=a>a</button><button id=b>b</button></div><div class=p tabindex=0><span>s</span></div><b>x</b>`,
+      (window) => {
+        const { document } = window;
+        const nodes = ["#a", "#b", ".p", "span", ".w", "b"].map((selector) => {
+          const found = document.querySelector(selector);
+          if (!found) throw new Error(`Expected ${selector}`);
+          return found;
+        });
+        const read = () =>
+          nodes.map((node) => {
+            const style = window.getComputedStyle(node);
+            return [style.outlineStyle, style.color, style.backgroundColor].join("/");
+          });
+        const focus = (selector: string) => element(window, selector).focus();
+        const steps = [read()];
+        // When: focus moves between controls, onto the :focus parent, and away
+        focus("#a");
+        steps.push(read());
+        focus("#b");
+        steps.push(read());
+        focus(".p");
+        steps.push(read());
+        element(window, ".p").blur();
+        steps.push(read());
+        // Then: only elements whose focus state or focus-dependent rules changed differ
+        expect(steps).toEqual([
+          [
+            "none/rgb(0, 0, 0)/rgb(204, 204, 204)",
+            "none/rgb(0, 0, 0)/rgb(204, 204, 204)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(1, 1, 1)/rgba(0, 0, 0, 0)",
+          ],
+          [
+            "auto/rgb(0, 0, 0)/rgb(204, 204, 204)",
+            "none/rgb(0, 0, 0)/rgb(204, 204, 204)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(0, 0, 0)/rgb(0, 9, 0)",
+            "none/rgb(1, 1, 1)/rgba(0, 0, 0, 0)",
+          ],
+          [
+            "none/rgb(0, 0, 0)/rgb(204, 204, 204)",
+            "auto/rgb(0, 0, 0)/rgb(204, 204, 204)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(0, 0, 0)/rgb(0, 9, 0)",
+            "none/rgb(1, 1, 1)/rgba(0, 0, 0, 0)",
+          ],
+          [
+            "none/rgb(0, 0, 0)/rgb(204, 204, 204)",
+            "none/rgb(0, 0, 0)/rgb(204, 204, 204)",
+            "auto/rgb(9, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(9, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(1, 1, 1)/rgba(0, 0, 0, 0)",
+          ],
+          [
+            "none/rgb(0, 0, 0)/rgb(204, 204, 204)",
+            "none/rgb(0, 0, 0)/rgb(204, 204, 204)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(0, 0, 0)/rgba(0, 0, 0, 0)",
+            "none/rgb(1, 1, 1)/rgba(0, 0, 0, 0)",
+          ],
+        ]);
+      },
+    );
+  });
+});

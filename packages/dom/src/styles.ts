@@ -7610,7 +7610,9 @@ export function createStyles(input: {
           linkedSheetRevision === proof.linked &&
           (!proof.authorSheets || !exposedStylesheets) &&
           !didAdoptStylesheets)) &&
-      (frame.focusRevision === undefined || frame.focusRevision === input.focusRevision())
+      (frame.focusRevision === undefined || frame.focusRevision === input.focusRevision()) &&
+      // The UA focus ring is the one focus input every frame has; rules add the revision.
+      !!frame.userAgentFocus === (input.statePseudos["focus-visible"]?.(node) === true)
     );
   }
 
@@ -8418,7 +8420,8 @@ export function createStyles(input: {
     pseudo?: string,
   ): PublicDeclaration {
     let reusableEligible = proof !== undefined;
-    let focusRevision: number | undefined = input.focusRevision();
+    // Set once a focus-dependent selector is a candidate anywhere along the computed path.
+    let focusRevision: number | undefined;
     function certify(frame: ComputedFrame): void {
       if (
         reusableEligible &&
