@@ -6090,6 +6090,11 @@ const fontWidths = new Map([
 
 const fontWidthKeywords = new Map([...fontWidths].map(([keyword, width]) => [width, keyword]));
 
+// Defined outside the cascade so the reader's closure context holds only the captured map.
+function capturedParentValues(captured: ReadonlyMap<string, string>) {
+  return { getPropertyValue: (name: string) => captured.get(name) ?? "" };
+}
+
 /** Owns stylesheets and declarations for a single document. */
 export function createStyles(input: {
   document: Raw.Document;
@@ -8307,6 +8312,11 @@ export function createStyles(input: {
     return deferred;
   }
 
+  // Substitution frames outlive this computation; keep their reader's context to the element.
+  function elementBaseURL(element: Raw.Element): () => string {
+    return () => input.baseURL(input.ownerDocument(element));
+  }
+
   function computeStyle(
     node: Raw.Element,
     root: Raw.ParentNode | undefined,
@@ -9445,7 +9455,7 @@ export function createStyles(input: {
         }
         let substitution: SubstitutionFrame | undefined;
         if (substitutionValues) {
-          const baseURL = () => input.baseURL(input.ownerDocument(element));
+          const baseURL = elementBaseURL(element);
           let inheritedFrame = parentFrame?.substitution;
           if (
             !inheritedFrame &&
@@ -9702,7 +9712,7 @@ export function createStyles(input: {
             independent
               ? {
                   ...attributes,
-                  prior: captured && { getPropertyValue: (name) => captured.get(name) ?? "" },
+                  prior: captured && capturedParentValues(captured),
                 }
               : attributes,
             resolver,
