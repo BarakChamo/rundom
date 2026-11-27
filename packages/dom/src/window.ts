@@ -20906,7 +20906,6 @@ function buildWindow(
         insertionScanner,
       );
     }
-    visited.length = 0;
   }
 
   function finishInsertedContent(roots: readonly Raw.ChildNode[], parent: Raw.ParentNode): void {
@@ -20918,10 +20917,9 @@ function buildWindow(
     const pending: Raw.Element[] = [];
     // Only recorded subtrees can be skipped, so a detached parent is resolved on first need.
     let kinds = 0;
-    const relevant = (summary: number) => {
-      kinds ||= treeRoot(parent, true) === source ? insertionKinds : detachedInsertionKinds;
-      return (summary & kinds) !== 0;
-    };
+    const resolveKinds = () =>
+      (kinds ||= treeRoot(parent, true) === source ? insertionKinds : detachedInsertionKinds);
+    const relevant = (summary: number) => (summary & resolveKinds()) !== 0;
     // No author code runs between this walk and recording, so the visited tree stays fixed.
     const visited = insertionVisits;
     visited.length = 0;
@@ -20947,7 +20945,12 @@ function buildWindow(
           active.push(node);
       }
     }
-    recordInsertedSummaries(visited);
+    // Connected content is seldom inserted again, so only detached builds repay recording. Leaves
+    // carry no entry, which keeps leaf appends free of the root walk.
+    const recordable =
+      visited.length > 1 || (visited[0] !== undefined && leafKinds(visited[0]) === undefined);
+    if (recordable && resolveKinds() === detachedInsertionKinds) recordInsertedSummaries(visited);
+    visited.length = 0;
     // Snapshot checked defaults across every root before normalization changes a later root.
     for (const node of checked) setChecked(node, true);
     if (hasStyles) for (const root of roots) if (tree.isElementNode(root)) scanInsertedStyles(root);
