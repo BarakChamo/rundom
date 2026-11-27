@@ -7350,6 +7350,8 @@ export function createStyles(input: {
     siblingColor?: boolean;
     registered?: boolean;
     custom?: CustomProjection;
+    // The frame this one was copied from when its element adopted a sibling's frame.
+    family?: ComputedFrame;
     units: number;
     characters: number;
     declarationCharacters: number;
@@ -7384,6 +7386,57 @@ export function createStyles(input: {
     if (node && slots?.[owner.role] === frame) {
       delete slots[owner.role];
       if (!slots.target && !slots.ancestor) computedFrames.delete(node);
+    }
+  }
+
+  // Recent frames per parent frame and element shape (namespace, tag, role), newest first.
+  // Sibling lists alternate between a few shapes, such as odd and even rows.
+  const siblingFrames = new WeakMap<ComputedFrame, Map<string, ComputedFrame[]>>();
+  // Copies of one frame hold the same values, so a descendant built under one fits under all.
+  function sameFamily(a: ComputedFrame | undefined, b: ComputedFrame): boolean {
+    return !!a && (a.family ?? a) === (b.family ?? b);
+  }
+  function sameCascadeInputs(a: readonly CascadeInput[], b: readonly CascadeInput[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index++) {
+      const x = a[index]!,
+        y = b[index]!;
+      if (
+        x.weight !== y.weight ||
+        x.hostContext !== y.hostContext ||
+        x.base !== y.base ||
+        x.proximity !== y.proximity ||
+        x.layerIndex !== y.layerIndex ||
+        x.outerDepth !== y.outerDepth ||
+        x.entries.length !== y.entries.length
+      )
+        return false;
+      if (x.entries === y.entries) continue;
+      for (let entry = 0; entry < x.entries.length; entry++) {
+        const p = x.entries[entry]!,
+          q = y.entries[entry]!;
+        if (
+          p !== q &&
+          (p.name !== q.name ||
+            p.value !== q.value ||
+            p.important !== q.important ||
+            p.order !== q.order ||
+            p.base !== q.base ||
+            p.shorthand !== q.shorthand)
+        )
+          return false;
+      }
+    }
+    return true;
+  }
+  function rememberSiblingFrame(parent: ComputedFrame, shape: string, frame: ComputedFrame): void {
+    let shapes = siblingFrames.get(parent);
+    if (!shapes) siblingFrames.set(parent, (shapes = new Map()));
+    const frames = shapes.get(shape);
+    if (!frames) shapes.set(shape, [frame]);
+    else {
+      frames.unshift(frame);
+      if (frames.length > 4) frames.pop();
     }
   }
 
@@ -8657,10 +8710,8 @@ export function createStyles(input: {
       const parentFrame = frame;
       const role = element === node && (!pseudo || activePseudo) ? "target" : "ancestor";
       const documentChild = element.parentNode?.nodeName === "#document";
-      const previous = activePseudo ? undefined : computedFrames.get(element)?.[role];
-      const sameParent =
-        previous &&
-        (parentFrame ? previous.parent?.deref() === parentFrame : previous.parent === undefined);
+      let previous = activePseudo ? undefined : computedFrames.get(element)?.[role];
+      let siblingAdopted = false;
       const inputs: CascadeInput[] = [];
       let themeEntries: readonly CascadeEntry[] | undefined;
       const {
@@ -8714,16 +8765,28 @@ export function createStyles(input: {
             : (documentBase ??= input.baseURL(input.ownerDocument(element)));
         return !!sameViewport && cached.baseURL === currentBase;
       }
-      const sameContext =
-        previous &&
-        sameParent &&
-        previous.documentChild === documentChild &&
-        previous.userAgentColor === userAgentColor &&
-        previous.userAgentDisplay === userAgentDisplay &&
-        previous.userAgentContentVisibility === userAgentContentVisibility &&
-        !!previous.userAgentFocus === userAgentFocus &&
-        previous.userAgentDirection === userAgentDirection &&
-        previous.userAgentHiddenInput === hiddenInput;
+      function sameContextAs(previous: ComputedFrame): boolean {
+        return (
+          (parentFrame
+            ? sameFamily(previous.parent?.deref(), parentFrame)
+            : previous.parent === undefined) &&
+          previous.documentChild === documentChild &&
+          previous.userAgentColor === userAgentColor &&
+          previous.userAgentDisplay === userAgentDisplay &&
+          previous.userAgentContentVisibility === userAgentContentVisibility &&
+          !!previous.userAgentFocus === userAgentFocus &&
+          previous.userAgentDirection === userAgentDirection &&
+          previous.userAgentHiddenInput === hiddenInput
+        );
+      }
+      let sameContext = !!previous && sameContextAs(previous);
+      // An element without its own frame may adopt the frame of a sibling with the same shape
+      // (every userAgentStyle input) under the same parent frame when its freshly matched
+      // inputs are equal. Adoption never certifies: the frame's proof belongs to its owner.
+      const shape =
+        previous || activePseudo || !parentFrame
+          ? undefined
+          : `${element.namespaceURI ?? ""} ${element.tagName} ${role} ${button} ${field}`;
       // Automatic direction and shadow styling retain the complete path. Inline declarations
       // can certify: every change to them rewrites the style attribute, which advances the
       // style revision, and their URL bases are fixed when declared.
@@ -9129,17 +9192,44 @@ export function createStyles(input: {
         )
           take(inlineStyle(element), 2 ** 52);
       }
+      if (shape && !sheetRegistrations) {
+        for (const candidate of siblingFrames
+          .get(parentFrame!.family ?? parentFrame!)
+          ?.get(shape) ?? []) {
+          if (
+            candidate.inputs &&
+            sameCascadeInputs(candidate.inputs, inputs) &&
+            sameContextAs(candidate) &&
+            sameEnvironment(candidate)
+          ) {
+            previous = candidate;
+            siblingAdopted = sameContext = true;
+            break;
+          }
+        }
+      }
       if (
         previous &&
         !sheetRegistrations &&
         sameContext &&
         previous.inputs &&
         previous.inputs.length === inputs.length &&
-        inputs.every((source, index) => source === previous.inputs?.[index]) &&
+        (siblingAdopted || inputs.every((source, index) => source === previous!.inputs?.[index])) &&
         sameEnvironment(previous)
       ) {
-        prioritizeAncestor(previous);
-        certify(previous);
+        if (siblingAdopted) {
+          // The owner's proof stays with the owner. A copy carries this element's proof and
+          // shares the owner's immutable values, including a deferred publisher.
+          const copy: ComputedFrame = { ...previous, family: previous.family ?? previous };
+          delete copy.reuse;
+          delete copy.focusRevision;
+          certify(copy);
+          rememberComputedFrame(element, role, copy);
+          previous = copy;
+        } else {
+          prioritizeAncestor(previous);
+          certify(previous);
+        }
         if (role === "target") return computedFrameView(previous);
         result = previous.style;
         if (displays) displays.set(element, result?._values.get("display") === "none");
@@ -9553,8 +9643,10 @@ export function createStyles(input: {
           sameWinners(previous.winners, computedWinners) &&
           sameEnvironment(previous)
         ) {
-          prioritizeAncestor(previous);
-          certify(previous);
+          if (!siblingAdopted) {
+            prioritizeAncestor(previous);
+            certify(previous);
+          }
           if (role === "target") return computedFrameView(previous);
           result = previous.style;
           if (displays) displays.set(element, result?._values.get("display") === "none");
@@ -9879,6 +9971,8 @@ export function createStyles(input: {
         };
         certify(frame);
         if (!activePseudo) rememberComputedFrame(element, role, frame);
+        if (shape && frame.inputs)
+          rememberSiblingFrame(parentFrame!.family ?? parentFrame!, shape, frame);
         if (frame.deferred && frameOrder.has(frame)) frame.deferred.retained = new WeakRef(frame);
         if (role === "target") return computedFrameView(frame);
         if (displays) displays.set(element, result?._values.get("display") === "none");
