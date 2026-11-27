@@ -19958,8 +19958,12 @@ function buildWindow(
     });
   }
   installWindowProperties();
-  const nativeGetComputedStyle = WindowMembers.prototype.getComputedStyle;
   const windowMembers = WindowMembers.prototype;
+  // A named load would make V8 migrate this never-inherited holder to fast mode.
+  const nativeGetComputedStyle: unknown = Object.getOwnPropertyDescriptor(
+    windowMembers,
+    "getComputedStyle",
+  )?.value;
   // Allocate with the public prototype from the outset. Switching a populated
   // member holder's prototype makes subsequent global descriptor installation costly.
   const bindings = construct(WindowMembers, [], Window) as WindowMembers;
