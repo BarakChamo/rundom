@@ -176,7 +176,9 @@ describe("computed style beside timing functions", () => {
     const html = `<div id=a style="direction: rtl; object-position: block-end inline-start"></div><div id=b style="writing-mode: vertical-rl; direction: rtl; object-position: block-end inline-start"></div><style>:root{--edge: block-end inline-start} #c{direction: rtl; object-position: var(--edge)} #d{writing-mode: vertical-rl; direction: rtl; object-position: var(--edge)}</style><div id=c></div><div id=d></div>`;
     // When each is read in turn in one process
     const values = computed(html, (style) =>
-      ["#a", "#b", "#c", "#d", "#a"].map((selector) => style(selector).objectPosition),
+      ["#a", "#b", "#c", "#d", "#a"].map((selector) =>
+        style(selector).getPropertyValue("object-position"),
+      ),
     );
     // Then no element reuses another writing mode's physical mapping
     expect(values).toEqual(["100% 100%", "0% 100%", "100% 100%", "0% 100%", "100% 100%"]);
