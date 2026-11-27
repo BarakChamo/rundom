@@ -15,6 +15,7 @@ import {
   type DirectSelector,
   type DirectSimple,
 } from "./selector-parser.js";
+import { withSignatureFilter } from "./selector-signature.js";
 import { checkedness, inputType, isInput } from "./input-state.js";
 import { hasCustomState } from "./custom-state.js";
 import { elementLocalName, xmlSpecial } from "./xml.js";
@@ -1211,16 +1212,14 @@ export function compileSelector(input: {
   // A default namespace still constrains these selectors in author stylesheets.
   if (!input.namespaces?.size) {
     const list = simpleSelectorList(input.selector);
-    if (list) return compileSimpleList(list, input.isXML);
-    const literal = compileAttributeLiteral(input.selector, input.isXML);
-    if (literal) return literal;
-    const compound = compileSimpleCompound(input.selector, input.isXML);
-    if (compound) return compound;
-    const simple = compileSimpleSubject(input.selector);
-    if (simple) return simple;
+    const fast =
+      (list && compileSimpleList(list, input.isXML)) ||
+      compileAttributeLiteral(input.selector, input.isXML) ||
+      compileSimpleCompound(input.selector, input.isXML) ||
+      compileSimpleSubject(input.selector);
     const direct = parseDirectSelector(input.selector);
-    const compiled = direct && compileDirect(direct, input.isXML, input.statePseudos);
-    if (compiled) return compiled;
+    const compiled = fast || (direct && compileDirect(direct, input.isXML, input.statePseudos));
+    if (compiled) return withSignatureFilter(direct, compiled);
   }
   const { _compileUnsafe: compile }: typeof import("css-select") =
     require("./css-runtime.cjs").cssSelect;
