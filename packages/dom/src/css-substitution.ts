@@ -142,6 +142,9 @@ type BuiltFrame = SubstitutionFrame & { declares(name: string): boolean };
 const contextFreeProperty =
   /^(?:transition-timing-function|box-shadow(?:-(?:blur|color|spread|position|offset))?|(?:transform|perspective)-origin|object-position|font-style|background-(?:size|image|position-[xy])|list-style-image|(?:min-|max-)?(?:width|height)|(?:padding|margin)-(?:top|right|bottom|left)|top|right|bottom|left)$/;
 const contextKeyword = /\d(?:\.\d+)?em\b|currentcolor|inherit|initial|unset|revert/i;
+// Flow-relative position keywords map to physical edges through the element's writing mode and
+// direction, which the key does not carry.
+const flowRelativeEdge = /(?:^|[\s,(=\0])(?:(?:block|inline|x|y)-)?(?:start|end)(?=$|[\s,)\0])/i;
 const resolvedText = new Map<string, string>();
 
 function contextFreeKey(
@@ -172,6 +175,7 @@ function contextFreeKey(
       }
     }
   }
+  if (/origin|position/.test(name) && flowRelativeEdge.test(key)) return;
   return key.length <= 2048 ? key : undefined;
 }
 
