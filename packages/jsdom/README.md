@@ -6,7 +6,7 @@ Use the **[jsdom documentation](https://github.com/jsdom/jsdom#readme)** for set
 
 ## Node API
 
-The synchronous Node facade exports `JSDOM`, `VirtualConsole`, `CookieJar`, `toughCookie`, and `requestInterceptor` through ESM and CommonJS. The constructor accepts strings, buffers, ArrayBuffers, and views. It sniffs byte encodings and chooses HTML or XML parsing from `contentType`. `serialize()` returns the current document markup. Set `includeNodeLocations: true` at construction to retrieve original parser offsets with `nodeLocation(node)`. Implied elements return `null` and programmatically created nodes return `undefined`.
+The synchronous Node facade exports `JSDOM`, `VirtualConsole`, `CookieJar`, `toughCookie`, and `requestInterceptor` through ESM and CommonJS. The `./vitest-environment` export is an opt-in Vitest environment that installs Window globals on first use; see the [Vitest preset](../../docs/vitest-preset.md). The constructor accepts strings, buffers, ArrayBuffers, and views. It sniffs byte encodings and chooses HTML or XML parsing from `contentType`. `serialize()` returns the current document markup. Set `includeNodeLocations: true` at construction to retrieve original parser offsets with `nodeLocation(node)`. Implied elements return `null` and programmatically created nodes return `undefined`.
 
 ```ts
 import { JSDOM } from "@run-dom/jsdom";
