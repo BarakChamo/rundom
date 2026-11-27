@@ -98,6 +98,37 @@ describe("Window CSS reference loading", () => {
     expect(output).toBe("verified");
   });
 
+  it("evaluates px width and height media rules without loading any CSS reference artifact", () => {
+    const output = runIsolated(`
+      // Given: a stylesheet whose rules sit in responsive width and height media groups
+      const { window } = new JSDOM(\`<!doctype html><style>
+        .a { color: red; display: flex }
+        @media (min-width: 600px) { .a { margin: 1px } }
+        @media screen and (max-width: 599.95px) { .a { margin: 2px } }
+        @media (min-height:700px) and (max-height:800px) { .a { padding: 3px } }
+      </style><div class="a">x</div>\`);
+      // When: computed values and the media lists are read for the first time in the process
+      const div = window.document.querySelector("div");
+      const computed = window.getComputedStyle(div);
+      // Then: the default 1024x768 device matches, media text is canonical, and no reference artifact loaded
+      assert.equal(computed.display, "flex");
+      assert.equal(computed.marginTop, "1px");
+      assert.equal(computed.paddingTop, "3px");
+      const rules = window.document.styleSheets[0].cssRules;
+      assert.equal(rules[1].media.mediaText, "(min-width: 600px)");
+      assert.equal(rules[2].media.mediaText, "screen and (max-width: 599.95px)");
+      assert.equal(rules[3].conditionText, "(min-height: 700px) and (max-height: 800px)");
+      const artifacts = Object.keys(require.cache)
+        .filter((path) => path.startsWith(${JSON.stringify(domDist + "/css-reference")}))
+        .map((path) => path.slice(${JSON.stringify(domDist.length + 1)}));
+      assert.deepEqual(artifacts, []);
+      assert.deepEqual(rawReferenceModules(), []);
+      window.close();
+      process.stdout.write("verified");
+    `);
+    expect(output).toBe("verified");
+  });
+
   it("reflects the same descriptor interfaces before and after the CSS engine loads", () => {
     // Given: descriptor interface shapes read in one process that never loads the engine,
     // and in one where another Window parsed descriptor rules first

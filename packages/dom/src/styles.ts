@@ -7719,7 +7719,9 @@ export function createStyles(input: {
           linkedSheetRevision === proof.linked &&
           (!proof.authorSheets || !exposedStylesheets) &&
           !didAdoptStylesheets)) &&
-      (frame.focusRevision === undefined || frame.focusRevision === input.focusRevision())
+      (frame.focusRevision === undefined || frame.focusRevision === input.focusRevision()) &&
+      // The UA focus ring is the one focus input every frame has; rules add the revision.
+      !!frame.userAgentFocus === (input.statePseudos["focus-visible"]?.(node) === true)
     );
   }
 
@@ -7914,6 +7916,41 @@ export function createStyles(input: {
     return { resolveValue, expandPending, substitution, registrations };
   }
 
+  // A computed write whose validation stores exactly its own normalized longhand, with no
+  // provenance, is replayed from that text instead of re-validating per element.
+  const validatedWrites = new Map<string, string | null>();
+  // cssstyle's border, flex and box longhand setters rebuild their shorthand from sibling state.
+  const statefulSetter =
+    /^(?:border(?:-(?:top|right|bottom|left))?(?:-(?:width|style|color))?|flex(?:-(?:grow|shrink|basis))?|(?:margin|padding)(?:-(?:top|right|bottom|left))?)$/;
+  function setComputedProperty(style: ComputedDeclaration, name: string, value: string): void {
+    const key = name + "\0" + value;
+    let stored = validatedWrites.get(key);
+    if (stored === undefined) {
+      if (key.length > 512 || statefulSetter.test(name)) {
+        style.setProperty(name, value);
+        return;
+      }
+      const probe = declaration();
+      probe.setProperty(name, value);
+      const text = probe._values.get(name);
+      stored =
+        probe._length === 1 &&
+        probe[0] === name &&
+        text !== undefined &&
+        probe.getPropertyPriority(name) === "" &&
+        !shorthandSources?.get(probe)?.size &&
+        !calculationSources?.get(probe)?.size &&
+        !declarationBases?.get(probe)?.size &&
+        !borderColorSourceOrder.has(probe)
+          ? text
+          : null;
+      if (validatedWrites.size >= 4096) validatedWrites.clear();
+      validatedWrites.set(key, stored);
+    }
+    if (stored === null) style.setProperty(name, value);
+    else style._setProperty(name, stored, "");
+  }
+
   // Resolution reads only named parent values, so a captured subset can stand in for the parent.
   type ParentValues = Pick<ComputedDeclaration, "getPropertyValue">;
   type ResolutionValues = {
@@ -8063,7 +8100,7 @@ export function createStyles(input: {
             );
       if (value === undefined) {
         const inheritedValue = inherited.has(name) && prior?.getPropertyValue(name);
-        if (inheritedValue) result.setProperty(name, inheritedValue);
+        if (inheritedValue) setComputedProperty(result, name, inheritedValue);
         continue;
       }
       if (isCustomProperty && /^(?:initial|inherit|unset|revert-layer)$/i.test(value)) continue;
@@ -8093,7 +8130,7 @@ export function createStyles(input: {
               ? (partialAncestors?.get(prior)?.complete() ?? prior)
               : prior;
           const inheritedValue = shouldInherit ? source?.getPropertyValue(name) : undefined;
-          if (inheritedValue) result.setProperty(name, inheritedValue);
+          if (inheritedValue) setComputedProperty(result, name, inheritedValue);
           continue;
         }
       }
@@ -8109,7 +8146,7 @@ export function createStyles(input: {
             ? (projected?.values.get(name) ?? prior?.getPropertyValue(name))
             : undefined;
         const fallback = userAgentValue || inheritedValue || (name === "font-size" ? "16px" : "");
-        if (fallback) result.setProperty(name, fallback);
+        if (fallback) setComputedProperty(result, name, fallback);
         continue;
       }
       if (isCustomProperty) {
@@ -8135,7 +8172,7 @@ export function createStyles(input: {
         continue;
       }
       if (name === "flex-basis") {
-        result.setProperty(name, simplifyCSSCalculation(value));
+        setComputedProperty(result, name, simplifyCSSCalculation(value));
         continue;
       }
       if (name === "font-weight") {
@@ -8177,7 +8214,7 @@ export function createStyles(input: {
         const length = computeNumericValue(value, () => currentViewport);
         const computed =
           name === "outline-width" ? snapOutlineWidth(length, currentViewport.resolution) : length;
-        result.setProperty(name, computed);
+        setComputedProperty(result, name, computed);
         continue;
       }
       if (name === "outline-color" && value.toLowerCase() === "auto") {
@@ -8192,7 +8229,8 @@ export function createStyles(input: {
       // System colors compute in their declaring element's scheme; currentColor
       // paint references retain the target's foreground dependency.
       const paint = target && (name === "fill" || name === "stroke");
-      result.setProperty(
+      setComputedProperty(
+        result,
         name,
         paint
           ? resolveColor(computed, { currentColor: color, colorScheme, fallback: computed })
@@ -8491,7 +8529,8 @@ export function createStyles(input: {
     pseudo?: string,
   ): PublicDeclaration {
     let reusableEligible = proof !== undefined;
-    let focusRevision: number | undefined = input.focusRevision();
+    // Set once a focus-dependent selector is a candidate anywhere along the computed path.
+    let focusRevision: number | undefined;
     function certify(frame: ComputedFrame): void {
       if (
         reusableEligible &&
@@ -8794,15 +8833,10 @@ export function createStyles(input: {
         !!previous.userAgentFocus === userAgentFocus &&
         previous.userAgentDirection === userAgentDirection &&
         previous.userAgentHiddenInput === hiddenInput;
-      // Inline declaration provenance, automatic direction and shadow styling retain
-      // the complete path; serialized attribute equality alone cannot certify them.
-      if (
-        reusableEligible &&
-        (userAgentDirection !== undefined ||
-          input.shadowRoot(element) ||
-          (inlineStyles?.get(element)?.style._length ?? 0) !== 0 ||
-          element.attrs.some((attr) => !attr.namespace && attr.name === "style" && attr.value))
-      )
+      // Automatic direction and shadow styling retain the complete path. Inline declarations
+      // can certify: every change to them rewrites the style attribute, which advances the
+      // style revision, and their URL bases are fixed when declared.
+      if (reusableEligible && (userAgentDirection !== undefined || input.shadowRoot(element)))
         reusableEligible = false;
       let borderColorBlock = 0;
       let collectLosers = false,
@@ -9230,6 +9264,7 @@ export function createStyles(input: {
         let hasVariableShorthand = false;
         let usesSubstitution = false;
         let environmentSubstitution = false;
+        let tokenReaders: string[] | undefined;
 
         // Cached frames return above without allocating winner-expansion closures.
         const consider = (name: string, candidate: Winner): void => {
@@ -9293,8 +9328,18 @@ export function createStyles(input: {
               const evaluated =
                 contextualLonghand.test(name) ||
                 (value.includes("(") && usesTypedValueGrammar(name, value));
-              environmentSubstitution =
-                (evaluated && !dependsOnWinnersOnly(value)) ||
+              // var() in evaluated values and pending shorthands is checked once the
+              // custom properties it reads are known.
+              const tokenReader =
+                (evaluated || !!shorthand || deferredShorthandLonghands.has(name)) &&
+                variableSyntax.test(value);
+              if (tokenReader) {
+                if (dependsOnWinnersOnly(value.replace(/var\(/gi, "calc(")))
+                  (tokenReaders ??= []).push(value);
+                else environmentSubstitution = true;
+              }
+              environmentSubstitution ||=
+                (evaluated && !tokenReader && !dependsOnWinnersOnly(value)) ||
                 (name.startsWith("--") && /\)var\(/i.test(value)) ||
                 ((name === "container-type" || name === "container") &&
                   /(?:^|[ /])(?:inline-)?size(?:$| )/.test(value)) ||
@@ -9600,6 +9645,16 @@ export function createStyles(input: {
           custom = { block: theme, placements: [{ before, end: theme.names.length }] };
         }
         custom ??= packCustomWinners(computedWinners);
+        if (tokenReaders && !environmentSubstitution) {
+          const block = custom?.block;
+          const token = (name: string): string | undefined => {
+            const winner = computedWinners.get(name);
+            return typeof winner === "string" ? winner : (winner?.value ?? block?.values.get(name));
+          };
+          environmentSubstitution = tokenReaders.some(
+            (value) => !dependsOnWinnersOnly(value, token),
+          );
+        }
         if (
           previous &&
           sameContext &&
@@ -9905,7 +9960,6 @@ export function createStyles(input: {
           ...(substitution && { substitution }),
           ...(substitution &&
             !environmentSubstitution &&
-            !hasVariableShorthand &&
             !registrations?.size &&
             (!parentFrame?.substitution || parentFrame.staticSubstitution) && {
               staticSubstitution: true as const,

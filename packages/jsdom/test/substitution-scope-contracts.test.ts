@@ -170,4 +170,15 @@ describe("computed style beside timing functions", () => {
     // Then the child follows the parent's new value
     expect(values).toEqual([ease, "steps(2)", "steps(2)"]);
   });
+
+  it("resolves flow-relative positions through each element's own writing mode", () => {
+    // Given elements that declare the same logical position under different writing modes
+    const html = `<div id=a style="direction: rtl; object-position: block-end inline-start"></div><div id=b style="writing-mode: vertical-rl; direction: rtl; object-position: block-end inline-start"></div><style>:root{--edge: block-end inline-start} #c{direction: rtl; object-position: var(--edge)} #d{writing-mode: vertical-rl; direction: rtl; object-position: var(--edge)}</style><div id=c></div><div id=d></div>`;
+    // When each is read in turn in one process
+    const values = computed(html, (style) =>
+      ["#a", "#b", "#c", "#d", "#a"].map((selector) => style(selector).objectPosition),
+    );
+    // Then no element reuses another writing mode's physical mapping
+    expect(values).toEqual(["100% 100%", "0% 100%", "100% 100%", "0% 100%", "100% 100%"]);
+  });
 });
