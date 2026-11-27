@@ -32,7 +32,15 @@ cacheArtifact("css-runtime", (runtime) => {
   for (const name of ["cssTree", "cssSelect", "cssColor", "cssValueParser", "cssStyle"])
     Reflect.get(runtime, name);
 });
-cacheArtifact("css-reference", () => {});
+// Module initialization runs once per process, so its compiled factories are worth caching.
+cacheArtifact("css-reference", (reference) => {
+  for (const path of [
+    "lib/jsdom/living/css/CSSStyleDeclaration-impl.js",
+    "lib/jsdom/living/css/parse/parser.js",
+    "lib/jsdom/living/css/resolve.js",
+  ])
+    reference.load(path);
+});
 // Reflection needs the ordered accessor names without evaluating the CSS engine in each worker.
 const basePrototype = createRequire(import.meta.url)("cssstyle").CSSStyleDeclaration.prototype;
 const properties = Object.entries(Object.getOwnPropertyDescriptors(basePrototype))
