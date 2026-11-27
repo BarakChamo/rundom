@@ -1129,17 +1129,19 @@ const inertTemplateDocuments = new WeakSet<Raw.Document>();
 let exposedTemplateHosts: WeakMap<Raw.Node, Raw.Element> | undefined;
 const creationRealms = new WeakMap<Raw.Node, symbol>();
 
-type DocumentFactory =
-  | "createElement"
-  | "createElementNS"
-  | "createAttribute"
-  | "createAttributeNS"
-  | "createTextNode"
-  | "createComment"
-  | "createCDATASection"
-  | "createProcessingInstruction"
-  | "createDocumentFragment"
-  | "createRange";
+const documentFactoryNames = [
+  "createElement",
+  "createElementNS",
+  "createAttribute",
+  "createAttributeNS",
+  "createTextNode",
+  "createComment",
+  "createCDATASection",
+  "createProcessingInstruction",
+  "createDocumentFragment",
+  "createRange",
+] as const;
+type DocumentFactory = (typeof documentFactoryNames)[number];
 type ImplementationFactory = "createDocumentType" | "createDocument" | "createHTMLDocument";
 const implementationOwners = new WeakMap<object, { owner: Raw.Document; realm: symbol }>();
 const windowControls = new WeakMap<
@@ -16654,7 +16656,7 @@ function buildWindow(
     method: DocumentFactory,
     args: readonly unknown[],
   ): object {
-    const factory = documentFactoryDescriptors[method]?.value;
+    const factory = documentFactories.get(method);
     if (typeof factory !== "function") throw new Error("Missing intrinsic Document factory");
     return Reflect.apply(factory, receiver, args);
   }
@@ -17702,7 +17704,13 @@ function buildWindow(
     return record;
   }
 
-  const documentFactoryDescriptors = Object.getOwnPropertyDescriptors(Document.prototype);
+  // Capture only the intrinsic factories; copying every Document member is per-Window waste.
+  const documentFactories = new Map<DocumentFactory, unknown>(
+    documentFactoryNames.map((name) => [
+      name,
+      Object.getOwnPropertyDescriptor(Document.prototype, name)?.value,
+    ]),
+  );
 
   class XMLSerializer {
     constructor() {
