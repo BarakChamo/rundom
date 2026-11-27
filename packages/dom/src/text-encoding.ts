@@ -1,7 +1,7 @@
 // Bridges byte encoding to each Window's typed arrays and error constructors.
 import { createRequire } from "node:module";
 import { isAnyArrayBuffer } from "node:util/types";
-import { TransformStream } from "node:stream/web";
+import type { TransformStream } from "node:stream/web";
 
 const require = createRequire(import.meta.url);
 type EncodingBackend = typeof import("@exodus/bytes/encoding.js");
@@ -9,6 +9,8 @@ type DecodeInput = Parameters<InstanceType<EncodingBackend["TextDecoder"]>["deco
 let backend: EncodingBackend | undefined;
 let encoder: InstanceType<EncodingBackend["TextEncoder"]> | undefined;
 const encoderInstances = new WeakSet<object>();
+// node:stream/web loads nine built-in modules; only stream construction needs it.
+const webStreams = () => process.getBuiltinModule("node:stream/web");
 const encoderStreams = new WeakMap<object, TransformStream<unknown, Uint8Array<ArrayBuffer>>>();
 const decoderStreams = new WeakMap<
   object,
@@ -139,7 +141,7 @@ export function createTextEncoding(realm: {
       let pendingSurrogate = "";
       encoderStreams.set(
         this,
-        new TransformStream<unknown, Uint8Array<ArrayBuffer>>({
+        new (webStreams().TransformStream)<unknown, Uint8Array<ArrayBuffer>>({
           transform(chunk, controller) {
             // Delay one leading surrogate so a pair can span chunks, including empty chunks.
             const text = pendingSurrogate + string(chunk);
@@ -171,7 +173,7 @@ export function createTextEncoding(realm: {
   class TextDecoderStream {
     constructor(label = "utf-8", options?: { fatal?: boolean; ignoreBOM?: boolean } | null) {
       const decoder = new TextDecoder(label, options);
-      const stream = new TransformStream<unknown, string>({
+      const stream = new (webStreams().TransformStream)<unknown, string>({
         transform(chunk, controller) {
           // Stream chunks are required BufferSources, unlike decode's optional input.
           if (chunk == null) throw new realm.TypeError("Expected a BufferSource");
