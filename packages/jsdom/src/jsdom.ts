@@ -1,6 +1,5 @@
 // Implements the synchronous Node-facing entry point for the standalone DOM.
 import { createDocumentFragment, createWindow } from "@run-dom/dom";
-import { open } from "node:fs/promises";
 import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { inspect } from "node:util";
@@ -69,7 +68,8 @@ export class JSDOM {
       ([".xml", ".xhtml", ".xht"].includes(extname(filename))
         ? "application/xhtml+xml"
         : "text/html");
-    const file = await open(filename);
+    // node:fs/promises pulls in a dozen modules a parsed-markup Window never needs.
+    const file = await process.getBuiltinModule("node:fs/promises").open(filename);
     let bytes: Buffer;
     let modifiedMs: number;
     try {
