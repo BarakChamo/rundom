@@ -62,6 +62,7 @@ import {
   type SynchronousXHRTransport,
 } from "./xhr.js";
 import { validPseudoSelectorList } from "./css-reference.js";
+import { parseDirectSelector } from "./selector-parser.js";
 import { compileSelector, hasClass, simpleSubjectAttribute } from "./selectors.js";
 import { parseNativeInactiveHTML } from "./native-parser.js";
 import { parseLiteralDocument } from "./inactive-parser.js";
@@ -3487,6 +3488,7 @@ function buildWindow(
     // Untrusted selectors cannot grow retained strings without a fixed bound.
     if (
       /(?:^|[^\\]):(?:host|state|not|constructor|has)\b|::(?:slotted|part)\b/i.test(query) &&
+      !parseDirectSelector(selector) &&
       !validPseudoSelectorList(query)
     )
       throw new DOMException("Invalid selector", "SyntaxError");

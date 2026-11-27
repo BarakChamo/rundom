@@ -9,6 +9,12 @@ import {
   purePseudoSelector,
 } from "./selector-syntax.js";
 import { validPseudoSelectorList } from "./css-reference.js";
+import {
+  parseDirectSelector,
+  type DirectComplex,
+  type DirectSelector,
+  type DirectSimple,
+} from "./selector-parser.js";
 import { checkedness, inputType, isInput } from "./input-state.js";
 import { hasCustomState } from "./custom-state.js";
 import { elementLocalName, xmlSpecial } from "./xml.js";
@@ -1005,6 +1011,178 @@ export function compileTreeSelector(
   };
 }
 
+const liveStatePseudos = new Set([
+  "checked",
+  "enabled",
+  "disabled",
+  "link",
+  "any-link",
+  "visited",
+  "required",
+  "optional",
+  "read-write",
+  "read-only",
+]);
+const structuralPseudos = new Set([
+  "first-child",
+  "last-child",
+  "only-child",
+  "first-of-type",
+  "last-of-type",
+  "only-of-type",
+  "empty",
+  "nth-child",
+  "nth-last-child",
+  "nth-of-type",
+  "nth-last-of-type",
+]);
+
+function matchesEmpty(node: Raw.Element): boolean {
+  // jsdom and deployed browsers count nonempty Text/CDATA, including whitespace.
+  return node.childNodes.every(
+    (child) =>
+      !tree.isElementNode(child) &&
+      (!tree.isTextNode(child) || child.value.length === 0) &&
+      (!tree.isCommentNode(child) ||
+        xmlSpecial(child)?.kind !== "cdata" ||
+        child.data.length === 0),
+  );
+}
+
+function defaultChecked(node: Raw.Element): boolean {
+  if (isInput(node)) {
+    const type = inputType(node);
+    return (type === "checkbox" || type === "radio") && checkedness(node);
+  }
+  return (
+    node.namespaceURI === "http://www.w3.org/1999/xhtml" &&
+    node.tagName === "option" &&
+    attribute(node, "selected") !== undefined
+  );
+}
+
+/** Compiles a direct parse with the same predicates the general adapter would register. */
+function compileDirect(
+  selector: DirectSelector,
+  isXML: boolean,
+  statePseudos: Record<string, (element: Raw.Element, level?: number) => boolean>,
+): ((element: Raw.Element) => boolean) | undefined {
+  type Predicate = (element: Raw.Element) => boolean;
+  let supported = true;
+  function own(name: string): Predicate | undefined {
+    const predicate = Object.hasOwn(statePseudos, name) ? statePseudos[name] : undefined;
+    // css-select rejects an argument-free call of a predicate declaring a second parameter.
+    return typeof predicate === "function" && predicate.length <= 1 ? predicate : undefined;
+  }
+  function position(node: Raw.Element, last: boolean, typed: boolean): number {
+    const siblings = node.parentNode ? node.parentNode.childNodes : [node];
+    const local = elementLocalName(node);
+    let count = 0;
+    for (let index = 0; index < siblings.length; index++) {
+      const sibling = siblings[last ? siblings.length - 1 - index : index];
+      if (sibling === node) return count + 1;
+      if (
+        sibling &&
+        tree.isElementNode(sibling) &&
+        (!typed ||
+          (sibling.namespaceURI === node.namespaceURI && elementLocalName(sibling) === local))
+      )
+        count++;
+    }
+    return count + 1;
+  }
+  function nth(a: number, b: number, last: boolean, typed: boolean): Predicate {
+    return (node) => {
+      const offset = position(node, last, typed) - b;
+      return a === 0 ? offset === 0 : offset / a >= 0 && offset % a === 0;
+    };
+  }
+  function simple(part: DirectSimple): Predicate {
+    switch (part.kind) {
+      case "type":
+        return part.name === "*" ? () => true : simpleTypeMatcher(part.name, isXML);
+      case "id":
+        return (node) => attribute(node, "id") === part.name;
+      case "class":
+        return (node) => hasClass(node, part.name);
+      case "attr": {
+        const test = compileAttributeTest(part.name, part.operator, part.value, part.flag, isXML);
+        if (!test) supported = false;
+        return test ?? (() => false);
+      }
+      case "list": {
+        const branches = part.list.map(complex);
+        const any = (node: Raw.Element) => branches.some((matches) => matches(node));
+        return part.name === "not" ? (node) => !any(node) : any;
+      }
+      case "nth":
+        if (Object.hasOwn(statePseudos, part.name)) break;
+        return nth(part.a, part.b, part.name.includes("last"), part.name.endsWith("of-type"));
+      case "pseudo": {
+        const { name } = part;
+        if (structuralPseudos.has(name)) {
+          if (Object.hasOwn(statePseudos, name)) break;
+          if (name === "empty") return matchesEmpty;
+          const typed = name.endsWith("of-type");
+          if (name.startsWith("first")) return nth(0, 1, false, typed);
+          if (name.startsWith("last")) return nth(0, 1, true, typed);
+          return (node) => position(node, false, typed) === 1 && position(node, true, typed) === 1;
+        }
+        const predicate = own(name) ?? (name === "checked" ? defaultChecked : undefined);
+        if (predicate && (liveStatePseudos.has(name) || !Object.hasOwn(cssSelectAliases, name)))
+          return predicate;
+      }
+    }
+    supported = false;
+    return () => false;
+  }
+  function complex(selector: DirectComplex): Predicate {
+    const tests = selector.compounds.map((parts) => {
+      const predicates = parts.map(simple);
+      return (node: Raw.Element) => predicates.every((matches) => matches(node));
+    });
+    const { combinators } = selector;
+    // Right-to-left backtracking visits finite ancestor and sibling chains.
+    function match(node: Raw.Element, at: number): boolean {
+      if (!tests[at]?.(node)) return false;
+      if (at === 0) return true;
+      const combinator = combinators[at - 1];
+      if (combinator === ">" || combinator === " ") {
+        for (let parent = node.parentNode; parent && tree.isElementNode(parent);) {
+          if (match(parent, at - 1)) return true;
+          if (combinator === ">") return false;
+          parent = parent.parentNode;
+        }
+        return false;
+      }
+      const siblings = node.parentNode?.childNodes ?? [];
+      for (let index = siblings.indexOf(node) - 1; index >= 0; index--) {
+        const sibling = siblings[index];
+        if (!sibling || !tree.isElementNode(sibling)) continue;
+        if (match(sibling, at - 1)) return true;
+        if (combinator === "+") return false;
+      }
+      return false;
+    }
+    const last = tests.length - 1;
+    return (node) => match(node, last);
+  }
+  const branches = selector.list.map(complex);
+  if (!supported) return undefined;
+  if (branches.length === 1 && branches[0]) return branches[0];
+  return (node) => branches.some((matches) => matches(node));
+}
+
+// css-select resolves these names as selector aliases before user predicates.
+const cssSelectAliases: Record<string, true> = Object.fromEntries(
+  (
+    "any-link link disabled enabled checked required optional read-only read-write selected option " +
+    "checkbox file password radio reset image submit parent header button input text"
+  )
+    .split(" ")
+    .map((name) => [name, true]),
+);
+
 /** Compiles a DOM selector with an optional :scope node. */
 export function compileSelector(input: {
   selector: string;
@@ -1026,6 +1204,9 @@ export function compileSelector(input: {
     if (compound) return compound;
     const simple = compileSimpleSubject(input.selector);
     if (simple) return simple;
+    const direct = parseDirectSelector(input.selector);
+    const compiled = direct && compileDirect(direct, input.isXML, input.statePseudos);
+    if (compiled) return compiled;
   }
   const { _compileUnsafe: compile }: typeof import("css-select") =
     require("./css-runtime.cjs").cssSelect;
@@ -1052,20 +1233,7 @@ export function compileSelector(input: {
       const predicate = statePseudos[name];
       if (alias && predicate) statePseudos[alias] = predicate;
     }
-    if (pseudo)
-      statePseudos[pseudo] =
-        input.statePseudos.checked ??
-        ((node) => {
-          if (isInput(node)) {
-            const type = inputType(node);
-            return (type === "checkbox" || type === "radio") && checkedness(node);
-          }
-          return (
-            node.namespaceURI === "http://www.w3.org/1999/xhtml" &&
-            node.tagName === "option" &&
-            attribute(node, "selected") !== undefined
-          );
-        });
+    if (pseudo) statePseudos[pseudo] = input.statePseudos.checked ?? defaultChecked;
     // The public adapter contract accepts Raw.Element only. css-select documents
     // this entrypoint for skipping its duplicate root tag check; traversal remains checked.
     return compile(adaptSelector(source, input, statePseudos), {
@@ -1074,16 +1242,7 @@ export function compileSelector(input: {
       cacheResults: false,
       relativeSelector: false,
       pseudos: {
-        // jsdom and deployed browsers count nonempty Text/CDATA, including whitespace.
-        empty: (node: Raw.Element) =>
-          node.childNodes.every(
-            (child) =>
-              !tree.isElementNode(child) &&
-              (!tree.isTextNode(child) || child.value.length === 0) &&
-              (!tree.isCommentNode(child) ||
-                xmlSpecial(child)?.kind !== "cdata" ||
-                child.data.length === 0),
-          ),
+        empty: matchesEmpty,
         ...statePseudos,
       },
       ...(scope ? { context: scope } : {}),
