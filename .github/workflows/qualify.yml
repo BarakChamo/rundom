@@ -19,6 +19,32 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile && bun run check
+  # Reports load-immune probe counts (modules, interfaces, instructions where the VM exposes them) and never fails the run.
+  probe:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - name: Enable perf instruction counting where the runner allows it
+        run: |
+          sudo apt-get install -y --no-install-recommends "linux-tools-$(uname -r)" linux-tools-common || true
+          sudo sysctl -w kernel.perf_event_paranoid=1 || true
+      - name: Probe fresh-process scenarios and check deterministic counts against the budget
+        continue-on-error: true
+        run: node packages/jsdom/bench/lab/probe.ts --repeat 3 --out "$RUNNER_TEMP/probe.json" --budget packages/jsdom/bench/lab/probe-budget.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe
+          path: ${{ runner.temp }}/probe.json
   performance:
     if: "!contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
     runs-on: ubuntu-24.04
