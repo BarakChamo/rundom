@@ -7549,6 +7549,11 @@ export function createStyles(input: {
     // Element-relative SVG paints need the target cascade. Ordinary declarations
     // differ from their ancestor frame only by the finalized foreground.
     const style = frame.style;
+    const independent = style && partialAncestors?.get(style)?.target;
+    if (independent) {
+      prioritizeAncestor(frame);
+      return independent();
+    }
     if (
       !style ||
       partialAncestors?.has(style) ||
@@ -7726,9 +7731,11 @@ export function createStyles(input: {
     return { resolveValue, expandPending, substitution, registrations };
   }
 
+  // Resolution reads only named parent values, so a captured subset can stand in for the parent.
+  type ParentValues = Pick<ComputedDeclaration, "getPropertyValue">;
   type ResolutionValues = {
     transformedDisplay: string | undefined;
-    prior: ComputedDeclaration | undefined;
+    prior: ParentValues | undefined;
     custom: CustomProjection | undefined;
     projected: CustomBlock | undefined;
     fontSize: number;
@@ -7744,12 +7751,15 @@ export function createStyles(input: {
 
   // A child usually needs only inherited values. Keep a complete read available
   // for explicit inheritance of a non-inherited shorthand component.
+  // An independent projection resolved only inherited values and display eagerly.
+  // It captures the parent values it reads and can publish the element as a deferred target.
   type AncestorProjection = {
     complete: () => ComputedDeclaration;
+    target?: () => PublicDeclaration;
     units: number;
     characters: number;
   };
-  let partialAncestors: WeakMap<ComputedDeclaration, AncestorProjection> | undefined;
+  let partialAncestors: WeakMap<ParentValues, AncestorProjection> | undefined;
   function resolveDeclaration(
     winners: ReadonlyMap<string, ComputedWinner>,
     values: ResolutionValues,
@@ -7757,7 +7767,7 @@ export function createStyles(input: {
     readViewport: () => Viewport,
     readBaseURL: () => string,
     property?: string,
-    inheritanceOnly = false,
+    inheritanceOnly: boolean | "independent" = false,
   ): ComputedDeclaration {
     const {
       prior,
@@ -7787,7 +7797,14 @@ export function createStyles(input: {
       // Invalid property names reserve positions across native shorthand rewrites.
       if (placements?.[placementIndex]?.before === name)
         result._setProperty(` ${placementIndex++}`, "1", "");
-      if (inheritanceOnly && typeof winner !== "string" && winner.shorthand && !inherited.has(name))
+      if (
+        inheritanceOnly &&
+        typeof winner !== "string" &&
+        (inheritanceOnly === "independent"
+          ? name !== "display" && !name.startsWith("--")
+          : winner.shorthand) &&
+        !inherited.has(name)
+      )
         continue;
       if (resolver.substitution && resolver.registrations?.has(name)) {
         const computed = resolver.substitution.read(name);
@@ -8151,13 +8168,46 @@ export function createStyles(input: {
     baseURL: string | undefined,
     units: number,
     characters: number,
+    independent = false,
   ): void {
     const { readViewport, readBaseURL } = capturedEnvironment(viewport, baseURL);
     (partialAncestors ??= new WeakMap()).set(style, {
       complete: () => resolveDeclaration(winners, values, resolver, readViewport, readBaseURL),
+      ...(independent && {
+        target: () =>
+          deferComputedValues(
+            winners,
+            { ...values, target: true },
+            resolver,
+            viewport,
+            baseURL,
+          ).publish(),
+      }),
       units,
       characters,
     });
+  }
+
+  // Non-inherited literal values read the parent only through explicit inheritance.
+  function independentOfParent(winners: ReadonlyMap<string, ComputedWinner>): boolean {
+    for (const [name, winner] of winners) {
+      // The foreground resolves before the declaration and never reads it.
+      if (
+        typeof winner === "string" ||
+        inherited.has(name) ||
+        name.startsWith("--") ||
+        name === "color"
+      )
+        continue;
+      if (
+        winner.shorthand ||
+        variableSyntax.test(winner.value) ||
+        substitutionFunction.test(winner.value) ||
+        winner.value.toLowerCase() === "inherit"
+      )
+        return false;
+    }
+    return true;
   }
 
   function deferComputedValues(
@@ -9239,13 +9289,17 @@ export function createStyles(input: {
         const parentProjection = prior && partialAncestors?.get(prior);
         let materializedParent = false;
         if (parentProjection) {
+          // A new substitution chain copies every parent value, including non-inherited ones.
+          materializedParent = !!(
+            parentProjection.target &&
+            substitutionValues &&
+            !parentFrame?.substitution
+          );
           for (const [name, winner] of winners) {
-            if (!inherited.has(name) && winner.value.toLowerCase() === "inherit") {
-              prior = parentProjection.complete();
-              materializedParent = true;
-              break;
-            }
+            if (materializedParent) break;
+            materializedParent = !inherited.has(name) && winner.value.toLowerCase() === "inherit";
           }
+          if (materializedParent) prior = parentProjection.complete();
         }
         const projected = prior && inheritedCustomBlocks?.get(prior);
         if (prior) {
@@ -9520,13 +9574,20 @@ export function createStyles(input: {
           userAgentDisplay,
           userAgentContentVisibility,
         };
-        // Keep at most one retained inheritance recipe along an ancestor chain.
-        const partial =
+        // An independent projection captures its parent values, so chains retain no parent.
+        const independent =
           !materializedParent &&
           role === "ancestor" &&
-          hasVariableShorthand &&
-          (!prior || !partialAncestors?.has(prior)) &&
+          independentOfParent(computedWinners) &&
           canDeferValues(computedWinners, attributes, viewport, documentBase);
+        // Keep at most one retained inheritance recipe along an ancestor chain.
+        const partial =
+          independent ||
+          (!materializedParent &&
+            role === "ancestor" &&
+            hasVariableShorthand &&
+            (!prior || !partialAncestors?.has(prior)) &&
+            canDeferValues(computedWinners, attributes, viewport, documentBase));
         const resolved: FrameValues =
           !materializedParent &&
           role === "target" &&
@@ -9548,7 +9609,7 @@ export function createStyles(input: {
                   () => (viewport ??= input.viewport()),
                   () => (documentBase ??= input.baseURL(input.ownerDocument(element))),
                   undefined,
-                  partial,
+                  independent ? "independent" : partial,
                 ),
               };
         result = resolved.style;
@@ -9578,23 +9639,44 @@ export function createStyles(input: {
           for (const entry of source.entries)
             inputCharacters += entry.name.length + entry.value.length;
         }
+        let parentValues: Map<string, string> | undefined;
+        let parentValueCharacters = 0;
+        if (independent && prior) {
+          parentValues = new Map();
+          for (const [name, winner] of computedWinners) {
+            if (typeof winner === "string" || (!inherited.has(name) && !name.startsWith("--")))
+              continue;
+            const value = prior.getPropertyValue(name);
+            parentValues.set(name, value);
+            parentValueCharacters += name.length + value.length;
+          }
+        }
         const parentUnits =
-          (prior?._values.size ?? 0) + (retainedPriorBlock?.names.length ?? 0) * 2;
+          (parentValues?.size ?? prior?._values.size ?? 0) +
+          (retainedPriorBlock?.names.length ?? 0) * 2;
         const parentCharacters =
-          (parentFrame?.declarationCharacters ?? 0) + (retainedPriorBlock?.characters ?? 0) * 2;
+          (parentValues ? parentValueCharacters : (parentFrame?.declarationCharacters ?? 0)) +
+          (retainedPriorBlock?.characters ?? 0) * 2;
         if (partial && result) {
           characters += parentCharacters;
+          const captured = parentValues;
           // A later target can retain this private declaration after its original
           // frame is evicted. Charge the captured winners and parent to that target.
           registerAncestorProjection(
             result,
             computedWinners,
-            attributes,
+            independent
+              ? {
+                  ...attributes,
+                  prior: captured && { getPropertyValue: (name) => captured.get(name) ?? "" },
+                }
+              : attributes,
             resolver,
             viewport,
             documentBase,
             winners.size + parentUnits,
             characters - declarationCharacters,
+            independent,
           );
         }
         const capturedProjection = !result && prior ? partialAncestors?.get(prior) : undefined;
