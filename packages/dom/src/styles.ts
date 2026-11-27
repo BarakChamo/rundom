@@ -6826,7 +6826,8 @@ export function createStyles(input: {
     if (existing) delete sheetState(existing.sheet).owner;
     if (elementLocalName(node) === "style") node[stylesheetSourceVersion] = sourceVersion;
     const sheet = createAttachedSheet(href === undefined ? { owner: node } : { owner: node, href });
-    if (href === undefined) sheetState(sheet).base = input.baseURL(input.ownerDocument(node));
+    if (href === undefined)
+      sheetState(sheet).base = base ?? input.baseURL(input.ownerDocument(node));
     encoding ??= input.documentEncoding(node);
     sheetState(sheet).encoding = encoding;
     // Parse diagnostics and import requests are observable at attachment. For a large
@@ -6861,7 +6862,8 @@ export function createStyles(input: {
     if (state.media || media) record.sheet.media = media;
   }
 
-  function inlineStyle(node: Raw.Element): Declaration {
+  /** `base` resolves the attribute's initial URLs; later writes read the live document base. */
+  function inlineStyle(node: Raw.Element, base?: string): Declaration {
     const inline = (inlineStyles ??= new WeakMap());
     const existing = inline.get(node);
     if (existing) return existing.style;
@@ -6875,7 +6877,8 @@ export function createStyles(input: {
       syncing: false,
     };
     inline.set(node, state);
-    inlineBaseReaders.set(state.style, () => input.baseURL(input.ownerDocument(node)));
+    const liveBase = () => input.baseURL(input.ownerDocument(node));
+    inlineBaseReaders.set(state.style, base === undefined ? liveBase : () => base);
     const text = node.attrs.find((attr) => !attr.namespace && attr.name === "style")?.value;
     if (text) {
       const block = parseInlineBlock(text);
@@ -6891,6 +6894,7 @@ export function createStyles(input: {
         }
       } else syncInlineStyle(node);
     }
+    if (base !== undefined) inlineBaseReaders.set(state.style, liveBase);
     const view = publicInlineViews?.get(node);
     if (view) views().materializedInline(view, state.style);
     return state.style;
@@ -6914,7 +6918,7 @@ export function createStyles(input: {
     return view;
   }
 
-  function applyInline(node: Raw.Element): Sheet | null {
+  function applyInline(node: Raw.Element, base?: string): Sheet | null {
     const type = node.attrs.find((attr) => !attr.namespace && attr.name === "type")?.value;
     if (node.namespaceURI !== html.NS.HTML || (type && type.toLowerCase() !== "text/css")) {
       return null;
@@ -6924,7 +6928,7 @@ export function createStyles(input: {
       if (tree.isTextNode(child)) text += child.value;
       else if (tree.isCommentNode(child) && xmlSpecial(child)?.kind === "cdata") text += child.data;
     }
-    return applySheet(node, text);
+    return applySheet(node, text, base);
   }
 
   type CollectionSnapshot = {

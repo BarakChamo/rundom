@@ -1,13 +1,16 @@
 // Pins behavior differences found by differential sweeps to jsdom 31.0.1, run on both providers.
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { JSDOM } from "@run-dom/jsdom";
+import { JSDOM, requestInterceptor } from "@run-dom/jsdom";
 const require = createRequire(import.meta.url);
-const reference: { JSDOM: typeof JSDOM } = require("jsdom");
+const reference: Pick<
+  typeof import("@run-dom/jsdom"),
+  "JSDOM" | "requestInterceptor"
+> = require("jsdom");
 
 const providers = [
-  { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom", Constructor: reference.JSDOM },
+  { name: "RunDOM", Constructor: JSDOM, intercept: requestInterceptor },
+  { name: "jsdom", Constructor: reference.JSDOM, intercept: reference.requestInterceptor },
 ];
 
 describe.each(providers)("$name CSSStyleDeclaration property names", ({ Constructor }) => {
@@ -150,3 +153,87 @@ describe.each(providers)("$name <alpha-value> percentages", ({ Constructor }) =>
     }
   });
 });
+
+describe.each(providers)(
+  "$name parsed stylesheets before a later <base href>",
+  ({ Constructor, intercept }) => {
+    const markup =
+    `<!doctype html><html><head>` +
+    `<style>@import "imp.css"; .a { background-image: url(a.png) }</style>` +
+    `<link rel="stylesheet" href="l.css">` +
+    `</head><body><div class="a" style="list-style-image: url(i.png)"></div>` +
+    `<base href="http://other.example/sub/">` +
+    `<style>.b { background-image: url(b.png) }</style>` +
+    `<div class="b" style="list-style-image: url(j.png)"></div><p></p></body></html>`;
+
+    it("should resolve earlier sheets, links and style attributes against the document URL", async () => {
+      // Given: a document whose first sheet, link and styled element precede its <base href>.
+      const requested: string[] = [];
+      const { window } = new Constructor(markup, {
+        url: "http://doc.example/dir/page.html",
+        resources: {
+          interceptors: [
+            intercept((request) => {
+              requested.push(request.url);
+              return new Response("p { background-image: url(x.png) }", {
+                headers: { "content-type": "text/css" },
+              });
+            }),
+          ],
+        },
+      });
+      try {
+        await new Promise((resolve) => window.addEventListener("load", resolve));
+        const { document } = window;
+        const computed = (selector: string) =>
+          window.getComputedStyle(document.querySelector(selector)!);
+        // When/Then: requests use the base the parser saw, not the later <base>.
+        expect(requested.toSorted()).toEqual([
+          "http://doc.example/dir/imp.css",
+          "http://doc.example/dir/l.css",
+        ]);
+        const importRule = document.styleSheets[0]!.cssRules[0] as CSSImportRule;
+        expect([importRule.href, importRule.styleSheet?.href]).toEqual([
+          "imp.css",
+          "http://doc.example/dir/imp.css",
+        ]);
+        expect(document.styleSheets[1]!.href).toBe("http://doc.example/dir/l.css");
+        expect(computed("p").backgroundImage).toBe('url("http://doc.example/dir/x.png")');
+        // Then: rules and style attributes before the base use the document URL; later ones the base.
+        expect(computed(".a").backgroundImage).toBe('url("http://doc.example/dir/a.png")');
+        expect(computed(".a").listStyleImage).toBe('url("http://doc.example/dir/i.png")');
+        expect(computed(".b").backgroundImage).toBe('url("http://other.example/sub/b.png")');
+        expect(computed(".b").listStyleImage).toBe('url("http://other.example/sub/j.png")');
+        expect(document.baseURI).toBe("http://other.example/sub/");
+      } finally {
+        window.close();
+      }
+    });
+
+    it("should resolve sheets inserted after parsing against the live base", () => {
+      // Given: a parsed document with a <base href> and an early parsed sheet.
+      const { window } = new Constructor(markup, { url: "http://doc.example/dir/page.html" });
+      try {
+        const { document } = window;
+        // When: a script prepends a sheet and later writes a URL into the early element's style.
+        const style = document.createElement("style");
+        style.textContent = "p { background-image: url(p.png) }";
+        document.head.prepend(style);
+        const early = document.querySelector<HTMLElement>(".a")!;
+        early.style.backgroundImage = "url(late.png)";
+        // Then: both resolve against the current document base, as in jsdom.
+        expect(window.getComputedStyle(document.querySelector("p")!).backgroundImage).toBe(
+          'url("http://other.example/sub/p.png")',
+        );
+        expect(window.getComputedStyle(early).backgroundImage).toBe(
+          'url("http://other.example/sub/late.png")',
+        );
+        expect(window.getComputedStyle(early).listStyleImage).toBe(
+          'url("http://doc.example/dir/i.png")',
+        );
+      } finally {
+        window.close();
+      }
+    });
+  },
+);

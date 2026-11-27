@@ -20652,14 +20652,19 @@ function buildWindow(
     return treeRoot(node, true) === source;
   }
 
-  function startStyle(node: Raw.Element): void {
+  function startStyle(node: Raw.Element, base?: string): void {
     const loader = options.loadTextResource;
     if (closed || !loader || node.namespaceURI !== html.NS.HTML || node.tagName !== "link") return;
     const href = attribute(node, "href");
     const isStylesheet = asciiLower(attribute(node, "rel") ?? "")
       .split(/[\t\n\f\r ]+/)
       .includes("stylesheet");
-    const target = href && isStylesheet ? parseElementURL(node, href) : null;
+    const target =
+      href && isStylesheet
+        ? base === undefined
+          ? parseElementURL(node, href)
+          : parseDocumentURL({ value: href, base, encoding: documentEncoding(ownerRecord(node)) })
+        : null;
     if (!target) {
       removeLinkedStylesheet(node);
       return;
@@ -21147,6 +21152,25 @@ function buildWindow(
       startParsedFrames(descendants(source));
   }
 
+  /**
+   * The parser handled elements before the first `<base href>` while the fallback was still the
+   * document base, so their sheets, links and style attributes keep it. Undefined without a base.
+   * Positions are read after parsing, so a script that moved the base mid-load is not replayed.
+   */
+  function baseBeforeFirstBaseElement(): ((node: Raw.Element) => string | undefined) | undefined {
+    const fallback = baseURL(source, "fallback");
+    if (baseURL() === fallback) return;
+    const before = new Set<Raw.Element>();
+    for (const node of descendants(source)) {
+      if (!tree.isElementNode(node)) continue;
+      if (isBaseElement(node) && attribute(node, "href") !== null)
+        return (element) => (before.has(element) ? fallback : undefined);
+      if (node.tagName === "style" || node.tagName === "link" || attribute(node, "style") !== null)
+        before.add(node);
+    }
+    return;
+  }
+
   let parsedDetailsTasksScheduled = false;
   let didFinishInitialInput = false;
   function finishLoading(
@@ -21157,13 +21181,17 @@ function buildWindow(
     const generation = loadGeneration;
     const current = () => !closed && !documentLoadStopped && generation === loadGeneration;
     const keepsEmptyNames = !didFinishInitialInput && options.canKeepInitialDocumentNamesEmpty;
+    const parsedBase =
+      didFinishInitialInput || !(options.hasMarkupStyles || options.hasInlineURLStyles)
+        ? undefined
+        : baseBeforeFirstBaseElement();
     if (!didFinishInitialInput && options.hasInlineURLStyles) {
       for (const node of descendants(source)) {
         if (
           tree.isElementNode(node) &&
           /(?:url|image-set|var)\(/i.test(attribute(node, "style") ?? "")
         )
-          styles().captureInlineBase(node);
+          styles().captureInlineBase(node, parsedBase?.(node));
       }
     }
     didFinishInitialInput = true;
@@ -21182,10 +21210,16 @@ function buildWindow(
     bindBodyHandlers();
     if (!didScanStyles && options.hasMarkupStyles && !closed) {
       didScanStyles = true;
+      if (parsedBase)
+        for (const node of descendants(source)) {
+          const base = tree.isElementNode(node) && node.tagName === "style" && parsedBase(node);
+          if (base && connected(node)) styles().applyInline(node, base);
+        }
       styles().initialize();
       if (options.loadTextResource) {
         for (const child of descendants(source)) {
-          if (tree.isElementNode(child) && child.tagName === "link") startStyle(child);
+          if (tree.isElementNode(child) && child.tagName === "link")
+            startStyle(child, parsedBase?.(child));
         }
       }
     }
