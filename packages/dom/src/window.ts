@@ -4395,6 +4395,15 @@ function buildWindow(
   }
 
   function wouldCreateCycle(target: Raw.ParentNode, moving: Raw.Node): boolean {
+    // A node without children, shadow root or template content is no other node's ancestor.
+    if (
+      moving !== target &&
+      (!("childNodes" in moving) ||
+        (!moving.childNodes.length &&
+          !(tree.isElementNode(moving) && shadowRoots.has(moving)) &&
+          !templateContent(moving)))
+    )
+      return false;
     // Parent and host links form a finite acyclic chain before each insertion.
     for (
       let ancestor: Raw.Node | null = target;

@@ -317,4 +317,23 @@ describe("Node insertion steps for deep subtrees", () => {
     first.window.close();
     second.window.close();
   });
+
+  it("rejects inserting a childless shadow host or template into its own contents", () => {
+    // Given: a childless shadow host and a childless template, each with deep content of its own.
+    const { window, document } = page();
+    const host = document.createElement("div");
+    const shadowLeaf = topDown(
+      host.attachShadow({ mode: "open" }).appendChild(document.createElement("p")),
+    );
+    const template = narrow(document.createElement("template"), window.HTMLTemplateElement);
+    const contentLeaf = topDown(template.content.appendChild(document.createElement("p")));
+    // When/Then: each is inserted below its own content and the cycle is rejected.
+    expect(() => shadowLeaf.appendChild(host)).toThrow(
+      "Cannot insert an ancestor into its descendant",
+    );
+    expect(() => contentLeaf.appendChild(template)).toThrow(
+      "Cannot insert an ancestor into its descendant",
+    );
+    window.close();
+  });
 });
