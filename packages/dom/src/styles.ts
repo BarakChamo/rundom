@@ -1127,6 +1127,7 @@ function cssInput(value: unknown, replaceEscapedEOF = true): string {
 }
 
 const cssNumericToken = /^[+-]?(?:\d*\.\d+|\d+)(?:e[+-]?\d+)?$/i;
+const alphaValueProperty = /^(?:(?:fill-|stroke-|flood-|stop-)?opacity|shape-image-threshold)$/;
 
 function normalizePropertyInput(property: string, value: string): string {
   if (property.startsWith("--") || /var\(/i.test(value)) return value;
@@ -2217,7 +2218,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         (/^-webkit-box-(?:flex|ordinal-group)$/.test(name) ||
           (!name.startsWith("--") &&
             /^[-+]?(?:[0-9]*\.[0-9]+|[0-9]+)(?:e[+-]?[0-9]+)?(?:[a-z]+|%)?$/i.test(value) &&
-            (value.length >= 8 || value === "-0")))
+            (value.length >= 8 ||
+              value === "-0" ||
+              // <alpha-value> percentages specify as numbers.
+              (value.endsWith("%") && alphaValueProperty.test(name)))))
       ) {
         const serialized = specifiedDeclaration(name, value);
         if (serialized !== undefined) value = serialized;
