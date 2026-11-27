@@ -3313,7 +3313,7 @@ function buildWindow(
   }
 
   function nodeRecord(node: object) {
-    const record = records.get(node);
+    const record = records.read(node);
     if (record && record.realm !== token) enableForeignCapabilities(record.realm);
     return record;
   }
