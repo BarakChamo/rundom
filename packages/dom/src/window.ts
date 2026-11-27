@@ -7138,7 +7138,7 @@ function buildWindow(
           return;
         }
       }
-    } else if (!node || previous !== node || !focusable(node, view)) return;
+    } else if (!node || previous !== node) return;
 
     const request = Symbol();
     focusRequests.set(owner, request);
