@@ -655,8 +655,15 @@ function parseInactiveHTML(
   options: ParserOptions<Raw.DefaultTreeAdapterMap>,
   ready: Extract<ParseTemplate, { kind: "ready" }> | undefined,
 ): Raw.Document {
-  const native = parseNativeInactiveHTML(markup, options);
-  if (native) return native;
+  return parseNativeInactiveHTML(markup, options) ?? parseRecurringHTML(markup, options, ready);
+}
+
+// Shared by Window construction and inert public parsers; the native kernel stays Window-only.
+function parseRecurringHTML(
+  markup: string,
+  options: ParserOptions<Raw.DefaultTreeAdapterMap>,
+  ready?: Extract<ParseTemplate, { kind: "ready" }>,
+): Raw.Document {
   // Only the default, location-free parser admits recipes. A matching recipe
   // already passed the form-owner adapter check on its original parse.
   if (
@@ -17645,11 +17652,19 @@ function buildWindow(
     settings: DetachedDocumentSettings,
     allowDeclarativeShadows = false,
   ): Raw.Document {
+    // Recurring markup may reuse a private recipe unless parser callbacks or shadows observe the tree.
+    const recurring =
+      !settings.isXML &&
+      detailsParserOptions(markup, inertParsing) === inertParsing &&
+      !(allowDeclarativeShadows && /shadowrootmode/i.test(markup));
     const record = settings.isXML
       ? tree.createDocument()
-      : parse(markup, detailsParserOptions(markup, parserFormOptions(markup, inertParsing)));
+      : recurring
+        ? parseRecurringHTML(markup, inertParsing)
+        : parse(markup, detailsParserOptions(markup, parserFormOptions(markup, inertParsing)));
     if (settings.isXML) parseXML({ document: record, markup, url: settings.url });
-    markScriptsInert(record);
+    // HTML element names are literal source text, so markup without "script" has no script element.
+    if (settings.isXML || /script/i.test(markup)) markScriptsInert(record);
     if (allowDeclarativeShadows) {
       declarativeShadowDocuments.add(record);
       if (/shadowrootmode/i.test(markup)) {
