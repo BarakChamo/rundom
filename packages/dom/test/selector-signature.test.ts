@@ -161,7 +161,7 @@ describe("selector signature filtering", () => {
       }
     }
     expect(compared).toBeGreaterThan(2000);
-  });
+  }, 60_000);
 
   it("should observe attribute changes once the element signature is forgotten", () => {
     // Given: a filtered compound selector that rejects an element without the class

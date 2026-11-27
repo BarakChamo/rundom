@@ -63,7 +63,12 @@ import {
 } from "./xhr.js";
 import { validPseudoSelectorList } from "./css-reference.js";
 import { parseDirectSelector } from "./selector-parser.js";
-import { compileSelector, hasClass, simpleSubjectAttribute } from "./selectors.js";
+import {
+  compileSelector,
+  hasClass,
+  simpleSubjectAttribute,
+  simpleTypeMatcher,
+} from "./selectors.js";
 import { forgetSelectorSignature } from "./selector-signature.js";
 import { parseNativeInactiveHTML } from "./native-parser.js";
 import { parseLiteralDocument } from "./inactive-parser.js";
@@ -1259,6 +1264,121 @@ function rememberCreationRealm({
 
 const realmWrappers = new WeakMap<symbol, (node: Raw.Node) => { nodeType: number }>();
 const records = createNodeRecords();
+// Tree-walk bodies shared by every Window, so one feedback vector and optimized version serve them
+// all. Each Window passes its own `raw`/`element` (brand errors, foreign-node bookkeeping) and
+// `wrap`, used only for receivers from another realm or targets without a handle yet.
+function localNode<N extends object>(self: N, token: symbol, raw: (node: N) => Raw.Node): Raw.Node {
+  const record = records.read(self);
+  return record !== undefined && record.realm === token ? record.node : raw(self);
+}
+function localElement<N extends object>(
+  self: N,
+  token: symbol,
+  element: (node: N) => Raw.Element,
+): Raw.Element {
+  const record = records.read(self);
+  return record !== undefined && record.realm === token && record.kind === "element"
+    ? record.node
+    : element(self);
+}
+function handleOf<R extends Raw.Node, H>(
+  node: R | null | undefined,
+  wrap: (node: R) => H,
+): H | null {
+  return node ? ((wrappers.get(node) as H | undefined) ?? wrap(node)) : null;
+}
+function walkParentNode<N extends object, H>(
+  self: N,
+  token: symbol,
+  raw: (node: N) => Raw.Node,
+  wrap: (node: Raw.Node) => H,
+): H | null {
+  const record = localNode(self, token, raw);
+  return handleOf("parentNode" in record ? record.parentNode : null, wrap);
+}
+function walkParentElement<N extends object, H>(
+  self: N,
+  token: symbol,
+  raw: (node: N) => Raw.Node,
+  wrapElement: (node: Raw.Element) => H,
+): H | null {
+  const record = localNode(self, token, raw);
+  const owner = "parentNode" in record ? record.parentNode : null;
+  return owner && tree.isElementNode(owner) ? handleOf(owner, wrapElement) : null;
+}
+function walkChild<N extends object, H>(
+  self: N,
+  token: symbol,
+  raw: (node: N) => Raw.Node,
+  wrap: (node: Raw.Node) => H,
+  last: boolean,
+): H | null {
+  const record = localNode(self, token, raw);
+  if (!("childNodes" in record)) return null;
+  return handleOf(last ? record.childNodes.at(-1) : record.childNodes[0], wrap);
+}
+function walkSibling<N extends object, H>(
+  self: N,
+  token: symbol,
+  raw: (node: N) => Raw.Node,
+  wrap: (node: Raw.Node) => H,
+  direction: 1 | -1,
+): H | null {
+  const record = localNode(self, token, raw);
+  if (!("parentNode" in record) || !record.parentNode) return null;
+  const siblings = record.parentNode.childNodes;
+  return handleOf(siblings[siblings.indexOf(record) + direction], wrap);
+}
+function walkElementChild<N extends object, H>(
+  self: N,
+  token: symbol,
+  element: (node: N) => Raw.Element,
+  wrapElement: (node: Raw.Element) => H,
+  last: boolean,
+): H | null {
+  const { childNodes } = localElement(self, token, element);
+  const match = last
+    ? childNodes.findLast(tree.isElementNode)
+    : childNodes.find(tree.isElementNode);
+  return match ? handleOf(match, wrapElement) : null;
+}
+function walkElementSibling<N extends object, H>(
+  self: N,
+  token: symbol,
+  element: (node: N) => Raw.Element,
+  wrapElement: (node: Raw.Element) => H,
+  direction: 1 | -1,
+): H | null {
+  const node = localElement(self, token, element);
+  const siblings = node.parentNode?.childNodes;
+  if (!siblings) return null;
+  for (
+    let index = siblings.indexOf(node) + direction;
+    index >= 0 && index < siblings.length;
+    index += direction
+  ) {
+    const sibling = siblings[index];
+    if (sibling && tree.isElementNode(sibling)) return handleOf(sibling, wrapElement);
+  }
+  return null;
+}
+function attributeByKey(record: Raw.Element, key: string): AttributeRecord | undefined {
+  for (const attr of record.attrs)
+    if ((attr.prefix ? qualifiedAttributeName(attr) : attr.name) === key) return attr;
+  return undefined;
+}
+/** Shared attribute lookup; `keyOf` is the Window's case folding, consulted only for uppercase names. */
+function findLocalAttribute<N extends object>(
+  self: N,
+  token: symbol,
+  element: (node: N) => Raw.Element,
+  name: unknown,
+  keyOf: (record: Raw.Element, name: string) => string,
+): AttributeRecord | undefined {
+  const record = localElement(self, token, element);
+  const text = String(name);
+  return attributeByKey(record, asciiUppercase.test(text) ? keyOf(record, text) : text);
+}
 const asciiUppercase = /[A-Z]/;
 const htmlNodeNames = new Map<string, string>(
   Object.values(html.TAG_NAMES).map((name) => [name, name.toUpperCase()]),
@@ -3314,7 +3434,7 @@ function buildWindow(
   }
 
   function nodeRecord(node: object) {
-    const record = records.get(node);
+    const record = records.read(node);
     if (record && record.realm !== token) enableForeignCapabilities(record.realm);
     return record;
   }
@@ -3510,11 +3630,8 @@ function buildWindow(
         kind === "class"
           ? (node) => hasClass(node, name)
           : (node) => attribute(node, "id") === name;
-    } else if (/^[a-zA-Z][\w-]*$/.test(query)) {
-      const lower = query.toLowerCase();
-      compiled = (node) =>
-        elementLocalName(node) === (!isXML && node.namespaceURI === html.NS.HTML ? lower : query);
-    } else
+    } else if (/^[a-zA-Z][\w-]*$/.test(query)) compiled = simpleTypeMatcher(query, isXML);
+    else
       compiled = compileSelector({
         selector,
         isXML,
@@ -4200,6 +4317,8 @@ function buildWindow(
       disconnect(child);
     }
     invalidateSubtreeSummaries(target, composedParent);
+    removed.forEach(invalidateDocumentBaseIn);
+    children.forEach(invalidateDocumentBaseIn);
     target.childNodes = children;
     const sourceChanged = invalidateStyleSource(target);
     rangeIndex()?.inserted(target, 0, children.length);
@@ -4359,6 +4478,7 @@ function buildWindow(
   function detachWithRecord(node: Raw.ChildNode, notify = true): void {
     const target = node.parentNode;
     if (!target) return;
+    invalidateDocumentBaseIn(node);
     if (invalidateStyleSource(target)) {
       stylesheetDiscoveryRevision++;
       styleBinding?.invalidateSheetMembership();
@@ -4715,6 +4835,7 @@ function buildWindow(
         : target.childNodes.length;
     const previous = target.childNodes[index - 1];
     invalidateSubtreeSummaries(target, composedParent);
+    added.forEach(invalidateDocumentBaseIn);
     rangeIndex()?.inserted(target, index, added.length);
     if (before && "parentNode" in before) {
       for (const member of added) tree.insertBefore(target, member, before);
@@ -4933,8 +5054,7 @@ function buildWindow(
       return (container(this)?.childNodes.length ?? 0) > 0;
     }
     get parentElement(): Element | null {
-      const owner = treeParent(raw(this), false);
-      return owner && tree.isElementNode(owner) ? wrapElement(owner) : null;
+      return walkParentElement(this, token, raw, wrapElement);
     }
 
     get nodeName(): string {
@@ -4977,8 +5097,7 @@ function buildWindow(
       return owner === source ? document : (wrap(owner) as Document);
     }
     get parentNode(): Node | null {
-      const record = raw(this);
-      return "parentNode" in record && record.parentNode ? wrap(record.parentNode) : null;
+      return walkParentNode(this, token, raw, wrap);
     }
     get childNodes(): NodeList<Node> {
       let list = childLists.get(this);
@@ -5002,27 +5121,16 @@ function buildWindow(
       return wrap(treeRoot(raw(this), options?.composed));
     }
     get lastChild(): Node | null {
-      const child = container(this)?.childNodes.at(-1);
-      return child ? wrap(child) : null;
+      return walkChild(this, token, raw, wrap, true);
     }
     get nextSibling(): Node | null {
-      const record = raw(this);
-      if (!("parentNode" in record) || !record.parentNode) return null;
-      const siblings = record.parentNode.childNodes;
-      const index = siblings.indexOf(record);
-      const sibling = siblings[index + 1];
-      return sibling ? wrap(sibling) : null;
+      return walkSibling(this, token, raw, wrap, 1);
     }
     get previousSibling(): Node | null {
-      const record = raw(this);
-      if (!("parentNode" in record) || !record.parentNode) return null;
-      const siblings = record.parentNode.childNodes;
-      const sibling = siblings[siblings.indexOf(record) - 1];
-      return sibling ? wrap(sibling) : null;
+      return walkSibling(this, token, raw, wrap, -1);
     }
     get firstChild(): Node | null {
-      const first = container(this)?.childNodes[0];
-      return first ? wrap(first) : null;
+      return walkChild(this, token, raw, wrap, false);
     }
 
     get nodeValue(): string | null {
@@ -6681,7 +6789,7 @@ function buildWindow(
     }
     getAttribute(name: string): string | null {
       if (arguments.length < 1) throw new TypeError("Missing attribute argument");
-      return findAttribute(element(this), String(name))?.value ?? null;
+      return findLocalAttribute(this, token, element, name, attributeName)?.value ?? null;
     }
     getAttributeNS(namespace: string | null, localName: string): string | null {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
@@ -6698,7 +6806,7 @@ function buildWindow(
     }
     hasAttribute(name: string): boolean {
       if (arguments.length < 1) throw new TypeError("Missing attribute argument");
-      return findAttribute(element(this), String(name)) !== undefined;
+      return findLocalAttribute(this, token, element, name, attributeName) !== undefined;
     }
     hasAttributeNS(namespace: string | null, localName: string): boolean {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
@@ -6709,11 +6817,11 @@ function buildWindow(
     }
     setAttribute(name: string, value: string): void {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
-      const record = element(this);
+      const record = localElement(this, token, element);
       const key = attributeName(record, String(name));
       if (!validAttributeName(key))
         throw new DOMException("Invalid attribute name", "InvalidCharacterError");
-      setAttributeValue(this, findAttribute(record, key), { name: key, value });
+      setAttributeValue(this, attributeByKey(record, key), { name: key, value });
     }
     setAttributeNS(namespace: string | null, qualifiedName: string, value: string): void {
       if (arguments.length < 3) throw new TypeError("Missing attribute argument");
@@ -6728,7 +6836,7 @@ function buildWindow(
     }
     removeAttribute(name: string): void {
       if (arguments.length < 1) throw new TypeError("Missing attribute argument");
-      removeAttributeRecord(this, findAttribute(element(this), String(name)));
+      removeAttributeRecord(this, findLocalAttribute(this, token, element, name, attributeName));
     }
     removeAttributeNS(namespace: string | null, localName: string): void {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
@@ -6790,7 +6898,7 @@ function buildWindow(
       return this.children.length;
     }
     get lastElementChild(): Element | null {
-      return edgeElement(element(this), true);
+      return walkElementChild(this, token, element, wrapElement, true);
     }
     get innerHTML(): string {
       const record = element(this);
@@ -6883,13 +6991,13 @@ function buildWindow(
       replaceMarkup(element(this), value === null ? "" : domString(value));
     }
     get firstElementChild(): Element | null {
-      return edgeElement(element(this), false);
+      return walkElementChild(this, token, element, wrapElement, false);
     }
     get nextElementSibling(): Element | null {
-      return adjacentElement(element(this), 1);
+      return walkElementSibling(this, token, element, wrapElement, 1);
     }
     get previousElementSibling(): Element | null {
-      return adjacentElement(element(this), -1);
+      return walkElementSibling(this, token, element, wrapElement, -1);
     }
     getElementsByTagName(name: string): HTMLCollection {
       if (arguments.length < 1) throw new TypeError("A tag name is required");
@@ -7132,7 +7240,7 @@ function buildWindow(
           return;
         }
       }
-    } else if (!node || previous !== node || !focusable(node, view)) return;
+    } else if (!node || previous !== node) return;
 
     const request = Symbol();
     focusRequests.set(owner, request);
@@ -16568,7 +16676,25 @@ function buildWindow(
     }
   }
 
-  let cachedDocumentBase: { revision: number; fallback: string; url: string } | undefined;
+  // Valid until a base element enters or leaves a tree, a base href changes, or parsing finishes;
+  // other tree edits cannot change which base comes first. The fallback key covers URL changes.
+  let cachedDocumentBase: { fallback: string; url: string } | undefined;
+
+  function invalidateDocumentBaseIn(node: Raw.ChildNode): void {
+    if (cachedDocumentBase && containsBaseElement(node)) cachedDocumentBase = undefined;
+  }
+  function isBaseElement(node: Raw.Element): boolean {
+    return htmlChildNamed(node, "base");
+  }
+  function containsBaseElement(node: Raw.ChildNode): boolean {
+    if (!tree.isElementNode(node)) return false;
+    if (isBaseElement(node)) return true;
+    if (!node.childNodes.length || packedLeafText(node) !== undefined) return false;
+    return (
+      firstQueryDescendant({ root: node, matches: isBaseElement, skipPackedText: true }) !==
+      undefined
+    );
+  }
 
   function resolveDocumentBase(owner: Raw.Document, fallback: string): string {
     for (const candidate of descendants(owner)) {
@@ -16623,10 +16749,9 @@ function buildWindow(
       (owner === source ? options.inheritedBase : detachedSettings?.get(owner)?.url) ?? url.href;
     if (kind === "fallback") return fallback;
     if (owner !== source) return resolveDocumentBase(owner, fallback);
-    if (cachedDocumentBase?.revision === revision && cachedDocumentBase.fallback === fallback)
-      return cachedDocumentBase.url;
+    if (cachedDocumentBase?.fallback === fallback) return cachedDocumentBase.url;
     const base = resolveDocumentBase(owner, fallback);
-    cachedDocumentBase = { revision, fallback, url: base };
+    cachedDocumentBase = { fallback, url: base };
     return base;
   }
   function bodyRecord(owner: Raw.Document = source): Raw.Element | undefined {
@@ -21182,6 +21307,7 @@ function buildWindow(
     }
 
     function inserted(node: Raw.ChildNode): void {
+      invalidateDocumentBaseIn(node);
       advanceRevision({ namesChanged: containsDocumentNames(node) });
       if (hasFormLifecycleCallbacks) refreshCustomFormLifecycle([node]);
       if (tree.isElementNode(node) && customStates.get(node)?.connected && connected(node))

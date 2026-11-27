@@ -759,7 +759,8 @@ function compileSimpleList(branches: readonly SimpleBranch[], isXML: boolean) {
   return (element: Raw.Element) => matchers.some((matches) => matches(element));
 }
 
-function simpleTypeMatcher(tag: string, isXML: boolean) {
+/** Matches a type selector by tag name, comparing local names only for prefixed tags. */
+export function simpleTypeMatcher(tag: string, isXML: boolean) {
   const lower = tag.toLowerCase();
   return (element: Raw.Element) => {
     const expected = !isXML && element.namespaceURI === html.NS.HTML ? lower : tag;
