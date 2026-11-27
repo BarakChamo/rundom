@@ -371,6 +371,35 @@ describe("RunDOM tree walk and attribute brand checks", () => {
     }
   });
 
+  it("checks the receiver brand before converting the attribute name", () => {
+    // Given: a name whose string conversion is observable
+    const a = new JSDOM(markup).window;
+    try {
+      const conversions: string[] = [];
+      const name = {
+        toString() {
+          conversions.push("converted");
+          return "DATA-K";
+        },
+      };
+      const element = a.document.getElementById("a");
+      const methods = ["getAttribute", "hasAttribute", "setAttribute", "removeAttribute"] as const;
+      for (const method of methods) {
+        // When: a non-node receiver is used
+        // Then: the brand error is thrown before the name is converted
+        expect(() => Reflect.apply(a.Element.prototype[method], {}, [name, "v"])).toThrow(
+          new TypeError("Expected a Node"),
+        );
+      }
+      expect(conversions).toEqual([]);
+      // And: an element receiver converts the name once per call and folds its case
+      expect(Reflect.apply(a.Element.prototype.getAttribute, element, [name])).toBe("1");
+      expect(conversions).toEqual(["converted"]);
+    } finally {
+      a.close();
+    }
+  });
+
   it("checks argument counts before the receiver brand", () => {
     // Given: a non-node receiver and missing arguments
     const a = new JSDOM("").window;

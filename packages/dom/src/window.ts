@@ -1356,6 +1356,23 @@ function walkElementSibling<N extends object, H>(
   }
   return null;
 }
+function attributeByKey(record: Raw.Element, key: string): AttributeRecord | undefined {
+  for (const attr of record.attrs)
+    if ((attr.prefix ? qualifiedAttributeName(attr) : attr.name) === key) return attr;
+  return undefined;
+}
+/** Shared attribute lookup; `keyOf` is the Window's case folding, consulted only for uppercase names. */
+function findLocalAttribute<N extends object>(
+  self: N,
+  token: symbol,
+  element: (node: N) => Raw.Element,
+  name: unknown,
+  keyOf: (record: Raw.Element, name: string) => string,
+): AttributeRecord | undefined {
+  const record = localElement(self, token, element);
+  const text = String(name);
+  return attributeByKey(record, asciiUppercase.test(text) ? keyOf(record, text) : text);
+}
 const asciiUppercase = /[A-Z]/;
 const htmlNodeNames = new Map<string, string>(
   Object.values(html.TAG_NAMES).map((name) => [name, name.toUpperCase()]),
@@ -6764,7 +6781,7 @@ function buildWindow(
     }
     getAttribute(name: string): string | null {
       if (arguments.length < 1) throw new TypeError("Missing attribute argument");
-      return findAttribute(element(this), String(name))?.value ?? null;
+      return findLocalAttribute(this, token, element, name, attributeName)?.value ?? null;
     }
     getAttributeNS(namespace: string | null, localName: string): string | null {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
@@ -6781,7 +6798,7 @@ function buildWindow(
     }
     hasAttribute(name: string): boolean {
       if (arguments.length < 1) throw new TypeError("Missing attribute argument");
-      return findAttribute(element(this), String(name)) !== undefined;
+      return findLocalAttribute(this, token, element, name, attributeName) !== undefined;
     }
     hasAttributeNS(namespace: string | null, localName: string): boolean {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
@@ -6792,11 +6809,11 @@ function buildWindow(
     }
     setAttribute(name: string, value: string): void {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
-      const record = element(this);
+      const record = localElement(this, token, element);
       const key = attributeName(record, String(name));
       if (!validAttributeName(key))
         throw new DOMException("Invalid attribute name", "InvalidCharacterError");
-      setAttributeValue(this, findAttribute(record, key), { name: key, value });
+      setAttributeValue(this, attributeByKey(record, key), { name: key, value });
     }
     setAttributeNS(namespace: string | null, qualifiedName: string, value: string): void {
       if (arguments.length < 3) throw new TypeError("Missing attribute argument");
@@ -6811,7 +6828,7 @@ function buildWindow(
     }
     removeAttribute(name: string): void {
       if (arguments.length < 1) throw new TypeError("Missing attribute argument");
-      removeAttributeRecord(this, findAttribute(element(this), String(name)));
+      removeAttributeRecord(this, findLocalAttribute(this, token, element, name, attributeName));
     }
     removeAttributeNS(namespace: string | null, localName: string): void {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
