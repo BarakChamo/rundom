@@ -196,6 +196,157 @@ describe.each([
     }
   });
 
+  it("submits or resets a form only from enabled, connected, form-owned buttons", async () => {
+    // Given: submit and reset buttons that are plain, disabled, inside a disabled fieldset, inside
+    // that fieldset's first legend, of type button, outside the form with a form attribute, and
+    // formless; plus a detached form with its own submit button.
+    const { window } = new Constructor(
+      "<form id=f><input id=t value=start>" +
+        "<button id=plain>a</button><button id=off disabled>b</button>" +
+        "<fieldset disabled><legend><button id=legend>c</button></legend><button id=fenced>d</button></fieldset>" +
+        "<button id=inert type=button>e</button><input id=image type=image>" +
+        "<button id=reset type=reset>f</button></form>" +
+        "<button id=remote form=f>g</button><button id=loose>h</button>",
+    );
+    try {
+      const form = element(window, "f");
+      const submitted: string[] = [];
+      form.addEventListener("submit", (event: TestEvent) => {
+        event.preventDefault();
+        submitted.push(String(Reflect.get(event, "submitter")?.id));
+      });
+      const detached = window.document.createElement("form");
+      detached.innerHTML = "<button id=detached>i</button>";
+      detached.addEventListener("submit", () => submitted.push("detached"));
+      const text = input(window, "t");
+      text.value = "edited";
+      // When: each button is clicked, through click() and through a synthetic MouseEvent.
+      for (const id of ["plain", "off", "legend", "fenced", "inert", "image", "remote", "loose"])
+        element(window, id).click();
+      element(window, "plain").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      detached
+        .querySelector("button")
+        ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      element(window, "reset").click();
+      await Promise.resolve();
+      // Then: only enabled, connected, form-owned submit buttons submit, and reset restores values.
+      expect(submitted).toEqual(["plain", "legend", "image", "remote", "plain"]);
+      expect(text.value).toBe("start");
+    } finally {
+      window.close();
+    }
+  });
+
+  it("restores checkboxes and radio groups when a click is canceled in any phase", () => {
+    // Given: a checkbox and a radio group under a container, with b initially checked.
+    const { window } = new Constructor(
+      "<div id=d><input type=checkbox id=c>" +
+        "<input type=radio name=g id=a><input type=radio name=g id=b checked></div>",
+    );
+    try {
+      const container = element(window, "d");
+      const results: string[] = [];
+      for (const phase of ["capture", "target", "bubble"]) {
+        for (const id of ["c", "a"]) {
+          const control = input(window, id);
+          const cancel = (event: TestEvent) => event.preventDefault();
+          const where = phase === "target" ? control : container;
+          where.addEventListener("click", cancel, { capture: phase === "capture", once: true });
+          // When: the control is clicked and the click is canceled in this phase.
+          control.click();
+          results.push(
+            `${phase}:${id}:${input(window, "c").checked}${input(window, "a").checked}${input(window, "b").checked}`,
+          );
+        }
+      }
+      // Then: every canceled click restores the previous checkedness of the whole group.
+      expect(results).toEqual([
+        "capture:c:falsefalsetrue",
+        "capture:a:falsefalsetrue",
+        "target:c:falsefalsetrue",
+        "target:a:falsefalsetrue",
+        "bubble:c:falsefalsetrue",
+        "bubble:a:falsefalsetrue",
+      ]);
+    } finally {
+      window.close();
+    }
+  });
+
+  it("activates labels, summaries and links from nested targets, text nodes and untrusted events", () => {
+    // Given: a nested label, a label for a checkbox, a details summary, and a fragment link.
+    const { window } = new Constructor(
+      "<label id=nested><span id=s>text</span><input type=checkbox id=n></label>" +
+        "<label id=for for=f>for</label><input type=checkbox id=f>" +
+        "<details id=d><summary id=sum><b id=bold>more</b></summary>body</details>" +
+        "<a id=link href=#there><i id=italic>go</i></a><div id=plain>x</div>",
+    );
+    try {
+      const span = element(window, "s");
+      const textNode = span.firstChild;
+      if (!textNode) throw new Error("Expected a text node");
+      // When: clicks reach each activation target through descendants, a text node and a plain div.
+      textNode.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      element(window, "for").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      element(window, "bold").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      const details = element(window, "d");
+      const openAfterFirst = details.hasAttribute("open");
+      element(window, "sum").addEventListener("click", (event: TestEvent) =>
+        event.preventDefault(),
+      );
+      element(window, "sum").click();
+      element(window, "italic").click();
+      element(window, "plain").click();
+      window.document.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      // Then: each activation behavior ran once, and a canceled summary did nothing.
+      expect(input(window, "n").checked).toBe(true);
+      expect(input(window, "f").checked).toBe(true);
+      expect(openAfterFirst).toBe(true);
+      expect(details.hasAttribute("open")).toBe(true);
+    } finally {
+      window.close();
+    }
+  });
+
+  it("follows the current tree after a listener moves or removes the target", () => {
+    // Given: a target inside container one, and listeners on both containers and the body.
+    const { window } = new Constructor(
+      "<div id=one><p id=p></p></div><div id=two></div><div id=three></div>",
+    );
+    try {
+      const p = element(window, "p");
+      const seen: string[] = [];
+      for (const id of ["one", "two", "three"])
+        element(window, id).addEventListener("x", (event: TestEvent) =>
+          seen.push(`${id}:${String(Reflect.get(Object(event.currentTarget), "id"))}`),
+        );
+      p.addEventListener(
+        "x",
+        () => {
+          element(window, "two").append(p);
+        },
+        { once: true },
+      );
+      // When: the first dispatch moves the target, a second follows, then it is reparented by
+      // innerHTML replacement of its container and appended to a third container.
+      p.dispatchEvent(new window.Event("x", { bubbles: true }));
+      p.dispatchEvent(new window.Event("x", { bubbles: true }));
+      element(window, "two").innerHTML = "";
+      const detached = p.dispatchEvent(new window.Event("x", { bubbles: true }));
+      element(window, "three").append(p);
+      const last = new window.Event("x", { bubbles: true });
+      p.dispatchEvent(last);
+      // Then: the first dispatch uses the snapshot path, later ones the current tree.
+      expect(seen).toEqual(["one:one", "two:two", "three:three"]);
+      expect(detached).toBe(true);
+      expect(last.composedPath()).toEqual([]);
+      expect(last.currentTarget).toBeNull();
+      expect(last.target).toBe(p);
+    } finally {
+      window.close();
+    }
+  });
+
   it("rejects redispatch of an event that is still dispatching", () => {
     // Given: a listener that re-dispatches the event it is handling.
     const { window } = new Constructor("<p id=p></p>");
@@ -214,6 +365,52 @@ describe.each([
       // Then: the nested dispatch throws InvalidStateError.
       expect(failure).toBeInstanceOf(window.DOMException);
       expect(Reflect.get(Object(failure), "name")).toBe("InvalidStateError");
+    } finally {
+      window.close();
+    }
+  });
+});
+
+describe("RunDOM pointer input tracking for :focus-visible", () => {
+  it("counts only connected mouse input and unmodified keydown", () => {
+    // Given: two buttons, a detached button, and focus moved by script.
+    const { window } = new JSDOM("<button id=a>a</button><button id=b>b</button>");
+    try {
+      const a = element(window, "a");
+      const b = element(window, "b");
+      const detached = window.document.createElement("button");
+      const visible = (label: string) => `${label}:${String(b.matches(":focus-visible"))}`;
+      const seen: string[] = [];
+      // When: non-mouse clicks and detached mouse input arrive before b is focused.
+      a.dispatchEvent(new window.Event("click", { bubbles: true }));
+      detached.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+      b.focus();
+      seen.push(visible("script"));
+      // And: connected pointer input, modified keydown, then plain keydown arrive.
+      a.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
+      a.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+      b.blur();
+      b.focus();
+      seen.push(visible("pointer"));
+      b.dispatchEvent(new window.KeyboardEvent("keydown", { key: "c", ctrlKey: true }));
+      seen.push(visible("modified"));
+      b.dispatchEvent(new window.Event("keydown"));
+      seen.push(visible("untyped"));
+      b.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Tab" }));
+      seen.push(visible("keyboard"));
+      a.click();
+      b.blur();
+      b.focus();
+      seen.push(visible("click"));
+      // Then: only connected mouse input hides the indicator and only plain keydown restores it.
+      expect(seen).toEqual([
+        "script:true",
+        "pointer:false",
+        "modified:false",
+        "untyped:false",
+        "keyboard:true",
+        "click:false",
+      ]);
     } finally {
       window.close();
     }
