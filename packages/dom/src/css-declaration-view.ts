@@ -40,7 +40,6 @@ type DeferredDeclaration = {
 };
 const deferredDeclarations = new WeakMap<object, DeferredDeclaration>();
 const implementations = new WeakMap<object, DeclarationImplementation>();
-const viewFactories = new WeakMap<object, ReturnType<typeof createDeclarationViews>["expose"]>();
 
 type ComputedSource = DeclarationImplementation | (() => object | undefined);
 type ComputedResolver = (target: object) => DeclarationImplementation;
@@ -86,6 +85,36 @@ class ComputedView extends SlotTarget {
   }
   static target(view: object): object | undefined {
     return #target in view ? view.#target : undefined;
+  }
+}
+
+type ViewFactory = ReturnType<typeof createDeclarationViews>["expose"];
+// Registration runs once per private declaration implementation (an ordinary object), so its
+// owning factory and interface choice live in native slots instead of side tables.
+class Registration extends SlotTarget {
+  #factory: ViewFactory;
+  #styleProperties: boolean;
+  constructor(implementation: object, factory: ViewFactory, styleProperties: boolean) {
+    super(implementation);
+    this.#factory = factory;
+    this.#styleProperties = styleProperties;
+  }
+  static factory(implementation: object): ViewFactory | undefined {
+    return #factory in implementation ? implementation.#factory : undefined;
+  }
+  static styleProperties(implementation: object, factory: ViewFactory): boolean {
+    return #factory in implementation
+      ? implementation.#factory === factory && implementation.#styleProperties
+      : false;
+  }
+  static register(implementation: object, factory: ViewFactory, styleProperties: boolean): void {
+    if (!(#factory in implementation)) new Registration(implementation, factory, styleProperties);
+    else if (implementation.#factory === factory)
+      implementation.#styleProperties ||= styleProperties;
+    else {
+      implementation.#factory = factory;
+      implementation.#styleProperties = styleProperties;
+    }
   }
 }
 
@@ -235,7 +264,6 @@ export function createDeclarationViews(input: {
   functionPrototype: object;
   arrayValues: typeof Array.prototype.values;
 }) {
-  const properties = new WeakSet<DeclarationImplementation>();
   const ordinaryViews = new WeakMap<object, CSSStyleProperties>();
   const indexedHandlers = new WeakMap<object, ProxyHandler<object>>();
   const inheritedIndices = new WeakMap<DeclarationImplementation, AddedIndices>();
@@ -484,18 +512,20 @@ export function createDeclarationViews(input: {
     options: { fresh?: boolean } = {},
   ): CSSStyleProperties {
     if (options.fresh) {
-      const prototype = properties.has(implementation)
+      const prototype = Registration.styleProperties(implementation, expose)
         ? CSSStyleProperties.prototype
         : pageDeclarationPrototype();
       return publishComputed(prototype, implementation);
     }
-    const owner = viewFactories.get(implementation);
+    const owner = Registration.factory(implementation);
     if (owner && owner !== expose) return owner(implementation, options);
     const previous = ordinaryViews.get(implementation);
     if (previous) return previous;
     // This is an owned allocation with all observable members supplied by the public prototype/proxy.
     const target = Object.create(
-      properties.has(implementation) ? CSSStyleProperties.prototype : pageDeclarationPrototype(),
+      Registration.styleProperties(implementation, expose)
+        ? CSSStyleProperties.prototype
+        : pageDeclarationPrototype(),
     ) as CSSStyleProperties;
     let handler = indexedHandlers.get(implementation);
     if (!handler)
@@ -616,7 +646,7 @@ export function createDeclarationViews(input: {
       implementation: DeclarationImplementation,
       inherited?: AddedIndices,
     ): () => CSSStyleProperties {
-      const prototype = properties.has(implementation)
+      const prototype = Registration.styleProperties(implementation, expose)
         ? CSSStyleProperties.prototype
         : pageDeclarationPrototype();
       if (inherited) inheritedIndices.set(implementation, inherited);
@@ -686,8 +716,7 @@ export function createDeclarationViews(input: {
       computedClosed = true;
     },
     register(implementation: DeclarationImplementation, hasStyleProperties: boolean): void {
-      if (hasStyleProperties) properties.add(implementation);
-      viewFactories.set(implementation, expose);
+      Registration.register(implementation, expose, hasStyleProperties);
     },
   };
 }
