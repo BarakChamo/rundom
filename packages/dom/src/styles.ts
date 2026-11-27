@@ -1329,8 +1329,11 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     #writeRevision = 0;
     #precisionRevision = 0;
+    // The block's serialization after the last published write; every mutation clears it.
+    #serialized: string | undefined;
 
     override _setProperty(property: string, value: string, priority?: string): void {
+      this.#serialized = undefined;
       if (calculationSources?.get(this)?.delete(property)) this.#precisionRevision++;
       shorthandSources?.get(this)?.delete(property);
       if (value && urlDependentValue.test(value)) {
@@ -1430,6 +1433,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
 
     restoreBlock(block: DeclarationBlock): void {
+      this.#serialized = undefined;
       this._values = new Map(block.values);
       this._priorities = new Map(block.priorities);
       this._length = block.properties.length;
@@ -1534,8 +1538,9 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     #updateStyle<T>(write: () => T, publish: "changed" | "always" = "changed"): T {
       const changed = this._onChange;
       if (!changed || this._updating) return write();
-      const before = this.cssText;
+      const before = this.#serialized ?? this.cssText;
       const precisionRevision = this.#precisionRevision;
+      this.#serialized = undefined;
       this._onChange = undefined;
       let result: T;
       try {
@@ -1544,6 +1549,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         this._onChange = changed;
       }
       const after = this.cssText;
+      this.#serialized = after;
       if (publish === "always" || after !== before || precisionRevision !== this.#precisionRevision)
         changed(after);
       return result;
@@ -1560,6 +1566,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           `Cannot remove property "${property}" from a read-only style declaration.`,
           "NoModificationAllowedError",
         );
+      this.#serialized = undefined;
       // Native shorthand setters remove their serialized entry while rebuilding
       // longhands. Only a public removal expands to the complete declaration.
       if (requestedStyleWrites.has(this)) return super.removeProperty(name);
@@ -1582,6 +1589,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           "NoModificationAllowedError",
         );
       }
+      this.#serialized = undefined;
       const trackOrder =
         this._onChange &&
         /(?:margin|inset|border|padding)-(?:block|inline|start|end)-?/i.test(value);
@@ -1660,6 +1668,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const pending = variableSyntax.test(value);
       const components = pending ? undefined : splitOutline(value);
       if (!pending && !components) return;
+      this.#serialized = undefined;
       const changed = this._onChange;
       const original = changed && !this._updating ? this.cssText : undefined;
       this._onChange = undefined;
@@ -1682,6 +1691,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (original !== undefined && original !== this.cssText) changed?.(this.cssText);
     }
     #removeProperty(property: string): string {
+      this.#serialized = undefined;
       const name = property.toLowerCase();
       declarationBases?.get(this)?.delete(name);
       if (calculationSources?.get(this)?.delete(name)) this.#precisionRevision++;
@@ -2134,6 +2144,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (!ordered && this._onChange && logicalBoxName.test(name)) {
         ordered = orderedDeclaration(this.cssText);
         orderedStyles.set(this, ordered);
+        this.#serialized = undefined;
       }
       this.#updateStyle(() => {
         const previous = requestedStyleWrites.get(this);
