@@ -224,7 +224,9 @@ describe.each([
       for (const id of ["plain", "off", "legend", "fenced", "inert", "image", "remote", "loose"])
         element(window, id).click();
       element(window, "plain").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-      detached.querySelector("button")?.click();
+      detached
+        .querySelector("button")
+        ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       element(window, "reset").click();
       await Promise.resolve();
       // Then: only enabled, connected, form-owned submit buttons submit, and reset restores values.
