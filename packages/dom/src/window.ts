@@ -64,6 +64,7 @@ import {
 import { validPseudoSelectorList } from "./css-reference.js";
 import { parseDirectSelector } from "./selector-parser.js";
 import { compileSelector, hasClass, simpleSubjectAttribute } from "./selectors.js";
+import { forgetSelectorSignature } from "./selector-signature.js";
 import { parseNativeInactiveHTML } from "./native-parser.js";
 import { parseLiteralDocument } from "./inactive-parser.js";
 import { firstStrongDirection } from "./text-direction.js";
@@ -5836,6 +5837,7 @@ function buildWindow(
     scheduleReaction?: typeof queueMicrotask,
   ): void {
     const record = element(owner);
+    forgetSelectorSignature(record);
     const { name, namespace } = attr;
     if (!namespace && (name === "width" || name === "height")) {
       const realm = frameStates.get(record)?.realm;
