@@ -1259,6 +1259,23 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
   Object.defineProperty(Base, "name", { value: "CSSStyleDeclaration", configurable: true });
   initializeDeclarationMetadata(propertyDefinitions);
 
+  // cssstyle's verdict depends only on the property and value text; its own LRU key and
+  // lookup cost more than this bounded map. Throwing parses are not remembered.
+  const acceptedValues = new Map<string, boolean>();
+  function acceptsPropertyValue(name: string, value: string): boolean {
+    const key = `${name.length}:${name}${value}`;
+    let accepted = acceptedValues.get(key);
+    if (accepted !== undefined) return accepted;
+    accepted = parsePropertyValue(name, value) !== undefined;
+    if (acceptedValues.size >= 1024)
+      for (const oldest of acceptedValues.keys()) {
+        acceptedValues.delete(oldest);
+        break;
+      }
+    acceptedValues.set(key, accepted);
+    return accepted;
+  }
+
   function canonicalProperty(name: string): string {
     return propertyDefinitions.get(name)?.legacyAliasOf ?? name;
   }
@@ -2513,7 +2530,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       if (value && !property.startsWith("--")) {
         try {
-          if (parsePropertyValue(name, value) === undefined) {
+          if (!acceptsPropertyValue(name, value)) {
             const unresolved =
               propertyDefinitions.has(name) && !propertyDefinitions.get(name)?.longhands
                 ? unresolvedMathValue(name, value)
