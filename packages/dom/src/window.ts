@@ -1682,6 +1682,16 @@ function handlerDescriptor(type: string, reflected = false): PropertyDescriptor 
   };
 }
 
+// Switch an object about to receive many descriptors to dictionary mode. In
+// fast mode V8 copies the whole descriptor array for every added property.
+function useDictionaryProperties(target: object): void {
+  const [first, second] = windowShapeKeys;
+  Object.defineProperty(target, first, { value: true, configurable: true });
+  Object.defineProperty(target, second, { value: true, configurable: true });
+  Reflect.deleteProperty(target, first);
+  Reflect.deleteProperty(target, second);
+}
+
 // These module-owned tables have fixed string keys and immutable descriptors.
 const interfaceTableEntries = new WeakMap<PropertyDescriptorMap, [string, PropertyDescriptor][]>();
 function installInterfaceTable(target: object, table: PropertyDescriptorMap): void {
@@ -1690,6 +1700,7 @@ function installInterfaceTable(target: object, table: PropertyDescriptorMap): vo
     entries = Object.entries(table);
     interfaceTableEntries.set(table, entries);
   }
+  useDictionaryProperties(target);
   for (const [name, descriptor] of entries) Object.defineProperty(target, name, descriptor);
 }
 
@@ -19214,11 +19225,7 @@ function buildWindow(
     // dictionary mode so V8 does not build a long chain of property transitions.
     #bindings = WindowMembers.#prepareBindings(this);
     static #prepareBindings(bindings: object): void {
-      const [first, second] = windowShapeKeys;
-      Object.defineProperty(bindings, first, { value: true, configurable: true });
-      Object.defineProperty(bindings, second, { value: true, configurable: true });
-      Reflect.deleteProperty(bindings, first);
-      Reflect.deleteProperty(bindings, second);
+      useDictionaryProperties(bindings);
     }
     get [Symbol.toStringTag](): string {
       return "Window";
@@ -19918,14 +19925,6 @@ function buildWindow(
   }
   Object.defineProperty(HTMLElement.prototype, "nonce", { enumerable: true });
   Object.defineProperty(SVGElement.prototype, "nonce", { enumerable: true });
-  // These prototypes receive the complete global event handler descriptor table.
-  for (const prototype of [HTMLElement.prototype, SVGElement.prototype, Document.prototype]) {
-    const [first, second] = windowShapeKeys;
-    Object.defineProperty(prototype, first, { value: true, configurable: true });
-    Object.defineProperty(prototype, second, { value: true, configurable: true });
-    Reflect.deleteProperty(prototype, first);
-    Reflect.deleteProperty(prototype, second);
-  }
   installInterfaceTable(HTMLElement.prototype, globalHandlerDescriptors);
   installInterfaceTable(SVGElement.prototype, globalHandlerDescriptors);
   installInterfaceTable(Document.prototype, documentHandlerDescriptors);
