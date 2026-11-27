@@ -7862,6 +7862,16 @@ export function createStyles(input: {
         result._setProperty(name, `${Number(fontSize.toPrecision(6))}px`, "");
         continue;
       }
+      // `box-shadow: none` computes to `none` with a literal `transparent` color longhand, as in
+      // jsdom; the substitution read would serialize it as `rgba(0, 0, 0, 0) none`.
+      const offset = name === "box-shadow-color" ? winners.get("box-shadow-offset") : undefined;
+      if (
+        (name === "box-shadow" && specified.toLowerCase() === "none") ||
+        (typeof offset === "object" && offset.value === "none" && specified === "transparent")
+      ) {
+        result._setProperty(name, specified.toLowerCase(), "");
+        continue;
+      }
       if (
         resolver.substitution &&
         (!shorthand ||
