@@ -4900,6 +4900,14 @@ function deferredDeclaration(
   };
 }
 
+// The pinned generator re-emits every token of raw text and only appends a newline after a
+// backslash delimiter, so backslash-free raw text is already its own serialization.
+function preludeText(prelude: CssNode, generate: (typeof import("css-tree"))["generate"]): string {
+  return prelude.type === "Raw" && !prelude.value.includes("\\")
+    ? prelude.value
+    : generate(prelude);
+}
+
 type FlatStyleRule = {
   current: RuleSelection;
   declaration: RuleDeclarationFactory;
@@ -4922,7 +4930,7 @@ function prepareFlatRules(input: {
   for (const node of ast.children) {
     if (node.type !== "Rule") continue;
     const selection = parseRuleSelection({
-      text: generate(node.prelude),
+      text: preludeText(node.prelude, generate),
       isXML,
       statePseudos,
       requireMatchable: false,
@@ -5384,7 +5392,7 @@ function parseSheet(
     }
     if (node.type !== "Rule") return;
     const parsed = parseRuleSelection({
-      text: generate(node.prelude),
+      text: preludeText(node.prelude, generate),
       isXML,
       statePseudos,
       requireMatchable: false,
