@@ -206,3 +206,47 @@ describe("getComputedStyle reuse for inline-styled elements", () => {
     }
   });
 });
+
+describe("getComputedStyle reuse beside state selectors", () => {
+  it("should keep pointer-state rules inert and follow checked and validity state", () => {
+    // Given: pointer, checkedness and validity rules on controls, read once
+    withWindow(
+      `<style>button{color:rgb(1, 1, 1)} button:hover{color:rgb(2, 2, 2)} button:active{opacity:0.5} .on:hover{display:none} input:checked{opacity:0.25} input:invalid{outline-style:dashed}</style><button>b</button><input type=checkbox><input required>`,
+      (window) => {
+        const { document } = window;
+        const button = element(window, "button");
+        const [checkbox, required] = document.querySelectorAll("input");
+        if (!checkbox || !required) throw new Error("Expected two inputs");
+        const read = () => {
+          const pressed = window.getComputedStyle(button);
+          return [
+            pressed.color,
+            pressed.opacity,
+            pressed.display,
+            window.getComputedStyle(checkbox).opacity,
+            window.getComputedStyle(required).outlineStyle,
+          ];
+        };
+        const steps = [read()];
+        // When: the pointer moves and presses, a class changes, and control state changes
+        button.dispatchEvent(new window.MouseEvent("mouseover", { bubbles: true }));
+        button.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+        steps.push(read());
+        button.className = "on";
+        steps.push(read());
+        checkbox.checked = true;
+        steps.push(read());
+        required.value = "x";
+        steps.push(read());
+        // Then: pointer states never match, while checked and validity state are current
+        expect(steps).toEqual([
+          ["rgb(1, 1, 1)", "1", "inline", "1", "dashed"],
+          ["rgb(1, 1, 1)", "1", "inline", "1", "dashed"],
+          ["rgb(1, 1, 1)", "1", "inline", "1", "dashed"],
+          ["rgb(1, 1, 1)", "1", "inline", "0.25", "dashed"],
+          ["rgb(1, 1, 1)", "1", "inline", "0.25", "none"],
+        ]);
+      },
+    );
+  });
+});
