@@ -17,8 +17,14 @@ const systemColor =
  * Whether the evaluator's result for a declaration depends only on cascade winners and the
  * ancestor chain, never on attributes, siblings, URLs, containers or the page color scheme.
  * Frames holding only such values are reusable and do not extend to descendants.
+ * Without `lookup`, var() is unknown and fails; with it, var() passes when every custom
+ * property it reads (own or inherited, as `lookup` returns it) is winner-only text.
  */
-export function dependsOnWinnersOnly(value: string): boolean {
+export function dependsOnWinnersOnly(
+  value: string,
+  lookup?: (name: string) => string | undefined,
+): boolean {
+  if (lookup && /var\(/i.test(value)) return referencesWinnersOnly(value, lookup);
   let known = winnerOnlyValues.get(value);
   if (known === undefined) {
     known = scanWinnersOnly(value);
@@ -28,6 +34,27 @@ export function dependsOnWinnersOnly(value: string): boolean {
   return known;
 }
 const winnerOnlyValues = new Map<string, boolean>();
+
+// var() reads a custom property of the element or its ancestors. It keeps a value winner-only
+// when every referenced token, followed transitively, is winner-only text itself.
+function referencesWinnersOnly(
+  value: string,
+  lookup: (name: string) => string | undefined,
+): boolean {
+  const seen = new Set<string>();
+  const pending = [value];
+  // At most 16 distinct references are followed; longer chains stay on the conservative path.
+  for (let text = pending.pop(); text !== undefined; text = pending.pop()) {
+    if (!dependsOnWinnersOnly(text.replace(/var\(/gi, "calc("))) return false;
+    for (const [, reference = ""] of text.matchAll(/var\(\s*(--[\w-]+)/gi)) {
+      if (seen.has(reference)) continue;
+      if (seen.add(reference).size > 16) return false;
+      const referenced = lookup(reference);
+      if (referenced !== undefined) pending.push(referenced);
+    }
+  }
+  return true;
+}
 
 function scanWinnersOnly(value: string): boolean {
   if (value.includes("\\") || systemColor.test(value)) return false;
