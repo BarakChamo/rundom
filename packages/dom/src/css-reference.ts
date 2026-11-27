@@ -15,43 +15,75 @@ export function longhandDefinition(name: string): Property | undefined {
   return Object.hasOwn(definitions, name) ? definitions[name] : undefined;
 }
 
+type DeclarationParser = {
+  createContext(owner: object): object;
+  parseDestructuredDeclaration(
+    name: string,
+    value: string,
+    important: boolean,
+    context: object,
+  ): unknown;
+  isFailure(result: unknown): boolean;
+  serializeDeclarationValue(declaration: unknown): string;
+};
+let parser: DeclarationParser | undefined;
+
+// Resolved once: a module lookup on every inline write costs more than the parse cache hit.
+function declarationParser(): DeclarationParser {
+  return (parser ??= {
+    ...(require("rundom-css-reference/lib/jsdom/living/css/parse/context.js") as Pick<
+      DeclarationParser,
+      "createContext"
+    >),
+    ...(require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js") as Pick<
+      DeclarationParser,
+      "parseDestructuredDeclaration"
+    >),
+    ...(require("rundom-css-reference/lib/jsdom/living/css/values/value.js") as Pick<
+      DeclarationParser,
+      "isFailure"
+    >),
+    ...(require("rundom-css-reference/lib/jsdom/living/css/serialize.js") as Pick<
+      DeclarationParser,
+      "serializeDeclarationValue"
+    >),
+  });
+}
+
 /** Returns the specified serialization of a valid CSS declaration in an ordinary style rule. */
 function parseDeclaration(name: string, value: string, important = false): unknown {
   if (!name.startsWith("--") && !longhandDefinition(name)) return;
-  const {
-    createContext,
-  }: {
-    createContext(owner: object): object;
-  } = require("rundom-css-reference/lib/jsdom/living/css/parse/context.js");
-  const {
-    parseDestructuredDeclaration,
-  }: {
-    parseDestructuredDeclaration(
-      name: string,
-      value: string,
-      important: boolean,
-      context: object,
-    ): unknown;
-  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
-  const {
-    isFailure,
-  }: {
-    isFailure(result: unknown): boolean;
-  } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+  const { createContext, parseDestructuredDeclaration, isFailure } = declarationParser();
   context ??= createContext({ _globalObject: globalThis });
   const result = parseDestructuredDeclaration(name, value, important, context);
   if (!isFailure(result)) return result;
 }
 
+// The same bound as cssstyle's parse LRU: a two-property animation cycle fits.
+const maximumSpecifiedEntries = 4096;
+const maximumSpecifiedValueLength = 256;
+const specifiedValues = new Map<string, string | undefined>();
+
+/**
+ * Returns the specified serialization of `value` for `name`, or undefined when it is invalid.
+ * The parse context is process-global, so the result depends only on its inputs; values that
+ * draw random numbers are never remembered.
+ */
 export function specifiedDeclaration(name: string, value: string): string | undefined {
+  const cacheable = value.length <= maximumSpecifiedValueLength && !/random/i.test(value);
+  const key = `${name.length}:${name}${value}`;
+  if (cacheable && specifiedValues.has(key)) return specifiedValues.get(key);
   const parsed = parseDeclaration(name, value);
-  if (!parsed) return;
-  const {
-    serializeDeclarationValue,
-  }: {
-    serializeDeclarationValue(declaration: unknown): string;
-  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
-  return serializeDeclarationValue(parsed);
+  const serialized = parsed ? declarationParser().serializeDeclarationValue(parsed) : undefined;
+  if (!cacheable) return serialized;
+  // Oldest entries leave first; repeated animation and React style values stay resident.
+  if (specifiedValues.size >= maximumSpecifiedEntries)
+    for (const oldest of specifiedValues.keys()) {
+      specifiedValues.delete(oldest);
+      break;
+    }
+  specifiedValues.set(key, serialized);
+  return serialized;
 }
 
 function detachedDeclaration(declarations: readonly unknown[]) {
