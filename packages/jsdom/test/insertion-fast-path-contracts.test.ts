@@ -10,6 +10,11 @@ function page(markup = "<!doctype html><body><main id=host></main>", scripts = f
   return { dom, window: dom.window, document, host };
 }
 
+function narrow<T>(value: unknown, type: abstract new (...args: never[]) => T): T {
+  if (!(value instanceof type)) throw new Error(`Expected ${type.name}`);
+  return value;
+}
+
 describe("Node insertion and removal fast path", () => {
   it("reports ordered child-list records with siblings when an observer exists", async () => {
     // Given: an observed host with one existing child.
@@ -112,7 +117,9 @@ describe("Node insertion and removal fast path", () => {
     // Given: several insertions and removals before any range exists.
     const { dom, document, host } = page();
     for (let index = 0; index < 3; index++) host.appendChild(document.createElement("i"));
-    host.removeChild(host.firstChild as Node);
+    const first = host.firstChild;
+    if (!first) throw new Error("Expected a child");
+    host.removeChild(first);
     // When: a range selects the host contents.
     const range = document.createRange();
     range.selectNodeContents(host);
@@ -146,7 +153,7 @@ describe("Node insertion and removal fast path", () => {
   it("connects and disconnects inserted frames, including nested ones", () => {
     // Given: a frame directly and a frame nested inside a wrapper.
     const { dom, window, document, host } = page();
-    const frame = document.createElement("iframe");
+    const frame = narrow(document.createElement("iframe"), window.HTMLIFrameElement);
     const wrapper = document.createElement("div");
     wrapper.appendChild(document.createElement("iframe"));
     // When: both are connected.
@@ -185,26 +192,26 @@ describe("Node insertion and removal fast path", () => {
 
   it("normalizes radio groups, exclusive details and selected options on insertion", () => {
     // Given: a checked radio, an open named details and a select with a selected option.
-    const { dom, document } = page(
+    const { dom, window, document } = page(
       "<!doctype html><body><main id=host><form id=f><input type=radio name=g checked id=r1></form><details name=d open id=d1></details><select id=s><option selected>a</option></select></main>",
     );
-    const form = document.getElementById("f") as HTMLFormElement;
-    const radio = document.createElement("input");
+    const form = narrow(document.getElementById("f"), window.HTMLFormElement);
+    const radio = narrow(document.createElement("input"), window.HTMLInputElement);
     radio.type = "radio";
     radio.name = "g";
     radio.defaultChecked = true;
-    const details = document.createElement("details");
+    const details = narrow(document.createElement("details"), window.HTMLDetailsElement);
     details.setAttribute("name", "d");
     details.open = true;
-    const option = document.createElement("option");
+    const option = narrow(document.createElement("option"), window.HTMLOptionElement);
     option.defaultSelected = true;
-    const select = document.getElementById("s") as HTMLSelectElement;
+    const select = narrow(document.getElementById("s"), window.HTMLSelectElement);
     // When: the new checked/open/selected elements are inserted.
     form.appendChild(radio);
     document.getElementById("host")?.appendChild(details);
     select.appendChild(option);
     // Then: each feature's insertion normalization runs.
-    expect((document.getElementById("r1") as HTMLInputElement).checked).toBe(false);
+    expect(narrow(document.getElementById("r1"), window.HTMLInputElement).checked).toBe(false);
     expect(radio.checked).toBe(true);
     expect(details.open).toBe(false);
     expect(select.selectedIndex).toBe(1);
@@ -251,10 +258,10 @@ describe("Node insertion and removal fast path", () => {
 
   it("clears parser form association only when a control leaves without its form", () => {
     // Given: a control associated by the parser with a form that is not its ancestor.
-    const { dom, document, host } = page(
+    const { dom, window, document, host } = page(
       "<!doctype html><body><main id=host><div><form id=f></div><input id=i></main>",
     );
-    const input = document.getElementById("i") as HTMLInputElement;
+    const input = narrow(document.getElementById("i"), window.HTMLInputElement);
     const form = document.getElementById("f");
     expect(input.form).toBe(form);
     // When: the control is removed and reinserted.
