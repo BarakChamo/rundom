@@ -7336,12 +7336,15 @@ function buildWindow(
   }
 
   function noteFocusInput(node: Raw.Node, event: InstanceType<typeof Event>): void {
+    // The connection walk runs only when the input would change the document's pointer state.
     const owner = ownerRecord(node);
-    if (treeRoot(node, true) !== owner) return;
     if (event.type === "keydown") {
-      if (event instanceof KeyboardEvent && !event.altKey && !event.ctrlKey && !event.metaKey)
-        pointerFocusDocuments?.delete(owner);
+      if (!(event instanceof KeyboardEvent) || event.altKey || event.ctrlKey || event.metaKey)
+        return;
+      if (pointerFocusDocuments?.has(owner) && treeRoot(node, true) === owner)
+        pointerFocusDocuments.delete(owner);
     } else if (event instanceof MouseEvent) {
+      if (pointerFocusDocuments?.has(owner) || treeRoot(node, true) !== owner) return;
       (pointerFocusDocuments ??= new WeakSet()).add(owner);
     }
   }
@@ -9322,13 +9325,13 @@ function buildWindow(
       }
       if (node.tagName === "button" || (type !== null && type !== "hidden")) {
         return (canceled) => {
-          if (canceled || isDisabledControl(node) || !isDocumentRecord(treeRoot(node, true)))
-            return;
+          if (canceled) return;
+          // Cheapest conjuncts first: most clicked buttons have no form owner.
           const currentType = node.tagName === "button" ? buttonType(node) : inputType(node);
           const reset = currentType === "reset";
           if (!reset && !isSubmitButton(node)) return;
           const owner = formOwner(node);
-          if (!owner) return;
+          if (!owner || isDisabledControl(node) || !isDocumentRecord(treeRoot(node, true))) return;
           const form = wrapElement(owner) as HTMLFormElement;
           if (reset) {
             resetForm(form, "activation");
