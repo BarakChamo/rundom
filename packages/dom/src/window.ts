@@ -2403,7 +2403,7 @@ function buildWindow(
   let stopActiveParser: (() => void) | undefined;
   let focusFixupPending = false;
   class DOMException extends HostDOMException {}
-  Object.defineProperties(DOMException, exceptionConstants);
+  installInterfaceTable(DOMException, exceptionConstants);
   for (const name of ["name", "message", "code"]) {
     const getter = Object.getOwnPropertyDescriptor(HostDOMException.prototype, name)!.get!;
     Object.defineProperty(DOMException.prototype, name, {
@@ -2423,7 +2423,7 @@ function buildWindow(
     value: "DOMException",
     configurable: true,
   });
-  Object.defineProperties(DOMException.prototype, exceptionConstants);
+  installInterfaceTable(DOMException.prototype, exceptionConstants);
 
   class QuotaExceededError extends DOMException {
     readonly #quota: number | null;
@@ -8117,8 +8117,8 @@ function buildWindow(
     declare readonly SVG_MEETORSLICE_SLICE: 2;
 
     static {
-      Object.defineProperties(this, aspectRatioDescriptors);
-      Object.defineProperties(this.prototype, aspectRatioDescriptors);
+      installInterfaceTable(this, aspectRatioDescriptors);
+      installInterfaceTable(this.prototype, aspectRatioDescriptors);
     }
 
     readonly #owner: Element;
@@ -14090,8 +14090,8 @@ function buildWindow(
     declare readonly HAVE_ENOUGH_DATA: 4;
 
     static {
-      Object.defineProperties(this, mediaStateDescriptors);
-      Object.defineProperties(this.prototype, mediaStateDescriptors);
+      installInterfaceTable(this, mediaStateDescriptors);
+      installInterfaceTable(this.prototype, mediaStateDescriptors);
     }
 
     #currentTime = 0;
@@ -14382,8 +14382,8 @@ function buildWindow(
     declare readonly ERROR: 3;
 
     static {
-      Object.defineProperties(this, trackStateDescriptors);
-      Object.defineProperties(this.prototype, trackStateDescriptors);
+      installInterfaceTable(this, trackStateDescriptors);
+      installInterfaceTable(this.prototype, trackStateDescriptors);
     }
 
     get [Symbol.toStringTag](): string {
@@ -15396,8 +15396,8 @@ function buildWindow(
     declare readonly END_TO_START: 3;
 
     static {
-      Object.defineProperties(this, rangeConstantDescriptors);
-      Object.defineProperties(this.prototype, rangeConstantDescriptors);
+      installInterfaceTable(this, rangeConstantDescriptors);
+      installInterfaceTable(this.prototype, rangeConstantDescriptors);
     }
 
     readonly #points: RangePoints;
