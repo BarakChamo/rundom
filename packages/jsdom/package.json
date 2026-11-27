@@ -46,7 +46,7 @@
     "whatwg-mimetype": "5.0.0"
   },
   "devDependencies": {
-    "@miaskiewicz/turbo-dom": "0.7.1",
+    "@miaskiewicz/turbo-dom": "0.8.6",
     "@run-dom/html-parser": "workspace:*",
     "@testing-library/dom": "10.4.2",
     "happy-dom": "21.0.4",

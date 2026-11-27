@@ -11,6 +11,7 @@ export const providerSchema = z.enum([
 export const scenarioSchema = z.enum([
   "control",
   "windows-create-close",
+  "globals-read",
   "parse-html",
   "parse-html-unique",
   "parse-html-sparse",
@@ -70,6 +71,18 @@ export type Dimensions = z.infer<typeof dimensionsSchema>;
 export type Provider = z.infer<typeof providerSchema>;
 export type Scenario = z.infer<typeof scenarioSchema>;
 export type Mode = z.infer<typeof modeSchema>;
+const constructionScenarios: ReadonlySet<Scenario> = new Set([
+  "windows-create-close",
+  "globals-read",
+  "clone-subtree",
+  "serialize",
+]);
+/** Creation/parsing/cloning/serialization batches default to eight operations; others use the schema default. Explicit --operations overrides both. */
+export function defaultOperations(scenario: Scenario): number {
+  return scenario.startsWith("parse-html") || constructionScenarios.has(scenario)
+    ? 8
+    : dimensionsSchema.parse({}).operations;
+}
 export const cohortSchema = z.object({
   version: z.literal(1),
   directory: z.string(),
