@@ -606,6 +606,13 @@ describe.each(providers)("$name shorthands read from their listed longhands", ({
         // Then: the shorthand or alias serializes from them (WPT cssom-getPropertyValue-common-checks).
         expect([property, style.getPropertyValue(property)]).toEqual([property, "initial"]);
       }
+      // When: background longhands are written and the shorthand is cleared.
+      style.cssText = "";
+      style.setProperty("background-repeat", "repeat");
+      style.setProperty("background-position", "left");
+      style.setProperty("background", "");
+      // Then: nothing serializes from leftover axis longhands (WPT style-background-shorthand).
+      expect([style.getPropertyValue("background-repeat"), style.cssText]).toEqual(["", ""]);
     } finally {
       window.close();
     }

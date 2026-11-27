@@ -1315,6 +1315,16 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
   function canonicalProperty(name: string): string {
     return propertyDefinitions.get(name)?.legacyAliasOf ?? name;
   }
+  // jsdom shorthands whose cssstyle metadata lists no longhands.
+  const metadataLonghandless = new Set(
+    "rule-inset-cap rule-inset-junction animation-delay background-repeat column-rule-inset-cap column-rule-inset-junction max-size min-size row-rule-inset-cap row-rule-inset-junction size text-box timeline-trigger-activation-range timeline-trigger-active-range glyph-orientation-vertical page-break-after page-break-before page-break-inside".split(
+      " ",
+    ),
+  );
+  /** Cheap filter before consulting jsdom's shorthand table, which loads lazily. */
+  function mayBeReferenceShorthand(name: string): boolean {
+    return !!propertyDefinitions.get(name)?.longhands || metadataLonghandless.has(name);
+  }
 
   function unresolvedMathValue(property: string, value: string): string | undefined {
     if (!/\b(?:calc|min|max|clamp)\(/i.test(value) || /var\(/i.test(value)) return undefined;
@@ -1618,11 +1628,12 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     publicNames(): readonly string[] | undefined {
       if (this._computed) return;
       if (this.#publicNames?.revision === this.#indexRevision) return this.#publicNames.names;
-      const shorthands = referenceShorthands();
       let names: string[] | undefined;
       for (let i = 0; i < this._length && !names; i++)
-        if (shorthands.has(this[i] ?? "")) names = [];
+        if (mayBeReferenceShorthand(this[i] ?? "") && referenceShorthands().has(this[i] ?? ""))
+          names = [];
       if (names) {
+        const shorthands = referenceShorthands();
         const listed = new Set<string>();
         for (let i = 0; i < this._length; i++) {
           const name = this[i] ?? "";
@@ -1842,7 +1853,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         super.removeProperty("background");
       if (!longhands.length && !isPhysicalBorder(name)) {
         shorthandSources?.get(this)?.delete(name);
-        if (coveredLonghands().has(name)) this.#releaseStoredShorthands(name);
+        this.#releaseStoredShorthands(name);
         return super.removeProperty(property);
       }
       const previous = this.getPropertyValue(name);
@@ -1856,6 +1867,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           shorthandSources?.get(this)?.delete(child);
           super.removeProperty(child);
         }
+        // Longhands listed only in jsdom's table (background-repeat-x) are removed with it too.
+        if (name !== "all" && mayBeReferenceShorthand(name))
+          for (const child of referenceShorthands().get(name)?.flat() ?? [])
+            if (this._values.has(child)) super.removeProperty(child);
         if (isPhysicalBorder(name)) {
           const removed = new Set([name, ...longhands]);
           for (const parent of borderShorthands) {
@@ -1884,6 +1899,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     // cssstyle serializes a stored shorthand entry over its longhands. CSSOM stores only
     // longhands, so removing one drops that entry and keeps the shorthand's other longhands.
     #releaseStoredShorthands(longhand: string): void {
+      let stored = false;
+      for (let i = 0; i < this._length && !stored; i++)
+        stored = mayBeReferenceShorthand(this[i] ?? "");
+      if (!stored || !coveredLonghands().has(longhand)) return;
       for (let i = this._length - 1; i >= 0; i--) {
         const shorthand = this[i];
         const groups = shorthand && referenceShorthands().get(shorthand);
@@ -1993,7 +2012,9 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
      */
     [referenceShorthandValue](property: string): string {
       if (this._computed || !this._length) return "";
-      if (!referenceShorthands().has(property)) property = canonicalProperty(property);
+      const canonical = canonicalProperty(property);
+      if (!mayBeReferenceShorthand(property) && !mayBeReferenceShorthand(canonical)) return "";
+      if (!referenceShorthands().has(property)) property = canonical;
       const members = referenceShorthands().get(property)?.flat();
       if (!members || property === "all") return "";
       let text = "";
