@@ -4200,6 +4200,8 @@ function buildWindow(
       disconnect(child);
     }
     invalidateSubtreeSummaries(target, composedParent);
+    removed.forEach(invalidateDocumentBaseIn);
+    children.forEach(invalidateDocumentBaseIn);
     target.childNodes = children;
     const sourceChanged = invalidateStyleSource(target);
     rangeIndex()?.inserted(target, 0, children.length);
@@ -4359,6 +4361,7 @@ function buildWindow(
   function detachWithRecord(node: Raw.ChildNode, notify = true): void {
     const target = node.parentNode;
     if (!target) return;
+    invalidateDocumentBaseIn(node);
     if (invalidateStyleSource(target)) {
       stylesheetDiscoveryRevision++;
       styleBinding?.invalidateSheetMembership();
@@ -4715,6 +4718,7 @@ function buildWindow(
         : target.childNodes.length;
     const previous = target.childNodes[index - 1];
     invalidateSubtreeSummaries(target, composedParent);
+    added.forEach(invalidateDocumentBaseIn);
     rangeIndex()?.inserted(target, index, added.length);
     if (before && "parentNode" in before) {
       for (const member of added) tree.insertBefore(target, member, before);
@@ -16568,7 +16572,25 @@ function buildWindow(
     }
   }
 
-  let cachedDocumentBase: { revision: number; fallback: string; url: string } | undefined;
+  // Valid until a base element enters or leaves a tree, a base href changes, or parsing finishes;
+  // other tree edits cannot change which base comes first. The fallback key covers URL changes.
+  let cachedDocumentBase: { fallback: string; url: string } | undefined;
+
+  function invalidateDocumentBaseIn(node: Raw.ChildNode): void {
+    if (cachedDocumentBase && containsBaseElement(node)) cachedDocumentBase = undefined;
+  }
+  function isBaseElement(node: Raw.Element): boolean {
+    return htmlChildNamed(node, "base");
+  }
+  function containsBaseElement(node: Raw.ChildNode): boolean {
+    if (!tree.isElementNode(node)) return false;
+    if (isBaseElement(node)) return true;
+    if (!node.childNodes.length || packedLeafText(node) !== undefined) return false;
+    return (
+      firstQueryDescendant({ root: node, matches: isBaseElement, skipPackedText: true }) !==
+      undefined
+    );
+  }
 
   function resolveDocumentBase(owner: Raw.Document, fallback: string): string {
     for (const candidate of descendants(owner)) {
@@ -16623,10 +16645,9 @@ function buildWindow(
       (owner === source ? options.inheritedBase : detachedSettings?.get(owner)?.url) ?? url.href;
     if (kind === "fallback") return fallback;
     if (owner !== source) return resolveDocumentBase(owner, fallback);
-    if (cachedDocumentBase?.revision === revision && cachedDocumentBase.fallback === fallback)
-      return cachedDocumentBase.url;
+    if (cachedDocumentBase?.fallback === fallback) return cachedDocumentBase.url;
     const base = resolveDocumentBase(owner, fallback);
-    cachedDocumentBase = { revision, fallback, url: base };
+    cachedDocumentBase = { fallback, url: base };
     return base;
   }
   function bodyRecord(owner: Raw.Document = source): Raw.Element | undefined {
@@ -21182,6 +21203,7 @@ function buildWindow(
     }
 
     function inserted(node: Raw.ChildNode): void {
+      invalidateDocumentBaseIn(node);
       advanceRevision({ namesChanged: containsDocumentNames(node) });
       if (hasFormLifecycleCallbacks) refreshCustomFormLifecycle([node]);
       if (tree.isElementNode(node) && customStates.get(node)?.connected && connected(node))
