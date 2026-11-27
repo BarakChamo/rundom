@@ -40,11 +40,61 @@ type DeferredDeclaration = {
 };
 const deferredDeclarations = new WeakMap<object, DeferredDeclaration>();
 const implementations = new WeakMap<object, DeclarationImplementation>();
-const computedOwners = new WeakMap<object, (view: object) => DeclarationImplementation>();
 const viewFactories = new WeakMap<object, ReturnType<typeof createDeclarationViews>["expose"]>();
 
+type ComputedSource = DeclarationImplementation | (() => object | undefined);
+type ComputedResolver = (target: object) => DeclarationImplementation;
+class SlotTarget {
+  constructor(target: object) {
+    return target;
+  }
+}
+// Computed views publish once per getComputedStyle call, so their private state lives in native
+// slots instead of WeakMaps. All state sits on the never-escaping proxy target (cheap ordinary
+// object slots); the public proxy carries only one slot pointing at its target, because V8 private
+// fields on proxies are much slower to add and read. Slots add no keys and invoke no traps.
+class ComputedTarget extends SlotTarget {
+  #source: ComputedSource;
+  #resolve: ComputedResolver;
+  #connected: (() => boolean) | undefined;
+  constructor(
+    target: object,
+    source: ComputedSource,
+    resolve: ComputedResolver,
+    connected: (() => boolean) | undefined,
+  ) {
+    super(target);
+    this.#source = source;
+    this.#resolve = resolve;
+    this.#connected = connected;
+  }
+  static resolver(target: object): ComputedResolver | undefined {
+    return #resolve in target ? target.#resolve : undefined;
+  }
+  static source(target: object): ComputedSource | undefined {
+    return #source in target ? target.#source : undefined;
+  }
+  static connected(target: object): (() => boolean) | undefined {
+    return #connected in target ? target.#connected : undefined;
+  }
+}
+class ComputedView extends SlotTarget {
+  #target: object;
+  constructor(view: object, target: object) {
+    super(view);
+    this.#target = target;
+  }
+  static target(view: object): object | undefined {
+    return #target in view ? view.#target : undefined;
+  }
+}
+
 function declarationImplementation(view: object): DeclarationImplementation {
-  const implementation = implementations.get(view) ?? computedOwners.get(view)?.(view);
+  let implementation = implementations.get(view);
+  if (!implementation) {
+    const target = ComputedView.target(view);
+    implementation = target && ComputedTarget.resolver(target)?.(target);
+  }
   if (!implementation) throw new TypeError("Illegal invocation");
   return implementation;
 }
@@ -238,7 +288,9 @@ export function createDeclarationViews(input: {
     }
     get length(): number {
       const style = receiver(this);
-      if (typeof computedValues?.get(this) === "function") return computedNames(style).length;
+      const target = ComputedView.target(this);
+      if (target && typeof computedSource(target) === "function")
+        return computedNames(style).length;
       const indices = inheritedIndices.get(style);
       return style._length + (indices?.names.length ?? 0) + (indices?.last ? 1 : 0);
     }
@@ -467,12 +519,16 @@ export function createDeclarationViews(input: {
     (target) => inlineTarget(target)._length,
     (target, index) => inlineTarget(target).item(index),
   );
-  type ComputedSource = DeclarationImplementation | (() => CSSStyleProperties | undefined);
-  let computedValues: WeakMap<object, ComputedSource> | undefined = new WeakMap();
-  const connectedLiveSources = new WeakMap<() => CSSStyleProperties | undefined, () => boolean>();
+  let computedClosed = false;
+  /** Reads only this Window's open computed targets, matching its former per-Window side table. */
+  function computedSource(target: object): ComputedSource | undefined {
+    return computedClosed || ComputedTarget.resolver(target) !== computedValue
+      ? undefined
+      : ComputedTarget.source(target);
+  }
   let empty: DeclarationImplementation | undefined;
-  function computedValue(view: object): DeclarationImplementation {
-    const source = computedValues?.get(view);
+  function computedValue(target: object): DeclarationImplementation {
+    const source = computedSource(target);
     if (typeof source !== "function") return source ?? (empty ??= input.emptyComputed());
     const current = source();
     return current ? declarationImplementation(current) : (empty ??= input.emptyComputed());
@@ -497,28 +553,31 @@ export function createDeclarationViews(input: {
     privateLookup,
     (target) => {
       const value = computedValue(target);
-      return typeof computedValues?.get(target) === "function"
+      return typeof computedSource(target) === "function"
         ? computedNames(value).length
         : indexedLength(value, inheritedIndices.get(value));
     },
     (target, index) => {
-      const source = computedValues?.get(target);
+      const source = computedSource(target);
       if (typeof source === "function") {
         const name = computedLonghands()[index];
-        if (name !== undefined) return connectedLiveSources.get(source)?.() ? name : undefined;
+        if (name !== undefined) return ComputedTarget.connected(target)?.() ? name : undefined;
       }
       const value = computedValue(target);
-      return typeof computedValues?.get(target) === "function"
+      return typeof computedSource(target) === "function"
         ? computedNames(value)[index]
         : indexedItem(value, index, inheritedIndices.get(value));
     },
   );
-  function publishComputed(prototype: object, value: ComputedSource): CSSStyleProperties {
+  function publishComputed(
+    prototype: object,
+    value: ComputedSource,
+    connected?: () => boolean,
+  ): CSSStyleProperties {
     const target = Object.create(prototype) as CSSStyleProperties;
+    new ComputedTarget(target, value, computedValue, connected);
     const view = new Proxy<CSSStyleProperties>(target, computedHandler);
-    computedValues?.set(target, value);
-    computedValues?.set(view, value);
-    computedOwners.set(view, computedValue);
+    new ComputedView(view, target);
     return view;
   }
   return {
@@ -621,11 +680,10 @@ export function createDeclarationViews(input: {
       read: () => CSSStyleProperties | undefined,
       connected: () => boolean,
     ): CSSStyleProperties {
-      connectedLiveSources.set(read, connected);
-      return publishComputed(propertyPrototype, read);
+      return publishComputed(propertyPrototype, read, connected);
     },
     closeComputed(): void {
-      computedValues = undefined;
+      computedClosed = true;
     },
     register(implementation: DeclarationImplementation, hasStyleProperties: boolean): void {
       if (hasStyleProperties) properties.add(implementation);
