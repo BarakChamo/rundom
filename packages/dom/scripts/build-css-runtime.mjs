@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { deferredCssProperties } from "./build-css-properties.mjs";
+import { serializeCssTreeData } from "./css-tree-data.mjs";
 
 const colorEntry = fileURLToPath(import.meta.resolve("@asamuzakjp/css-color"));
 const cssTreeCjs = fileURLToPath(new URL("./cjs/", import.meta.resolve("css-tree/package.json")));
@@ -27,6 +28,18 @@ const result = await Bun.build({
       name: "declared-css-color",
       setup(build) {
         build.onResolve({ filter: /^@asamuzakjp\/css-color$/ }, () => ({ path: colorEntry }));
+      },
+    },
+    {
+      // css-tree's data module evaluates every mdn-data entry (descriptions, URLs, statuses) and
+      // patches it on each process start, but its lexer reads only the patched syntax strings.
+      // Embed that result; css-tree-data.test.ts compares it with the module's own output.
+      name: "precomputed-css-tree-data",
+      setup(build) {
+        build.onLoad({ filter: /[\\/]css-tree[\\/]cjs[\\/]data\.cjs$/ }, ({ path }) => ({
+          contents: `module.exports = ${serializeCssTreeData(createRequire(path)(path))};`,
+          loader: "js",
+        }));
       },
     },
     {
