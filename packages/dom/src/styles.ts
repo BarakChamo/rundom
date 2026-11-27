@@ -9065,6 +9065,7 @@ export function createStyles(input: {
         let hasVariableShorthand = false;
         let usesSubstitution = false;
         let environmentSubstitution = false;
+        let tokenReaders: string[] | undefined;
 
         // Cached frames return above without allocating winner-expansion closures.
         const consider = (name: string, candidate: Winner): void => {
@@ -9128,8 +9129,18 @@ export function createStyles(input: {
               const evaluated =
                 contextualLonghand.test(name) ||
                 (value.includes("(") && usesTypedValueGrammar(name, value));
-              environmentSubstitution =
-                (evaluated && !dependsOnWinnersOnly(value)) ||
+              // var() in evaluated values and pending shorthands is checked once the
+              // custom properties it reads are known.
+              const tokenReader =
+                (evaluated || !!shorthand || deferredShorthandLonghands.has(name)) &&
+                variableSyntax.test(value);
+              if (tokenReader) {
+                if (dependsOnWinnersOnly(value.replace(/var\(/gi, "calc(")))
+                  (tokenReaders ??= []).push(value);
+                else environmentSubstitution = true;
+              }
+              environmentSubstitution ||=
+                (evaluated && !tokenReader && !dependsOnWinnersOnly(value)) ||
                 (name.startsWith("--") && /\)var\(/i.test(value)) ||
                 ((name === "container-type" || name === "container") &&
                   /(?:^|[ /])(?:inline-)?size(?:$| )/.test(value)) ||
@@ -9435,6 +9446,16 @@ export function createStyles(input: {
           custom = { block: theme, placements: [{ before, end: theme.names.length }] };
         }
         custom ??= packCustomWinners(computedWinners);
+        if (tokenReaders && !environmentSubstitution) {
+          const block = custom?.block;
+          const token = (name: string): string | undefined => {
+            const winner = computedWinners.get(name);
+            return typeof winner === "string" ? winner : (winner?.value ?? block?.values.get(name));
+          };
+          environmentSubstitution = tokenReaders.some(
+            (value) => !dependsOnWinnersOnly(value, token),
+          );
+        }
         if (
           previous &&
           sameContext &&
@@ -9740,7 +9761,6 @@ export function createStyles(input: {
           ...(substitution && { substitution }),
           ...(substitution &&
             !environmentSubstitution &&
-            !hasVariableShorthand &&
             !registrations?.size &&
             (!parentFrame?.substitution || parentFrame.staticSubstitution) && {
               staticSubstitution: true as const,
