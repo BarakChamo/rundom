@@ -59,14 +59,16 @@ function watchAbort(signal: AbortSignal, listeners: ListenerList, entry: Entry):
 type DispatchState = {
   target: object | null;
   current: object | null;
-  path: object[];
-  closedMembership?: Map<object, object[]>;
-  relatedTarget?: object | null;
+  path: readonly object[];
+  closedMembership: Map<object, object[]> | undefined;
+  relatedTarget: object | null | undefined;
   phase: number;
   stopped: boolean;
   immediate: boolean;
   passive: boolean;
 };
+
+const emptyPath: readonly object[] = Object.freeze([]);
 
 // DOM wrappers keep their identity when adopted, so dispatch records follow the objects.
 const parent = new WeakMap<object, object>();
@@ -1412,11 +1414,12 @@ export function createEvents(
   function invoke(
     target: object,
     event: Event,
+    type: string,
     state: DispatchState,
     capture: boolean,
     inShadow: boolean,
   ): void {
-    const phases = listeners.get(target)?.get(event.type);
+    const phases = listeners.get(target)?.get(type);
     const list = capture ? phases?.capture : phases?.bubble;
     if (!list?.entries.length) return;
     const snapshot = list.entries;
@@ -1452,6 +1455,14 @@ export function createEvents(
         state.passive = false;
       }
     }
+  }
+
+  function hasPathListeners(path: readonly object[], type: string): boolean {
+    for (const node of path) {
+      const phases = listeners.get(node)?.get(type);
+      if (phases?.capture?.entries.length || phases?.bubble?.entries.length) return true;
+    }
+    return false;
   }
 
   class EventTarget {
@@ -1549,7 +1560,9 @@ export function createEvents(
       let clearTarget = false;
       let originalRoot: object | undefined;
       let current: object = this;
-      const isLoad = event.type === "load";
+      // initEvent is ignored while dispatching, so the type cannot change below.
+      const type = event.type;
+      const isLoad = type === "load";
       // Snapshot the path before any listener can change the tree.
       for (;;) {
         const slot = assignedSlot?.(current);
@@ -1594,7 +1607,8 @@ export function createEvents(
         target,
         current: null,
         path,
-        ...(closedMembership ? { closedMembership } : {}),
+        closedMembership,
+        relatedTarget: undefined,
         phase: 0,
         stopped: previousState?.stopped ?? record.stoppedEarly,
         immediate: false,
@@ -1603,9 +1617,12 @@ export function createEvents(
       record.stoppedEarly = false;
       record.state = state;
       const finishActivation =
-        event.type === "click" && record.mouse
-          ? activation?.(path, event as MouseEvent)
-          : undefined;
+        type === "click" && record.mouse ? activation?.(path, event as MouseEvent) : undefined;
+      // With no listener on the path after pre-activation, no author code can run before the
+      // dispatch completes: propagation would only rewrite state that is reset below, so it is
+      // skipped by starting stopped (the flag is cleared below). Related targets keep the full
+      // walk because their final value comes from it.
+      if (!related && !hasPathListeners(path, type)) state.stopped = true;
       for (let index = path.length - 1; index > 0 && !state.stopped; index--) {
         const ancestor = path[index];
         if (!ancestor) continue;
@@ -1613,15 +1630,15 @@ export function createEvents(
         if (adjustedRelated) state.relatedTarget = adjustedRelated[index] ?? null;
         state.phase = state.target === ancestor ? 2 : 1;
         state.current = ancestor;
-        invoke(ancestor, event, state, true, shadowItems?.[index] ?? false);
+        invoke(ancestor, event, type, state, true, shadowItems?.[index] ?? false);
       }
       if (!state.stopped) {
         state.target = target;
         if (initialRelated) state.relatedTarget = initialRelated;
         state.phase = 2;
         state.current = this;
-        invoke(this, event, state, true, shadowItems?.[0] ?? false);
-        if (!state.stopped) invoke(this, event, state, false, shadowItems?.[0] ?? false);
+        invoke(this, event, type, state, true, shadowItems?.[0] ?? false);
+        if (!state.stopped) invoke(this, event, type, state, false, shadowItems?.[0] ?? false);
       }
       if (event.bubbles || targets) {
         for (let index = 1; index < path.length && !state.stopped; index++) {
@@ -1633,7 +1650,7 @@ export function createEvents(
           if (adjustedRelated) state.relatedTarget = adjustedRelated[index] ?? null;
           state.phase = atTarget ? 2 : 3;
           state.current = ancestor;
-          invoke(ancestor, event, state, false, shadowItems?.[index] ?? false);
+          invoke(ancestor, event, type, state, false, shadowItems?.[index] ?? false);
         }
       }
       state.target = clearTarget ? null : adjustedTarget;
@@ -1644,8 +1661,8 @@ export function createEvents(
       }
       state.current = null;
       state.phase = 0;
-      state.path = [];
-      delete state.closedMembership;
+      state.path = emptyPath;
+      state.closedMembership = undefined;
       state.stopped = state.immediate = false;
       finishActivation?.(eventCanceled(event));
       return !eventCanceled(event);
