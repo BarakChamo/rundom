@@ -63,7 +63,12 @@ import {
 } from "./xhr.js";
 import { validPseudoSelectorList } from "./css-reference.js";
 import { parseDirectSelector } from "./selector-parser.js";
-import { compileSelector, hasClass, simpleSubjectAttribute } from "./selectors.js";
+import {
+  compileSelector,
+  hasClass,
+  simpleSubjectAttribute,
+  simpleTypeMatcher,
+} from "./selectors.js";
 import { forgetSelectorSignature } from "./selector-signature.js";
 import { parseNativeInactiveHTML } from "./native-parser.js";
 import { parseLiteralDocument } from "./inactive-parser.js";
@@ -3510,11 +3515,8 @@ function buildWindow(
         kind === "class"
           ? (node) => hasClass(node, name)
           : (node) => attribute(node, "id") === name;
-    } else if (/^[a-zA-Z][\w-]*$/.test(query)) {
-      const lower = query.toLowerCase();
-      compiled = (node) =>
-        elementLocalName(node) === (!isXML && node.namespaceURI === html.NS.HTML ? lower : query);
-    } else
+    } else if (/^[a-zA-Z][\w-]*$/.test(query)) compiled = simpleTypeMatcher(query, isXML);
+    else
       compiled = compileSelector({
         selector,
         isXML,
