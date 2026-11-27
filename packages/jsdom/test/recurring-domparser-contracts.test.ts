@@ -120,6 +120,37 @@ describe.each([
       window.close();
     }
   });
+
+  it("keeps Window documents and DOMParser documents of the same markup independent", () => {
+    // Given: identical markup alternates between Window construction and DOMParser, including over-limit input.
+    const huge = `<main>${"<i></i>".repeat(33000)}</main>`;
+    const { window } = new Constructor("");
+    try {
+      const parser = new window.DOMParser();
+      for (let round = 0; round < 3; round++) {
+        // When: each result is edited before the other entry point parses the same markup.
+        const dom = new Constructor(markup);
+        const parsed = parser.parseFromString(markup, "text/html");
+        const fromWindow = dom.window.document.getElementById("row");
+        const fromParser = parsed.getElementById("row");
+        // Then: neither entry point observes the other's edits or identities.
+        expect(fromWindow?.getAttribute("data-n")).toBe("1");
+        expect(fromParser?.getAttribute("data-n")).toBe("1");
+        expect(fromParser?.ownerDocument).toBe(parsed);
+        fromWindow?.setAttribute("data-n", "window");
+        fromParser?.replaceChildren("parser");
+        expect(fromWindow?.textContent).toBe("first bold");
+        dom.window.close();
+      }
+      // Then: repeated input beyond the private template node limit still parses completely.
+      for (let round = 0; round < 2; round++)
+        expect(
+          parser.parseFromString(huge, "text/html").body?.firstElementChild?.childElementCount,
+        ).toBe(33000);
+    } finally {
+      window.close();
+    }
+  });
 });
 
 describe("RunDOM Document.parseHTMLUnsafe with recurring markup", () => {
