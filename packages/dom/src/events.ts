@@ -73,24 +73,51 @@ const parent = new WeakMap<object, object>();
 const shadowParents = new WeakMap<object, { host: object; closed: boolean }>();
 type ListenerPhases = { capture?: ListenerList; bubble?: ListenerList };
 const listeners = new WeakMap<object, Map<string, ListenerPhases>>();
-type EventRecord = { state: DispatchState | null; timestamp: number; trust: boolean | undefined };
-const eventRecords = new WeakMap<object, EventRecord>();
+type EventRecord = {
+  state: DispatchState | null;
+  timestamp: number;
+  trust: boolean | undefined;
+  canceled: boolean;
+  /** An event can be stopped before it has ever acquired dispatch state. */
+  stoppedEarly: boolean;
+  /** Set by legacy document.createEvent until initEvent runs. */
+  uninitialized: boolean;
+  mouse: boolean;
+  related: object | undefined;
+};
+
+/** Returns its argument from `new`, so a subclass can add private fields to an existing object. */
+class Identity {
+  constructor(target: object) {
+    return target;
+  }
+}
+
+// One module-level private slot brands events from every Window, so cross-realm borrowing and
+// adoption keep working; a private field is far cheaper to add and read than a WeakMap entry.
+class EventSlot extends Identity {
+  readonly #record: EventRecord;
+  constructor(target: object, record: EventRecord) {
+    super(target);
+    this.#record = record;
+  }
+  static read(value: unknown): EventRecord | undefined {
+    return typeof value === "object" && value !== null && #record in value
+      ? value.#record
+      : undefined;
+  }
+}
+
 /** Shared brands survive cross-realm borrowing and adoption; missing metadata is an invalid receiver. */
-function eventRecord(event: object): EventRecord {
-  const record = eventRecords.get(event);
+function eventRecord(event: unknown): EventRecord {
+  const record = EventSlot.read(event);
   if (!record) throw new TypeError("Expected a DOM Event");
   return record;
 }
-const canceledEvents = new WeakSet<object>();
 
 function eventCanceled(event: object): boolean {
-  if (!eventRecords.has(event)) throw new TypeError("Expected a DOM Event");
-  return canceledEvents.has(event);
+  return eventRecord(event).canceled;
 }
-// An event can be stopped before it has ever acquired a dispatch record.
-const stoppedBeforeDispatch = new WeakSet<object>();
-
-const relatedTargets = new WeakMap<object, object>();
 
 function shadowRootFor(target: object): object | undefined {
   for (let node: object | undefined = target; node; node = parent.get(node)) {
@@ -128,8 +155,7 @@ function retarget(target: object, against: object): object {
 }
 
 function setRelatedTarget(event: object, target: object | null): void {
-  if (target) relatedTargets.set(event, target);
-  else relatedTargets.delete(event);
+  eventRecord(event).related = target ?? undefined;
 }
 
 type EventContext = { current: object | undefined };
@@ -150,7 +176,6 @@ function bindEventContext(target: object): void {
   }
 }
 
-const mouseEvents = new WeakSet<object>();
 const legacyTargets = new WeakMap<object, object>();
 // A false entry is a trusted dispatch that has been prepared but has yet to start.
 
@@ -172,7 +197,6 @@ function beforeUnloadState(event: object) {
   return state;
 }
 
-const uninitialized = new WeakSet<object>();
 const phaseDescriptors: PropertyDescriptorMap = {
   NONE: { value: 0, enumerable: true },
   CAPTURING_PHASE: { value: 1, enumerable: true },
@@ -288,7 +312,7 @@ export function createEvents(
 
     static {
       cancelBeforeUnload = (event) => {
-        canceledEvents.add(event);
+        eventRecord(event).canceled = true;
       };
       Object.defineProperties(this, phaseDescriptors);
       Object.defineProperties(this.prototype, phaseDescriptors);
@@ -308,21 +332,32 @@ export function createEvents(
       this.#bubbles = Boolean(init?.bubbles);
       this.#cancelable = Boolean(init?.cancelable);
       this.#composed = Boolean(init?.composed);
-      eventRecords.set(this, { state: null, timestamp: eventTime(), trust: undefined });
+      new EventSlot(this, {
+        state: null,
+        timestamp: eventTime(),
+        trust: undefined,
+        canceled: false,
+        stoppedEarly: false,
+        uninitialized: false,
+        mouse: false,
+        related: undefined,
+      });
       Object.defineProperty(this, "isTrusted", trustDescriptor);
     }
     initEvent(type: string, bubbles = false, cancelable = false): void {
       if (arguments.length < 1) throw new TypeError("An event type is required");
       const name = String(type);
-      if (eventRecords.get(this)?.state?.current) return;
+      const record = EventSlot.read(this);
+      if (record?.state?.current) return;
       this.#type = name;
       this.#bubbles = Boolean(bubbles);
       this.#cancelable = Boolean(cancelable);
-      canceledEvents.delete(this);
-      eventRecord(this).trust = undefined;
-      eventRecord(this).state = null;
-      stoppedBeforeDispatch.delete(this);
-      uninitialized.delete(this);
+      if (!record) throw new TypeError("Expected a DOM Event");
+      record.canceled = false;
+      record.trust = undefined;
+      record.state = null;
+      record.stoppedEarly = false;
+      record.uninitialized = false;
     }
     get [Symbol.toStringTag](): string {
       return "Event";
@@ -353,19 +388,19 @@ export function createEvents(
     }
 
     get target(): EventTarget | null {
-      return (eventRecords.get(this)?.state?.target as EventTarget | undefined) ?? null;
+      return (EventSlot.read(this)?.state?.target as EventTarget | undefined) ?? null;
     }
     get currentTarget(): EventTarget | null {
-      return (eventRecords.get(this)?.state?.current as EventTarget | undefined) ?? null;
+      return (EventSlot.read(this)?.state?.current as EventTarget | undefined) ?? null;
     }
     get srcElement(): EventTarget | null {
       return this.target;
     }
     get eventPhase(): number {
-      return eventRecords.get(this)?.state?.phase ?? 0;
+      return EventSlot.read(this)?.state?.phase ?? 0;
     }
     composedPath(): EventTarget[] {
-      const state = eventRecords.get(this)?.state;
+      const state = EventSlot.read(this)?.state;
       if (!state?.current) return [];
       const membership = state.closedMembership;
       if (!membership) return state.path.slice() as EventTarget[];
@@ -375,23 +410,26 @@ export function createEvents(
       ) as EventTarget[];
     }
     stopPropagation(): void {
-      const state = eventRecords.get(this)?.state;
-      if (state) state.stopped = true;
-      else if (eventRecords.has(this)) stoppedBeforeDispatch.add(this);
+      const record = EventSlot.read(this);
+      if (record?.state) record.state.stopped = true;
+      else if (record) record.stoppedEarly = true;
     }
     stopImmediatePropagation(): void {
-      const state = eventRecords.get(this)?.state;
-      if (state) state.immediate = state.stopped = true;
-      else if (eventRecords.has(this)) stoppedBeforeDispatch.add(this);
+      const record = EventSlot.read(this);
+      if (record?.state) record.state.immediate = record.state.stopped = true;
+      else if (record) record.stoppedEarly = true;
     }
     get cancelBubble(): boolean {
-      return eventRecords.get(this)?.state?.stopped ?? stoppedBeforeDispatch.has(this);
+      const record = EventSlot.read(this);
+      return record?.state?.stopped ?? record?.stoppedEarly ?? false;
     }
     set cancelBubble(value: boolean) {
       if (value) this.stopPropagation();
     }
     preventDefault(): void {
-      if (this.#cancelable && !eventRecords.get(this)?.state?.passive) canceledEvents.add(this);
+      if (!this.#cancelable) return;
+      const record = eventRecord(this);
+      if (!record.state?.passive) record.canceled = true;
     }
   }
 
@@ -720,7 +758,7 @@ export function createEvents(
       detail: unknown = null,
     ): void {
       if (arguments.length < 1) throw new TypeError("An event type is required");
-      if (eventRecords.get(this)?.state?.current) return;
+      if (EventSlot.read(this)?.state?.current) return;
       super.initEvent(type, bubbles, cancelable);
       this.#detail = detail;
     }
@@ -761,7 +799,7 @@ export function createEvents(
     ): void {
       if (arguments.length < 1) throw new TypeError("An event type is required");
       if (view !== null && !isWindow?.(view)) throw new TypeError("Event view must be a Window");
-      if (eventRecords.get(this)?.state?.current) return;
+      if (EventSlot.read(this)?.state?.current) return;
       super.initEvent(type, bubbles, cancelable);
       this.#view = view;
       this.#detail = Number(detail) | 0;
@@ -772,10 +810,11 @@ export function createEvents(
   }
 
   function relatedTargetOf(event: Event): EventTarget | null {
-    const state = eventRecords.get(event)?.state;
+    const record = EventSlot.read(event);
+    const state = record?.state;
     return (
       (state?.relatedTarget === undefined
-        ? (relatedTargets.get(event) as EventTarget | undefined)
+        ? (record?.related as EventTarget | undefined)
         : (state.relatedTarget as EventTarget | null)) ?? null
     );
   }
@@ -830,8 +869,9 @@ export function createEvents(
       if (arguments.length < 1) throw new TypeError("An event type is required");
       super(type, init);
       this.#mouse = mouseData(init);
-      setRelatedTarget(this, init?.relatedTarget ?? null);
-      mouseEvents.add(this);
+      const record = eventRecord(this);
+      record.related = init?.relatedTarget ?? undefined;
+      record.mouse = true;
       this.#modifiers = modifierState(init);
     }
     get screenX() {
@@ -921,7 +961,7 @@ export function createEvents(
         clientY: +clientY >> 0,
         button,
       });
-      if (eventRecords.get(this)?.state?.current) return;
+      if (EventSlot.read(this)?.state?.current) return;
       super.initUIEvent(type, bubbles, cancelable, view, detail);
       Object.assign(this.#mouse, {
         screenX: data.screenX,
@@ -1239,7 +1279,7 @@ export function createEvents(
       metaKey = false,
     ): void {
       if (arguments.length < 1) throw new TypeError("An event type is required");
-      if (eventRecords.get(this)?.state?.current) return;
+      if (EventSlot.read(this)?.state?.current) return;
       super.initUIEvent(type, bubbles, cancelable, view, 0);
       this.#keyboard.key = String(key);
       this.#keyboard.location = Number(location) >>> 0;
@@ -1302,7 +1342,7 @@ export function createEvents(
       ports: Iterable<object> = [],
     ): void {
       if (arguments.length < 1) throw new TypeError("An event type is required");
-      if (eventRecords.get(this)?.state?.current) return;
+      if (EventSlot.read(this)?.state?.current) return;
       const next = messageData({ data, origin, lastEventId, source, ports });
       super.initEvent(type, bubbles, cancelable);
       this.#message = next;
@@ -1360,7 +1400,7 @@ export function createEvents(
       data = "",
     ): void {
       if (arguments.length < 1) throw new TypeError("An event type is required");
-      if (eventRecords.get(this)?.state?.current) return;
+      if (EventSlot.read(this)?.state?.current) return;
       super.initUIEvent(type, bubbles, cancelable, view, 0);
       this.#data = String(data);
     }
@@ -1482,7 +1522,7 @@ export function createEvents(
         return Reflect.apply(EventTarget.prototype.dispatchEvent, target, arguments);
       }
       const record = eventRecord(event);
-      if (uninitialized.has(event))
+      if (record.uninitialized)
         throw new Exception("Event is not initialized", "InvalidStateError");
       const previousState = record.state;
       if (previousState?.current)
@@ -1493,11 +1533,11 @@ export function createEvents(
       const legacyTarget = trust === false ? legacyTargets.get(event) : undefined;
       if (legacyTarget) legacyTargets.delete(event);
       const target = legacyTarget ?? this;
-      const related = relatedTargets.get(event);
+      const related = record.related;
       const initialRelated = related && retarget(related, this);
       if (initialRelated === this && related !== this) {
         if (previousState) previousState.stopped = previousState.immediate = false;
-        else stoppedBeforeDispatch.delete(event);
+        else record.stoppedEarly = false;
         return !eventCanceled(event);
       }
       const adjustedRelated = initialRelated ? [initialRelated] : undefined;
@@ -1556,13 +1596,14 @@ export function createEvents(
         path,
         ...(closedMembership ? { closedMembership } : {}),
         phase: 0,
-        stopped: previousState?.stopped ?? stoppedBeforeDispatch.delete(event),
+        stopped: previousState?.stopped ?? record.stoppedEarly,
         immediate: false,
         passive: false,
       };
+      record.stoppedEarly = false;
       record.state = state;
       const finishActivation =
-        event.type === "click" && mouseEvents.has(event)
+        event.type === "click" && record.mouse
           ? activation?.(path, event as MouseEvent)
           : undefined;
       for (let index = path.length - 1; index > 0 && !state.stopped; index--) {
@@ -1796,7 +1837,7 @@ export function createEvents(
       return event;
     },
     legacy<T extends Event>(event: T): T {
-      uninitialized.add(event);
+      eventRecord(event).uninitialized = true;
       return event;
     },
     hasListeners(target: EventTarget): boolean {
