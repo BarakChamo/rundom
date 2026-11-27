@@ -224,27 +224,7 @@ function collectQueryDescendants<T>({
   skipPackedText: boolean;
   wrap: (node: Raw.Element) => T;
 }): T[] {
-  if (skipPackedText) return collectPackedQueryDescendants(root, matches, wrap);
-  const result: T[] = [],
-    pending = root.childNodes.toReversed();
-  // Each finite ordinary-tree edge is visited once.
-  while (pending.length) {
-    const node = pending.pop();
-    if (!node || !tree.isElementNode(node)) continue;
-    if (matches(node)) result.push(wrap(node));
-    for (let position = node.childNodes.length - 1; position >= 0; position--) {
-      const child = node.childNodes[position];
-      if (child) pending.push(child);
-    }
-  }
-  return result;
-}
-
-function collectPackedQueryDescendants<T>(
-  root: Raw.ParentNode,
-  matches: (node: Raw.Element) => boolean,
-  wrap: (node: Raw.Element) => T,
-): T[] {
+  // Private predicates and wrapping cannot mutate the tree, so live child spans stay stable.
   const result: T[] = [];
   const parents: Raw.ChildNode[][] = [];
   const offsets: number[] = [];
@@ -262,7 +242,7 @@ function collectPackedQueryDescendants<T>(
     const node = children[index];
     if (!node || !tree.isElementNode(node)) continue;
     if (matches(node)) result.push(wrap(node));
-    if (packedLeafText(node) !== undefined) continue;
+    if (skipPackedText && packedLeafText(node) !== undefined) continue;
     const descendants = node.childNodes;
     const first = descendants[0];
     if (!first || (descendants.length === 1 && !tree.isElementNode(first))) continue;
