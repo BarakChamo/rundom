@@ -1,7 +1,9 @@
 // Bundles the pinned jsdom CSS reference modules RunDOM requests into one code-cached, lazily initialized module graph.
-// The build defers each generated IDL wrapper's implementation module, so installing a CSSOM
-// interface never initializes the reference grammar; parser.js sets grammarInitialized when it runs.
-const modules: Readonly<Record<string, () => unknown>> = {
+// The build moves generated IDL wrappers into the separate css-reference-interfaces artifact and
+// defers each wrapper's implementation module, so installing a CSSOM interface never loads this
+// engine; parser.js sets grammarInitialized when it runs. The build appends the implementation
+// modules those wrappers request to this table.
+const modules: Record<string, () => unknown> = {
   "lib/generated/css-property-definitions.js": () =>
     require("rundom-css-reference/lib/generated/css-property-definitions.js"),
   "lib/generated/default-stylesheet.js": () =>
