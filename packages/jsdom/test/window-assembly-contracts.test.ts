@@ -1,4 +1,5 @@
 // Pins the reflected shape of table-installed Window interface members and wrapper clone barriers.
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { JSDOM } from "@run-dom/jsdom";
 
@@ -218,6 +219,162 @@ describe("Window interface member tables", () => {
         "prototype",
         "ELEMENT_NODE",
       ]);
+    } finally {
+      window.close();
+    }
+  });
+});
+
+type SurfaceWindow = JSDOM["window"];
+
+// JavaScript intrinsics of a script-enabled global belong to the engine, not to Window assembly.
+const intrinsicGlobals = new Set(runInNewContext("Reflect.ownKeys(globalThis)") as PropertyKey[]);
+
+// One line per own property, in reflection order, for the Window, its prototype chain and every
+// per-Window interface constructor and prototype it exposes as data. Getters are never invoked.
+// Functions record name, length and whether `other` exposes the same function at the same place.
+function describeSurface(window: SurfaceWindow, other: SurfaceWindow): string[] {
+  const vm = Reflect.get(window, "Object") !== Object;
+  const names = new Map<object, string>();
+  const realmObject = Reflect.get(window, "Object") as ObjectConstructor | undefined;
+  names.set(Object.prototype, "host:Object.prototype");
+  names.set(Function.prototype, "host:Function.prototype");
+  names.set(globalThis, "host:globalThis");
+  if (realmObject) {
+    names.set(realmObject.prototype, "Object.prototype");
+    names.set(Object.getPrototypeOf(realmObject) as object, "Function.prototype");
+  }
+  const interfaces: string[] = [];
+  const windowKeys = Reflect.ownKeys(window).filter((key) => !vm || !intrinsicGlobals.has(key));
+  for (const key of windowKeys) {
+    const value: unknown = Object.getOwnPropertyDescriptor(window, key)?.value;
+    if (typeof key !== "string" || typeof value !== "function" || names.has(value)) continue;
+    // Shared host classes keep their own platform-defined members.
+    if (value === Reflect.get(other, key)) continue;
+    const prototype: unknown = value.prototype;
+    if (typeof prototype !== "object" || prototype === null) continue;
+    names.set(value, key);
+    if (!names.has(prototype)) names.set(prototype, `${key}.prototype`);
+    interfaces.push(key);
+  }
+  const name = (value: object | null): string => {
+    if (value === null) return "null";
+    const known = names.get(value);
+    if (known) return known;
+    if (typeof value === "function") return `?function ${JSON.stringify(value.name)}`;
+    const keys = Reflect.ownKeys(value).map(String).join(",");
+    return `?${Object.prototype.toString.call(value)}{${keys}}`;
+  };
+  const otherTarget = (path: readonly PropertyKey[]): unknown =>
+    path.reduce<unknown>(
+      (target, key) =>
+        target === undefined || target === null ? undefined : Reflect.get(Object(target), key),
+      other,
+    );
+  const fn = (value: unknown, counterpart: unknown): string => {
+    if (typeof value !== "function") return value === undefined ? "-" : `!${typeof value}`;
+    const identity = value === counterpart ? "shared" : "own";
+    return `fn(${JSON.stringify(value.name)},${value.length},${identity})`;
+  };
+  const value = (data: unknown, counterpart: unknown): string => {
+    if (typeof data === "function") return fn(data, counterpart);
+    if (typeof data === "object" && data !== null) return `obj(${name(data)})`;
+    return typeof data === "symbol" ? String(data) : `${typeof data}:${String(data)}`;
+  };
+  const lines: string[] = [];
+  const describeObject = (
+    label: string,
+    target: object,
+    path: readonly PropertyKey[],
+    keys = Reflect.ownKeys(target),
+  ): void => {
+    const counterpartTarget = otherTarget(path);
+    lines.push(`${label} [[Prototype]]=${name(Object.getPrototypeOf(target) as object | null)}`);
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(target, key);
+      if (!descriptor) continue;
+      const counterpart =
+        typeof counterpartTarget === "object" || typeof counterpartTarget === "function"
+          ? Object.getOwnPropertyDescriptor(counterpartTarget, key)
+          : undefined;
+      const flags = `${descriptor.enumerable ? "e" : "-"}${descriptor.configurable ? "c" : "-"}`;
+      const shape =
+        "value" in descriptor
+          ? `data ${flags}${descriptor.writable ? "w" : "-"} ${value(descriptor.value, counterpart?.value)}`
+          : `accessor ${flags} get=${fn(descriptor.get, counterpart?.get)} set=${fn(descriptor.set, counterpart?.set)}`;
+      lines.push(`  ${String(key)}: ${shape}`);
+    }
+  };
+  describeObject("window", window, [], windowKeys);
+  let prototype = Object.getPrototypeOf(window) as object | null;
+  for (let depth = 1; prototype && !names.has(prototype); depth++) {
+    const path = Array.from({ length: depth }, () => "__proto__");
+    describeObject(`window${".__proto__".repeat(depth)}`, prototype, path);
+    prototype = Object.getPrototypeOf(prototype) as object | null;
+  }
+  for (const key of interfaces) {
+    const constructor = Reflect.get(window, key) as { prototype: object };
+    describeObject(key, constructor, [key]);
+    if (names.get(constructor.prototype) === `${key}.prototype`)
+      describeObject(`${key}.prototype`, constructor.prototype, [key, "prototype"]);
+  }
+  return lines;
+}
+
+describe("Window global surface", () => {
+  for (const [label, options] of [
+    ["host", {}],
+    ["vm", { runScripts: "dangerously" }],
+  ] as const) {
+    it(`keeps every ${label} Window key, descriptor, function and prototype chain fixed`, async () => {
+      // Given: two independent Windows built with the same options.
+      const first = new JSDOM("", options).window;
+      const second = new JSDOM("", options).window;
+      try {
+        // When: both global surfaces are reflected against each other.
+        const surface = describeSurface(first, second);
+        const mirrored = describeSurface(second, first);
+        // Then: the surface matches the pinned reflection exactly.
+        await expect(`${surface.join("\n")}\n`).toMatchFileSnapshot(
+          `./__snapshots__/window-surface.${label}.txt`,
+        );
+        // And: both Windows have the same shape; the pinned "own"/"shared" marks record which
+        // functions are per-Window, and the DOM interfaces are never shared.
+        expect(mirrored).toEqual(surface);
+        for (const key of ["Window", "EventTarget", "Node", "Element", "HTMLElement", "Document"]) {
+          const constructor = Reflect.get(first, key) as { prototype: object };
+          const counterpart = Reflect.get(second, key) as { prototype: object };
+          expect(constructor === counterpart, key).toBe(false);
+          expect(constructor.prototype === counterpart.prototype, key).toBe(false);
+        }
+      } finally {
+        first.close();
+        second.close();
+      }
+    });
+  }
+});
+
+describe("Window animation frame globals", () => {
+  it("installs them as enumerable data right after the Window members when visual", () => {
+    // Given: a Window that pretends to be visual.
+    const { window } = new JSDOM("", { pretendToBeVisual: true });
+    try {
+      // When: its own keys are reflected.
+      const keys = Object.getOwnPropertyNames(window);
+      const start = keys.indexOf("requestAnimationFrame");
+      // Then: the pair follows the last Window member and precedes the unsupported methods.
+      expect(keys.slice(start - 1, start + 3)).toEqual([
+        "close",
+        "requestAnimationFrame",
+        "cancelAnimationFrame",
+        "alert",
+      ]);
+      expect(Object.getOwnPropertyDescriptor(window, "cancelAnimationFrame")).toMatchObject({
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
     } finally {
       window.close();
     }

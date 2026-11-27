@@ -1129,17 +1129,19 @@ const inertTemplateDocuments = new WeakSet<Raw.Document>();
 let exposedTemplateHosts: WeakMap<Raw.Node, Raw.Element> | undefined;
 const creationRealms = new WeakMap<Raw.Node, symbol>();
 
-type DocumentFactory =
-  | "createElement"
-  | "createElementNS"
-  | "createAttribute"
-  | "createAttributeNS"
-  | "createTextNode"
-  | "createComment"
-  | "createCDATASection"
-  | "createProcessingInstruction"
-  | "createDocumentFragment"
-  | "createRange";
+const documentFactoryNames = [
+  "createElement",
+  "createElementNS",
+  "createAttribute",
+  "createAttributeNS",
+  "createTextNode",
+  "createComment",
+  "createCDATASection",
+  "createProcessingInstruction",
+  "createDocumentFragment",
+  "createRange",
+] as const;
+type DocumentFactory = (typeof documentFactoryNames)[number];
 type ImplementationFactory = "createDocumentType" | "createDocument" | "createHTMLDocument";
 const implementationOwners = new WeakMap<object, { owner: Raw.Document; realm: symbol }>();
 const windowControls = new WeakMap<
@@ -2403,7 +2405,7 @@ function buildWindow(
   let stopActiveParser: (() => void) | undefined;
   let focusFixupPending = false;
   class DOMException extends HostDOMException {}
-  Object.defineProperties(DOMException, exceptionConstants);
+  installInterfaceTable(DOMException, exceptionConstants);
   for (const name of ["name", "message", "code"]) {
     const getter = Object.getOwnPropertyDescriptor(HostDOMException.prototype, name)!.get!;
     Object.defineProperty(DOMException.prototype, name, {
@@ -2423,7 +2425,7 @@ function buildWindow(
     value: "DOMException",
     configurable: true,
   });
-  Object.defineProperties(DOMException.prototype, exceptionConstants);
+  installInterfaceTable(DOMException.prototype, exceptionConstants);
 
   class QuotaExceededError extends DOMException {
     readonly #quota: number | null;
@@ -8117,8 +8119,8 @@ function buildWindow(
     declare readonly SVG_MEETORSLICE_SLICE: 2;
 
     static {
-      Object.defineProperties(this, aspectRatioDescriptors);
-      Object.defineProperties(this.prototype, aspectRatioDescriptors);
+      installInterfaceTable(this, aspectRatioDescriptors);
+      installInterfaceTable(this.prototype, aspectRatioDescriptors);
     }
 
     readonly #owner: Element;
@@ -14090,8 +14092,8 @@ function buildWindow(
     declare readonly HAVE_ENOUGH_DATA: 4;
 
     static {
-      Object.defineProperties(this, mediaStateDescriptors);
-      Object.defineProperties(this.prototype, mediaStateDescriptors);
+      installInterfaceTable(this, mediaStateDescriptors);
+      installInterfaceTable(this.prototype, mediaStateDescriptors);
     }
 
     #currentTime = 0;
@@ -14382,8 +14384,8 @@ function buildWindow(
     declare readonly ERROR: 3;
 
     static {
-      Object.defineProperties(this, trackStateDescriptors);
-      Object.defineProperties(this.prototype, trackStateDescriptors);
+      installInterfaceTable(this, trackStateDescriptors);
+      installInterfaceTable(this.prototype, trackStateDescriptors);
     }
 
     get [Symbol.toStringTag](): string {
@@ -15396,8 +15398,8 @@ function buildWindow(
     declare readonly END_TO_START: 3;
 
     static {
-      Object.defineProperties(this, rangeConstantDescriptors);
-      Object.defineProperties(this.prototype, rangeConstantDescriptors);
+      installInterfaceTable(this, rangeConstantDescriptors);
+      installInterfaceTable(this.prototype, rangeConstantDescriptors);
     }
 
     readonly #points: RangePoints;
@@ -16654,7 +16656,7 @@ function buildWindow(
     method: DocumentFactory,
     args: readonly unknown[],
   ): object {
-    const factory = documentFactoryDescriptors[method]?.value;
+    const factory = documentFactories.get(method);
     if (typeof factory !== "function") throw new Error("Missing intrinsic Document factory");
     return Reflect.apply(factory, receiver, args);
   }
@@ -17702,7 +17704,13 @@ function buildWindow(
     return record;
   }
 
-  const documentFactoryDescriptors = Object.getOwnPropertyDescriptors(Document.prototype);
+  // Capture only the intrinsic factories; copying every Document member is per-Window waste.
+  const documentFactories = new Map<DocumentFactory, unknown>(
+    documentFactoryNames.map((name) => [
+      name,
+      Object.getOwnPropertyDescriptor(Document.prototype, name)?.value,
+    ]),
+  );
 
   class XMLSerializer {
     constructor() {
@@ -19950,8 +19958,12 @@ function buildWindow(
     });
   }
   installWindowProperties();
-  const nativeGetComputedStyle = WindowMembers.prototype.getComputedStyle;
-  const windowMemberDescriptors = Object.getOwnPropertyDescriptors(WindowMembers.prototype);
+  const windowMembers = WindowMembers.prototype;
+  // A named load would make V8 migrate this never-inherited holder to fast mode.
+  const nativeGetComputedStyle: unknown = Object.getOwnPropertyDescriptor(
+    windowMembers,
+    "getComputedStyle",
+  )?.value;
   // Allocate with the public prototype from the outset. Switching a populated
   // member holder's prototype makes subsequent global descriptor installation costly.
   const bindings = construct(WindowMembers, [], Window) as WindowMembers;
@@ -19962,29 +19974,31 @@ function buildWindow(
     DOMException.prototype,
     (context ? Reflect.get(context, "Error") : Error).prototype,
   );
-  // The private member holder is never the public prototype. Install globals
-  // together instead of repeatedly deleting the holder's prototype properties.
-  const globals: PropertyDescriptorMap = {};
-  for (const [name, descriptor] of Object.entries(windowMemberDescriptors)) {
+  // The private member holder is never the public prototype. Copy its members
+  // one by one instead of materializing a descriptor map of the whole holder.
+  for (const name of Object.getOwnPropertyNames(windowMembers)) {
     if (name === "constructor" || Object.hasOwn(window, name)) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(windowMembers, name);
+    if (!descriptor) continue;
     descriptor.enumerable = name === "XPathException" || !/^[A-Z]/.test(name);
-    globals[name] = descriptor;
+    Object.defineProperty(window, name, descriptor);
   }
   if (options.pretendToBeVisual) {
-    globals.requestAnimationFrame = {
-      value: requestAnimationFrame,
-      writable: true,
-      enumerable: true,
-      configurable: true,
-    };
-    globals.cancelAnimationFrame = {
-      value: cancelAnimationFrame,
-      writable: true,
-      enumerable: true,
-      configurable: true,
-    };
+    Object.defineProperties(window, {
+      requestAnimationFrame: {
+        value: requestAnimationFrame,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      },
+      cancelAnimationFrame: {
+        value: cancelAnimationFrame,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      },
+    });
   }
-  Object.defineProperties(window, globals);
   if (context) {
     const realmObject: ObjectConstructor = Reflect.get(context, "Object");
     realmObjectPrototypes.set(realmObject.prototype, token);
@@ -20158,12 +20172,12 @@ function buildWindow(
   }
   defineReplaceable("screen", () => (screen ??= new Screen(screenKey)));
   for (const name of ["localStorage", "sessionStorage"]) {
-    const descriptor = windowMemberDescriptors[name];
+    const descriptor = Object.getOwnPropertyDescriptor(windowMembers, name);
     if (!descriptor) throw new Error(`Missing Window ${name} descriptor`);
     Object.defineProperty(window, name, { ...descriptor, enumerable: true });
   }
   for (const name of ["self", "frames", "parent", "length"]) {
-    const get = windowMemberDescriptors[name]?.get;
+    const get = Object.getOwnPropertyDescriptor(windowMembers, name)?.get;
     if (!get) throw new Error(`Missing Window ${name} getter`);
     defineReplaceable(name, () => Reflect.apply(get, window, []));
   }
@@ -20184,7 +20198,7 @@ function buildWindow(
     "MutationObserver",
     "FileReader",
   ]) {
-    const descriptor = windowMemberDescriptors[name];
+    const descriptor = Object.getOwnPropertyDescriptor(windowMembers, name);
     if (!descriptor?.get) throw new Error(`Missing Window ${name} getter`);
     const get = descriptor.get;
     defineReplaceable(name, () => Reflect.apply(get, window, []));
