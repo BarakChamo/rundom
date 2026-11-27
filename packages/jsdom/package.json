@@ -9,6 +9,8 @@
   "files": [
     "dist",
     "src/jsdom-idl-utils.cjs",
+    "src/vitest-environment.mjs",
+    "src/vitest-environment.d.mts",
     "README.md"
   ],
   "type": "module",
@@ -23,7 +25,11 @@
         "default": "./dist/jsdom.cjs"
       }
     },
-    "./lib/generated/idl/utils.js": "./src/jsdom-idl-utils.cjs"
+    "./lib/generated/idl/utils.js": "./src/jsdom-idl-utils.cjs",
+    "./vitest-environment": {
+      "types": "./src/vitest-environment.d.mts",
+      "default": "./src/vitest-environment.mjs"
+    }
   },
   "publishConfig": {
     "access": "public"
