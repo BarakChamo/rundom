@@ -145,6 +145,15 @@ import {
   serializeXMLNode,
   xmlSpecial,
 } from "./xml.js";
+import {
+  SubtreeKind,
+  createSubtreeScanner,
+  elementKinds,
+  invalidateSubtreeSummaries,
+  recordSubtreeSummary,
+  scannedSubtreeSummary,
+  subtreeSummary,
+} from "./subtree-summary.js";
 
 const construct = Reflect.construct;
 const streamingRequests = new WeakSet<Request>();
@@ -1408,6 +1417,33 @@ function treeRoot(node: Raw.Node, composed = false): Raw.Node {
     root = owner;
   }
   return root;
+}
+
+function composedParent(node: Raw.Node): Raw.ParentNode | null {
+  return treeParent(node, true);
+}
+
+// False only when root's ordinary inclusive subtree certainly has no element of the given kinds:
+// root and each element child are recorded or leaves. Anything else answers true, so the caller's
+// exact walk decides without paying for a second unrecorded traversal here.
+function subtreeMayContain(root: Raw.Node, kinds: number): boolean {
+  if (!tree.isElementNode(root)) return true;
+  const summary = subtreeSummary(root);
+  if (summary !== undefined) return (summary & kinds) !== 0;
+  if (elementKinds(root) & kinds) return true;
+  if (packedLeafText(root) !== undefined) return false;
+  const children = root.childNodes;
+  for (let index = 0; index < children.length; index++) {
+    const child = children[index];
+    if (!child || !tree.isElementNode(child)) continue;
+    const childSummary =
+      subtreeSummary(child) ??
+      (packedLeafText(child) !== undefined || !child.childNodes.some(tree.isElementNode)
+        ? elementKinds(child)
+        : undefined);
+    if (childSummary === undefined || childSummary & kinds) return true;
+  }
+  return false;
 }
 
 const manualShadowRoots = new WeakSet<Raw.Node>();
@@ -3236,6 +3272,7 @@ function buildWindow(
   function containsDocumentNames(root: Raw.Node): boolean {
     if (contributesDocumentName(root)) return true;
     if (!("childNodes" in root) || !root.childNodes.length) return false;
+    if (!subtreeMayContain(root, SubtreeKind.documentNamed)) return false;
     // Only the finite inserted/removed subtree is visited, never the destination document.
     return (
       firstQueryDescendant({ root, matches: contributesDocumentName, skipPackedText: true }) !==
@@ -4125,6 +4162,7 @@ function buildWindow(
     if (!tree.isElementNode(root)) return false;
     if (isSheetOwner(root)) return true;
     if (packedLeafText(root) !== undefined || !root.childNodes.length) return false;
+    if (!subtreeMayContain(root, SubtreeKind.sheetOwner)) return false;
     return (
       firstQueryDescendant({
         root,
@@ -4160,6 +4198,7 @@ function buildWindow(
       rangeIndex()?.removed(target, child, 0);
       disconnect(child);
     }
+    invalidateSubtreeSummaries(target, composedParent);
     target.childNodes = children;
     const sourceChanged = invalidateStyleSource(target);
     rangeIndex()?.inserted(target, 0, children.length);
@@ -4358,6 +4397,15 @@ function buildWindow(
   }
 
   function wouldCreateCycle(target: Raw.ParentNode, moving: Raw.Node): boolean {
+    // A node without children, shadow root or template content is no other node's ancestor.
+    if (
+      moving !== target &&
+      (!("childNodes" in moving) ||
+        (!moving.childNodes.length &&
+          !(tree.isElementNode(moving) && shadowRoots.has(moving)) &&
+          !templateContent(moving)))
+    )
+      return false;
     // Parent and host links form a finite acyclic chain before each insertion.
     for (
       let ancestor: Raw.Node | null = target;
@@ -4665,6 +4713,7 @@ function buildWindow(
         ? target.childNodes.indexOf(before)
         : target.childNodes.length;
     const previous = target.childNodes[index - 1];
+    invalidateSubtreeSummaries(target, composedParent);
     rangeIndex()?.inserted(target, index, added.length);
     if (before && "parentNode" in before) {
       for (const member of added) tree.insertBefore(target, member, before);
@@ -4672,7 +4721,15 @@ function buildWindow(
       for (const member of added) tree.appendChild(target, member);
     }
     const sourceChanged = invalidateStyleSource(target);
-    for (const child of added) invalidateDocumentIdsIn(child);
+    // Only the source document's ordinary tree is indexed. A subtree entering another tree has its
+    // IDs invalidated once it reaches the source document; the root walk is paid only for subtrees.
+    if (
+      documentIdIndex &&
+      added.some((child) => "childNodes" in child && child.childNodes.length) &&
+      treeRoot(target) !== source
+    )
+      earlyDocumentId = undefined;
+    else for (const child of added) invalidateDocumentIdsIn(child);
     // The old first member and its replacement occupied the same slot. A reentrant
     // edit or an index eviction invalidates that proof before it can be published.
     if (
@@ -11658,6 +11715,7 @@ function buildWindow(
     for (const child of added) {
       if (!tree.isElementNode(child) || (!child.childNodes.length && child.tagName !== "details"))
         continue;
+      if (!subtreeMayContain(child, SubtreeKind.details)) continue;
       const rootName = openDetailsName(child);
       if (rootName) (incoming ??= new Map()).set(child, rootName);
       if (!child.childNodes.length) continue;
@@ -20808,6 +20866,62 @@ function buildWindow(
     }
   }
 
+  // A subtree this Window's insertion scan already passed has its inline styles captured. Only
+  // radios, sheet owners, frames and scripts make it worth visiting again; the last three act only
+  // in a connected tree.
+  const insertionScanner = createSubtreeScanner();
+  const insertionKinds = SubtreeKind.input | SubtreeKind.sheetOwner | SubtreeKind.frameOrScript;
+  const detachedInsertionKinds = SubtreeKind.input;
+  const insertionVisits: Raw.Element[] = [];
+
+  function pushInsertedChildren(
+    pending: Raw.Element[],
+    children: readonly Raw.ChildNode[],
+    relevant: (summary: number) => boolean,
+  ): void {
+    for (let index = children.length - 1; index >= 0; index--) {
+      const child = children[index];
+      if (!child || !tree.isElementNode(child)) continue;
+      const summary = scannedSubtreeSummary(child, insertionScanner);
+      if (summary === undefined || relevant(summary)) pending.push(child);
+    }
+  }
+
+  // Undefined for a leaf, which carries no entry.
+  function childSummaries(children: readonly Raw.ChildNode[]): number | undefined {
+    let kinds: number | undefined;
+    for (let index = 0; index < children.length; index++) {
+      const child = children[index];
+      if (!child || !tree.isElementNode(child)) continue;
+      const summary = subtreeSummary(child) ?? leafKinds(child);
+      if (summary === undefined) throw new Error("A scanned child must have a subtree summary");
+      kinds = (kinds ?? 0) | summary;
+    }
+    return kinds;
+  }
+
+  function leafKinds(node: Raw.Element): number | undefined {
+    return shadowRoots.has(node) || node.childNodes.some(tree.isElementNode)
+      ? undefined
+      : elementKinds(node);
+  }
+
+  // Reverse preorder reaches every visited element after its descendants, whose entries exist.
+  function recordInsertedSummaries(visited: Raw.Element[]): void {
+    for (let index = visited.length - 1; index >= 0; index--) {
+      const node = visited[index] as Raw.Element;
+      const shadow = shadowRoots.get(node);
+      const children = childSummaries(node.childNodes);
+      const shadowChildren = shadow ? childSummaries(shadow.childNodes) : undefined;
+      if (children === undefined && !shadow) continue;
+      recordSubtreeSummary(
+        node,
+        elementKinds(node) | (children ?? 0) | (shadowChildren ?? 0),
+        insertionScanner,
+      );
+    }
+  }
+
   function finishInsertedContent(roots: readonly Raw.ChildNode[], parent: Raw.ParentNode): void {
     // Capture the eligible descendants before scripts can mutate or remove later entries.
     const active: Raw.Element[] = [];
@@ -20815,17 +20929,28 @@ function buildWindow(
     let hasStyles = false;
     const scriptsEnabled = options.runScripts === "dangerously";
     const pending: Raw.Element[] = [];
+    // Only recorded subtrees can be skipped, so a detached parent is resolved on first need.
+    let kinds = 0;
+    const resolveKinds = () =>
+      (kinds ||= treeRoot(parent, true) === source ? insertionKinds : detachedInsertionKinds);
+    const relevant = (summary: number) => (summary & resolveKinds()) !== 0;
+    // No author code runs between this walk and recording, so the visited tree stays fixed.
+    const visited = insertionVisits;
+    visited.length = 0;
     for (const root of roots) {
       if (!tree.isElementNode(root)) continue;
+      const summary = scannedSubtreeSummary(root, insertionScanner);
+      if (summary !== undefined && !relevant(summary)) continue;
       pending.push(root);
       // Same shadow-including preorder as shadowIncludingElements, without generator frames.
-      // Each finite inserted subtree edge is visited once.
+      // Each finite inserted subtree edge is visited once; recorded irrelevant subtrees are skipped.
       while (pending.length) {
         const node = pending.pop();
         if (!node) break;
-        pushElementChildren(pending, node.childNodes);
+        visited.push(node);
+        pushInsertedChildren(pending, node.childNodes, relevant);
         const shadow = shadowRoots.get(node);
-        if (shadow) pushElementChildren(pending, shadow.childNodes);
+        if (shadow) pushInsertedChildren(pending, shadow.childNodes, relevant);
         if (insertedElementIsCheckedRadio(node)) checked.push(node);
         const inline = node.attrs.length ? attribute(node, "style") : null;
         if (inline && /(?:url|image-set|var)\(/i.test(inline)) styles().captureInlineBase(node);
@@ -20834,6 +20959,12 @@ function buildWindow(
           active.push(node);
       }
     }
+    // Connected content is seldom inserted again, so only detached builds repay recording. Leaves
+    // carry no entry, which keeps leaf appends free of the root walk.
+    const recordable =
+      visited.length > 1 || (visited[0] !== undefined && leafKinds(visited[0]) === undefined);
+    if (recordable && resolveKinds() === detachedInsertionKinds) recordInsertedSummaries(visited);
+    visited.length = 0;
     // Snapshot checked defaults across every root before normalization changes a later root.
     for (const node of checked) setChecked(node, true);
     if (hasStyles) for (const root of roots) if (tree.isElementNode(root)) scanInsertedStyles(root);
@@ -21063,6 +21194,11 @@ function buildWindow(
         (exposedTemplateHosts ??= new WeakMap()).set(content, template);
         setOwner(content, templateOwner(ownerRecord(template)));
       },
+      adoptAttributes(recipient, attrs) {
+        // A recorded subtree certifies captured inline styles; parser-added attributes void it.
+        invalidateSubtreeSummaries(recipient, composedParent);
+        adapter.adoptAttributes(recipient, attrs);
+      },
       setDocumentType(document, name, publicId, systemId) {
         // parse5's default setter appends directly and can rewrite an existing doctype.
         // Author mutations between open() and write() still constrain parser insertion.
@@ -21081,6 +21217,7 @@ function buildWindow(
       appendChild(parent, node) {
         parent = insertionParent(parent);
         if (!canInsert(parent, node)) return;
+        invalidateSubtreeSummaries(parent, composedParent);
         adapter.appendChild(parent, node);
         inserted(node);
       },
@@ -21091,6 +21228,7 @@ function buildWindow(
           return;
         }
         if (reference.parentNode !== parent || !canInsert(parent, node)) return;
+        invalidateSubtreeSummaries(parent, composedParent);
         adapter.insertBefore(parent, node, reference);
         inserted(node);
       },
