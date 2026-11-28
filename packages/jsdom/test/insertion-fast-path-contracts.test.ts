@@ -294,11 +294,11 @@ describe("Node insertion of leaves and text without scan-worthy content", () => 
     leaf.setAttribute("style", "background-image:url(a.png)");
     // When: the leaf is inserted and the base changes afterwards.
     host.appendChild(leaf);
-    const base = document.querySelector("base");
-    if (!base) throw new Error("Expected a base element");
-    base.href = "http://b.test/y/";
+    narrow(document.querySelector("base"), window.HTMLBaseElement).href = "http://b.test/y/";
     // Then: the inline URL keeps the base from insertion time, as jsdom does.
-    expect(window.getComputedStyle(leaf).backgroundImage).toBe('url("http://a.test/x/a.png")');
+    expect(window.getComputedStyle(leaf).getPropertyValue("background-image")).toBe(
+      'url("http://a.test/x/a.png")',
+    );
     dom.window.close();
   });
 
