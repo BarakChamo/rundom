@@ -2,6 +2,7 @@
 
 import { createRequire } from "node:module";
 import type { PositionTryStyle } from "./css-reference.js";
+import { createSlotTable } from "./slot-table.js";
 
 const requireCSS = createRequire(import.meta.url);
 let standardNames: readonly string[] | undefined;
@@ -27,7 +28,7 @@ export type DeclarationImplementation = {
   readonly _length: number;
   readonly [index: number]: string | undefined;
   /** The CSSOM-visible property names, when they differ from the stored indices. */
-  publicNames?: () => readonly string[] | undefined;
+  publicNames?: () => readonly (string | undefined)[] | undefined;
   cssText: string;
   readonly parentRule: object | null;
   getPropertyValue: (property: string) => string;
@@ -40,34 +41,63 @@ type DeferredDeclaration = {
   read: (name: string) => string | undefined;
   materialize: () => DeclarationImplementation;
 };
-const deferredDeclarations = new WeakMap<object, DeferredDeclaration>();
-const implementations = new WeakMap<object, DeclarationImplementation>();
-
-type ComputedSource = DeclarationImplementation | (() => object | undefined);
-type ComputedResolver = (target: object) => DeclarationImplementation;
+// Per-declaration and per-target side data lives in private slots (see slot-table.ts): a WeakMap
+// keeps its values alive through minor GCs while the key is young, which promoted every discarded
+// tree with an inline style. Only position-descriptor views, which are rare, stay in a WeakMap.
 class SlotTarget {
   constructor(target: object) {
     return target;
   }
 }
-// Computed views publish once per getComputedStyle call, so their private state lives in native
-// slots instead of WeakMaps. All state sits on the never-escaping proxy target (cheap ordinary
-// object slots); the public proxy carries only one slot pointing at its target, because V8 private
-// fields on proxies are much slower to add and read. Slots add no keys and invoke no traps.
+// Marks a declaration whose reads are answered before it is materialized. A module-private symbol
+// property on the private implementation object holds nothing but itself, so no side table keeps
+// discarded trees alive, and a named load is cheaper than a private brand check across shapes.
+const deferredRecord = Symbol("deferred declaration");
+type DeferredHolder = { [deferredRecord]?: DeferredDeclaration };
+const deferredDeclarations = {
+  get(implementation: object): DeferredDeclaration | undefined {
+    return (implementation as DeferredHolder)[deferredRecord];
+  },
+  set(implementation: object, record: DeferredDeclaration): void {
+    (implementation as DeferredHolder)[deferredRecord] = record;
+  },
+};
+const implementations = new WeakMap<object, DeclarationImplementation>();
+// The receiver and target seen by the latest declaration-view trap. Accessors and methods reached
+// through that trap receive the proxy as `this`; when the target's own proxy is that receiver,
+// the target is known without reading the slot on the proxy, which is slow. A user proxy wrapping
+// a view forwards its own receiver, which never matches. It keeps at most one view reachable.
+let trapView: object | undefined;
+let trapTarget: object | undefined;
+
+type ComputedSource = DeclarationImplementation | (() => object | undefined);
+type ComputedResolver = (target: object) => DeclarationImplementation;
+// Declaration views keep their private state in native slots on the never-escaping proxy target
+// (cheap ordinary object slots) instead of WeakMaps, whose values survive minor GCs while their
+// keys are young. Computed views hold their source and owning resolver; inline and ordinary views
+// hold their current implementation. Every published target also points back at its own public
+// proxy, so a trap's receiver can be proven to be that proxy without reading the proxy's slot:
+// V8 private fields on proxies are much slower to add and read. The proxy still carries one slot
+// pointing at its target for receivers that did not come through a trap. Slots add no keys and
+// invoke no traps.
 class ComputedTarget extends SlotTarget {
-  #source: ComputedSource;
-  #resolve: ComputedResolver;
+  #source: ComputedSource | undefined;
+  #resolve: ComputedResolver | undefined;
   #connected: (() => boolean) | undefined;
+  #implementation: DeclarationImplementation | undefined;
+  #view: object | undefined = undefined;
   constructor(
     target: object,
-    source: ComputedSource,
-    resolve: ComputedResolver,
+    source: ComputedSource | undefined,
+    resolve: ComputedResolver | undefined,
     connected: (() => boolean) | undefined,
+    implementation?: DeclarationImplementation,
   ) {
     super(target);
     this.#source = source;
     this.#resolve = resolve;
     this.#connected = connected;
+    this.#implementation = implementation;
   }
   static resolver(target: object): ComputedResolver | undefined {
     return #resolve in target ? target.#resolve : undefined;
@@ -77,6 +107,24 @@ class ComputedTarget extends SlotTarget {
   }
   static connected(target: object): (() => boolean) | undefined {
     return #connected in target ? target.#connected : undefined;
+  }
+  static attach(target: object, view: object): void {
+    if (#view in target) target.#view = view;
+  }
+  /** The declaration behind a target (bare computed snapshots included), if it is one. */
+  static resolve(target: object): DeclarationImplementation | undefined {
+    if (!(#view in target)) return undefined;
+    return target.#implementation ?? target.#resolve?.(target);
+  }
+  /** Like `resolve`, but only when `view` is the target's own proxy rather than a wrapper. */
+  static own(target: object, view: object): DeclarationImplementation | undefined {
+    if (!(#view in target) || target.#view !== view) return undefined;
+    return target.#implementation ?? target.#resolve?.(target);
+  }
+  static replace(target: object, implementation: DeclarationImplementation): boolean {
+    if (!(#implementation in target) || !target.#implementation) return false;
+    target.#implementation = implementation;
+    return true;
   }
 }
 class ComputedView extends SlotTarget {
@@ -120,12 +168,18 @@ class Registration extends SlotTarget {
   }
 }
 
+// A live computed view resolves its source on every read, and that source only needs the
+// declaration behind the snapshot it returns. While a live view resolves its source, snapshot
+// publication returns the never-escaping target itself instead of wrapping it in another proxy.
+let resolvingLiveSource = false;
+
 function declarationImplementation(view: object): DeclarationImplementation {
-  let implementation = implementations.get(view);
-  if (!implementation) {
-    const target = ComputedView.target(view);
-    implementation = target && ComputedTarget.resolver(target)?.(target);
+  if (view === trapView && trapTarget) {
+    const own = ComputedTarget.own(trapTarget, view);
+    if (own) return own;
   }
+  const implementation =
+    ComputedTarget.resolve(ComputedView.target(view) ?? view) ?? implementations.get(view);
   if (!implementation) throw new TypeError("Illegal invocation");
   return implementation;
 }
@@ -230,6 +284,8 @@ function indexedHandler(
 ): ProxyHandler<object> {
   return {
     get(target, key, proxy) {
+      trapView = proxy;
+      trapTarget = target;
       const index = indexOf(key);
       return index === undefined ? lookup.get(target, key, proxy) : item(target, index);
     },
@@ -254,6 +310,8 @@ function indexedHandler(
         : undefined;
     },
     set(target, key, value, proxy) {
+      trapView = proxy;
+      trapTarget = target;
       return indexOf(key) === undefined && lookup.set(target, key, value, proxy);
     },
     defineProperty(target, key, descriptor) {
@@ -269,6 +327,70 @@ function indexedHandler(
   };
 }
 
+/**
+ * A computed declaration that answers reads from its pending values and builds the complete
+ * declaration on first need. Frames create one per publication source, so its behavior lives on
+ * a shared prototype instead of per-instance closures, and its indices are published through
+ * publicNames instead of an index proxy.
+ */
+class DeferredBlock implements DeclarationImplementation, DeferredDeclaration {
+  #pending: DeferredDeclaration["read"] | undefined;
+  #create: (() => MaterializedDeclaration) | undefined;
+  #completed: MaterializedDeclaration | undefined;
+  #names: readonly (string | undefined)[] | undefined;
+  // Never stored: indexedLength and indexedItem read publicNames first.
+  readonly [index: number]: string | undefined;
+  readonly parentRule = null;
+  constructor(read: DeferredDeclaration["read"], create: () => MaterializedDeclaration) {
+    this.#pending = read;
+    this.#create = create;
+  }
+  block(): MaterializedDeclaration {
+    if (this.#completed) return this.#completed;
+    const create = this.#create;
+    if (!create) throw new Error("Expected pending computed-style values");
+    const result = create();
+    this.#pending = undefined;
+    this.#create = undefined;
+    return (this.#completed = result);
+  }
+  /** The materialized declaration is read-only, so its index list is listed once. */
+  publicNames(): readonly (string | undefined)[] {
+    if (this.#names) return this.#names;
+    const { style, indices } = this.block();
+    return (this.#names = Array.from({ length: indexedLength(style, indices) }, (_, index) =>
+      indexedItem(style, index, indices),
+    ));
+  }
+  read(name: string): string | undefined {
+    return this.#pending?.(name);
+  }
+  materialize(): DeclarationImplementation {
+    return this.block().style;
+  }
+  get _length(): number {
+    const { style, indices } = this.block();
+    return indexedLength(style, indices);
+  }
+  get cssText(): string {
+    return "";
+  }
+  set cssText(value: string) {
+    this.materialize().cssText = value;
+  }
+  getPropertyValue(name: string): string {
+    return this.read(name) ?? this.materialize().getPropertyValue(name);
+  }
+  getPropertyPriority(): string {
+    return "";
+  }
+  setProperty(name: string, value: string, priority?: string): void {
+    this.materialize().setProperty(name, value, priority);
+  }
+  removeProperty(name: string): string {
+    return this.materialize().removeProperty(name);
+  }
+}
 /** Creates Window-local public prototypes while retaining only private implementation ownership. */
 export function createDeclarationViews(input: {
   emptyComputed: () => DeclarationImplementation;
@@ -278,8 +400,8 @@ export function createDeclarationViews(input: {
   functionPrototype: object;
   arrayValues: typeof Array.prototype.values;
 }) {
-  const ordinaryViews = new WeakMap<object, CSSStyleProperties>();
-  const indexedHandlers = new WeakMap<object, ProxyHandler<object>>();
+  const ordinaryViews = createSlotTable<object, CSSStyleProperties>();
+  const indexedHandlers = createSlotTable<object, ProxyHandler<object>>();
   const inheritedIndices = new WeakMap<DeclarationImplementation, AddedIndices>();
   class CSSStyleDeclaration {
     constructor() {
@@ -540,6 +662,7 @@ export function createDeclarationViews(input: {
         ? CSSStyleProperties.prototype
         : pageDeclarationPrototype(),
     ) as CSSStyleProperties;
+    new ComputedTarget(target, undefined, undefined, undefined, implementation);
     let handler = indexedHandlers.get(implementation);
     if (!handler)
       indexedHandlers.set(
@@ -547,11 +670,12 @@ export function createDeclarationViews(input: {
         (handler = indexedDeclaration(implementation, published ? Reflect : privateLookup)),
       );
     const view = new Proxy<CSSStyleProperties>(target, handler);
-    implementations.set(view, implementation);
+    ComputedTarget.attach(target, view);
+    new ComputedView(view, target);
     ordinaryViews.set(implementation, view);
     return view;
   }
-  const inlineTargets = new WeakMap<object, InlineImplementation>();
+  const inlineTargets = createSlotTable<object, InlineImplementation>();
   function inlineTarget(target: object): InlineImplementation {
     const record = inlineTargets.get(target);
     if (!record) throw new TypeError("Illegal invocation");
@@ -573,7 +697,14 @@ export function createDeclarationViews(input: {
   function computedValue(target: object): DeclarationImplementation {
     const source = computedSource(target);
     if (typeof source !== "function") return source ?? (empty ??= input.emptyComputed());
-    const current = source();
+    const resolving = resolvingLiveSource;
+    resolvingLiveSource = true;
+    let current: object | undefined;
+    try {
+      current = source();
+    } finally {
+      resolvingLiveSource = resolving;
+    }
     return current ? declarationImplementation(current) : (empty ??= input.emptyComputed());
   }
   const indexedNames = new WeakMap<DeclarationImplementation, readonly string[]>();
@@ -619,7 +750,9 @@ export function createDeclarationViews(input: {
   ): CSSStyleProperties {
     const target = Object.create(prototype) as CSSStyleProperties;
     new ComputedTarget(target, value, computedValue, connected);
+    if (resolvingLiveSource) return target;
     const view = new Proxy<CSSStyleProperties>(target, computedHandler);
+    ComputedTarget.attach(target, view);
     new ComputedView(view, target);
     return view;
   }
@@ -646,13 +779,17 @@ export function createDeclarationViews(input: {
     inlineView(style: InlineImplementation): CSSStyleProperties {
       const target = Object.create(propertyPrototype) as CSSStyleProperties;
       inlineTargets.set(target, style);
+      new ComputedTarget(target, undefined, undefined, undefined, style);
       const view = new Proxy<CSSStyleProperties>(target, inlineHandler);
-      implementations.set(view, style);
+      ComputedTarget.attach(target, view);
+      new ComputedView(view, target);
       deferredDeclarations.set(style, style);
       return view;
     },
     materializedInline(view: object, style: DeclarationImplementation): void {
-      implementations.set(view, style);
+      const target = ComputedView.target(view);
+      if (!target || !ComputedTarget.replace(target, style))
+        throw new TypeError("Expected an inline declaration view");
     },
     /** Binds private immutable context metadata once while returning a fresh public snapshot on every call. */
     freshPublisher(
@@ -669,55 +806,9 @@ export function createDeclarationViews(input: {
       read: DeferredDeclaration["read"],
       create: () => MaterializedDeclaration,
     ): () => CSSStyleProperties {
-      let completed: MaterializedDeclaration | undefined;
-      let pending: { read: DeferredDeclaration["read"]; create: typeof create } | undefined = {
-        read,
-        create,
-      };
-      function materializeBlock(): MaterializedDeclaration {
-        if (completed) return completed;
-        if (!pending) throw new Error("Expected pending computed-style values");
-        const result = pending.create();
-        pending = undefined;
-        return (completed = result);
-      }
-      const materialize = () => materializeBlock().style;
-      const readPending: DeferredDeclaration["read"] = (name) => pending?.read(name);
-      const deferred: DeclarationImplementation = {
-        get _length() {
-          const { style, indices } = materializeBlock();
-          return indexedLength(style, indices);
-        },
-        get cssText() {
-          return "";
-        },
-        set cssText(value) {
-          materialize().cssText = value;
-        },
-        parentRule: null,
-        getPropertyValue(name) {
-          return readPending(name) ?? materialize().getPropertyValue(name);
-        },
-        getPropertyPriority() {
-          return "";
-        },
-        setProperty(name, value, priority) {
-          materialize().setProperty(name, value, priority);
-        },
-        removeProperty(name) {
-          return materialize().removeProperty(name);
-        },
-      };
-      const implementation = new Proxy(deferred, {
-        get(target, name, receiver) {
-          const index = indexOf(name);
-          if (index === undefined) return Reflect.get(target, name, receiver);
-          const { style, indices } = materializeBlock();
-          return indexedItem(style, index, indices);
-        },
-      });
-      deferredDeclarations.set(implementation, { read: readPending, materialize });
-      return () => publishComputed(CSSStyleProperties.prototype, implementation);
+      const block = new DeferredBlock(read, create);
+      deferredDeclarations.set(block, block);
+      return () => publishComputed(CSSStyleProperties.prototype, block);
     },
     liveView(
       read: () => CSSStyleProperties | undefined,

@@ -70,6 +70,7 @@ import {
 import { compileSelector, compileSimpleSubject, compileTreeSelector } from "./selectors.js";
 import { queryDependsOnTreeOrFocus, queryDependsOnlyOnTree } from "./query-index.js";
 import { elementLocalName, xmlSpecial } from "./xml.js";
+import { createSlotTable } from "./slot-table.js";
 
 const require = createRequire(import.meta.url);
 const arrayValues = Array.prototype.values;
@@ -1207,6 +1208,14 @@ function containingShorthands(): ReadonlyMap<string, readonly (readonly string[]
 function referenceShorthands(): ReadonlyMap<string, readonly (readonly string[])[]> {
   return (shorthandNames ??= require("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js"));
 }
+// jsdom's block serializer rewrites these declarations; a block without them is serialized as is.
+const blockSerializedDeclaration =
+  /(?:^|; )(?:(?:column|row)-rule-(?:width|style|color|inset)|grid-(?:template|auto)|corner-|border-(?:top|bottom)-(?:left|right)-radius|animation-range-)/;
+// Name classes for direct block serialization: not plain at all, read through
+// getPropertyValue's general path, or needing the block serializer.
+const plainShorthand = 4;
+const plainGeneral = 1;
+const plainRescan = 2;
 // Longhands whose shorthand cssstyle stores without separate longhand entries.
 const unstoredLonghand = /^(?:overflow-[xy]|border-image-|background-(?:position|repeat)-[xy]$)/;
 
@@ -1294,6 +1303,22 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
   // Preserve the vendor class name when the dependency bundler renames its binding.
   Object.defineProperty(Base, "name", { value: "CSSStyleDeclaration", configurable: true });
   initializeDeclarationMetadata(propertyDefinitions);
+
+  // Classifies a stored declaration name once for direct block serialization (plain* bits).
+  const plainNames = new Map<string, number>();
+  function plainNameKind(name: string): number {
+    let kind = plainNames.get(name);
+    if (kind !== undefined) return kind;
+    if (name.startsWith("border") || propertyDefinitions.get(name)?.longhands)
+      kind = plainShorthand;
+    else
+      kind =
+        (canonicalProperty(name) !== name || name === "size" || grammarLonghands(name)
+          ? plainGeneral
+          : 0) | (blockSerializedDeclaration.test(name) ? plainRescan : 0);
+    plainNames.set(name, kind);
+    return kind;
+  }
 
   // cssstyle's verdict depends only on the property and value text; its own LRU key and
   // lookup cost more than this bounded map. Throwing parses are not remembered.
@@ -1512,7 +1537,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     override get cssText(): string {
       const ordered = orderedStyles.get(this);
       if (ordered) return ordered.cssText;
-      let text = this.#plainBlockText() ?? super.cssText;
+      const plain = this.#plainBlockText();
+      let text = plain ?? super.cssText;
       const pending = shorthandSources?.get(this)?.size;
       if (pending || this.#completesShorthand()) {
         // CSSOM deliberately hides the value of a longhand with a pending shorthand.
@@ -1537,11 +1563,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           );
         }
         text = serializeDeclarationBlock(declarations.join(" "), shorthandSources?.get(this));
-      } else if (
-        /(?:^|; )(?:(?:column|row)-rule-(?:width|style|color|inset)|grid-(?:template|auto)|corner-|border-(?:top|bottom)-(?:left|right)-radius|animation-range-)/.test(
-          text,
-        )
-      )
+      } else if (plain === undefined ? blockSerializedDeclaration.test(text) : this.#plainRescan)
         text = serializeDeclarationBlock(text);
       if (
         this._values.has("background") &&
@@ -1659,22 +1681,33 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     // cssstyle's block serializer only rewrites shorthands and border declarations; a block
     // without them is its declarations in order, which skips its per-call normalization.
+    // It also records in #plainRescan whether the text needs jsdom's block serializer, which
+    // matches blockSerializedDeclaration at a declaration start: at a listed name, or inside a
+    // value containing "; ".
     #plainBlockText(): string | undefined {
       if (this._computed) return;
+      const direct = !shorthandSources?.get(this)?.size;
+      let rescan = false;
       let text = "";
       for (let i = 0; i < this._length; i++) {
         const name = this[i];
-        if (
-          name === undefined ||
-          name.startsWith("border") ||
-          propertyDefinitions.get(name)?.longhands
-        )
-          return;
+        if (name === undefined) return;
+        const kind = plainNameKind(name);
+        if (kind & plainShorthand) return;
+        // A stored, canonical, grammar-free longhand of a specified block reads as its stored
+        // value; getPropertyValue reaches the same value through its general checks.
+        const value =
+          (direct && !(kind & plainGeneral) && super.getPropertyValue(name)) ||
+          this.getPropertyValue(name);
+        rescan ||= !!(kind & plainRescan) || value.includes("; ");
         const priority = this._priorities.get(name);
-        text += `${text ? " " : ""}${name}: ${this.getPropertyValue(name)}${priority ? ` !${priority}` : ""};`;
+        text += `${text ? " " : ""}${name}: ${value}${priority ? ` !${priority}` : ""};`;
       }
+      if (rescan) rescan = blockSerializedDeclaration.test(text);
+      this.#plainRescan = rescan;
       return text;
     }
+    #plainRescan = false;
     #updateStyle<T>(write: () => T, publish: "changed" | "always" = "changed"): T {
       const changed = this._onChange;
       if (!changed || this._updating) return write();
@@ -3983,9 +4016,11 @@ export function invalidateStyleSource(node: Raw.ParentNode): boolean {
 }
 
 type InlineStyle = { text: string; style: Declaration; syncing: boolean };
-let inlineStyles: WeakMap<Raw.Element, InlineStyle> | undefined;
+let inlineStyles: ReturnType<typeof createSlotTable<Raw.Element, InlineStyle>> | undefined;
 
-let publicInlineViews: WeakMap<Raw.Element, PublicDeclaration> | undefined;
+let publicInlineViews:
+  | ReturnType<typeof createSlotTable<Raw.Element, PublicDeclaration>>
+  | undefined;
 
 /** Updates an existing inline declaration after its content attribute changes. */
 export function syncInlineStyle(node: Raw.Element): void {
@@ -6064,8 +6099,15 @@ function serializeRGB(value: string): string | undefined {
   return alpha === 1 ? `rgb(${channels})` : `rgba(${channels}, ${alpha})`;
 }
 
+// Warm computed reads ask about the same frame color on every call; the check is pure.
+let lastRGBValue: string | undefined;
+let lastRGBSerialized = false;
 function isSerializedRGB(value: string): boolean {
-  return serializeRGB(value) === value;
+  if (value !== lastRGBValue) {
+    lastRGBSerialized = serializeRGB(value) === value;
+    lastRGBValue = value;
+  }
+  return lastRGBSerialized;
 }
 
 // CSSOM serializes an eight-bit alpha with two decimals when that round-trips,
@@ -7052,7 +7094,7 @@ export function createStyles(input: {
 
   /** `base` resolves the attribute's initial URLs; later writes read the live document base. */
   function inlineStyle(node: Raw.Element, base?: string): Declaration {
-    const inline = (inlineStyles ??= new WeakMap());
+    const inline = (inlineStyles ??= createSlotTable());
     const existing = inline.get(node);
     if (existing) return existing.style;
     const state = {
@@ -7090,7 +7132,7 @@ export function createStyles(input: {
 
   const inlineAccess = {
     source(node: Raw.Element) {
-      if (inlineStyles?.has(node)) return;
+      if (inlineStyles?.get(node)) return;
       return node.attrs.find((attr) => !attr.namespace && attr.name === "style")?.value ?? "";
     },
     update: input.writeInlineStyle,
@@ -7099,10 +7141,10 @@ export function createStyles(input: {
   function publicInlineStyle(node: Raw.Element): PublicDeclaration {
     const pending = publicInlineViews?.get(node);
     if (pending) return pending;
-    const view = inlineStyles?.has(node)
+    const view = inlineStyles?.get(node)
       ? views().expose(inlineStyle(node))
       : views().inlineView(new InlineDeclaration(node, inlineAccess));
-    (publicInlineViews ??= new WeakMap()).set(node, view);
+    (publicInlineViews ??= createSlotTable()).set(node, view);
     return view;
   }
 
