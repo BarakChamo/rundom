@@ -662,6 +662,7 @@ export function createDescriptorRuleParser(
   baseURL: () => string,
   changed: () => void,
   declarationPrototype: () => object,
+  exposeInterface: <T extends Function>(name: string, real: T) => T,
 ) {
   // Interface reads must not initialize the grammar, so the parser loads with the first rule.
   function parseRule(text: string, global: object) {
@@ -718,6 +719,8 @@ export function createDescriptorRuleParser(
         Reflect.get(globals, "CSSStyleDeclaration").prototype,
         declarationPrototype(),
       );
+      exposeInterface("CSSMarginDescriptors", Reflect.get(globals, "CSSMarginDescriptors"));
+      exposeInterface("CSSPageDescriptors", Reflect.get(globals, "CSSPageDescriptors"));
     }
     return {
       CSSPageDescriptors: Reflect.get(globals, "CSSPageDescriptors"),
@@ -748,6 +751,7 @@ export function createDescriptorRuleParser(
           );
           idl.install(globals, ["Window"]);
         }
+        exposeInterface("CSSFontFaceDescriptors", Reflect.get(globals, "CSSFontFaceDescriptors"));
       }
       return (globals as typeof globals & { CSSFontFaceDescriptors: Function })
         .CSSFontFaceDescriptors;
@@ -776,6 +780,8 @@ export function createDescriptorRuleParser(
           );
           idl.install(globals, ["Window"]);
         }
+        exposeInterface("CSSFunctionDeclarations", Reflect.get(globals, "CSSFunctionDeclarations"));
+        exposeInterface("CSSFunctionDescriptors", Reflect.get(globals, "CSSFunctionDescriptors"));
       }
       return globals as typeof globals & {
         CSSFunctionDescriptors: Function;

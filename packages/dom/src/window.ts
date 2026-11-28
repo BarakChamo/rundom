@@ -138,6 +138,7 @@ import {
   type ScriptMode,
 } from "./script-realm.js";
 import { createTextEncoding } from "./text-encoding.js";
+import { createLazyInterfaces } from "./lazy-interface.js";
 import { createWindowTimers } from "./timers.js";
 import {
   createXMLData,
@@ -2757,6 +2758,7 @@ function buildWindow(
     "focus-visible": matchesFocusVisible,
   };
   let styleBinding: ReturnType<typeof createStyles> | undefined;
+  const lazyInterfaces = createLazyInterfaces();
   function styleScope(node: Raw.Element): Raw.ParentNode | undefined {
     const root = treeRoot(node);
     return isDocumentRecord(root) ||
@@ -2811,6 +2813,7 @@ function buildWindow(
 
   function styles() {
     return (styleBinding ??= createStyles({
+      exposeInterface: lazyInterfaces.expose,
       objectPrototype: Object.getPrototypeOf(EventTarget.prototype),
       functionPrototype: Object.getPrototypeOf(EventTarget),
       arrayValues: realmArray.prototype.values,
@@ -19634,7 +19637,10 @@ function buildWindow(
       return styles().CSSPropertyRule;
     }
     get CSSPositionTryDescriptors() {
-      return styles().CSSPositionTryDescriptors;
+      return lazyInterfaces.get(
+        "CSSPositionTryDescriptors",
+        () => styles().CSSPositionTryDescriptors,
+      );
     }
     get CSSPositionTryRule() {
       return styles().CSSPositionTryRule;
@@ -19646,13 +19652,13 @@ function buildWindow(
       return styles().CSSFunctionRule;
     }
     get CSSFunctionDescriptors() {
-      return styles().CSSFunctionDescriptors;
+      return lazyInterfaces.get("CSSFunctionDescriptors", () => styles().CSSFunctionDescriptors);
     }
     get CSSFunctionDeclarations() {
-      return styles().CSSFunctionDeclarations;
+      return lazyInterfaces.get("CSSFunctionDeclarations", () => styles().CSSFunctionDeclarations);
     }
     get CSSFontFaceDescriptors() {
-      return styles().CSSFontFaceDescriptors;
+      return lazyInterfaces.get("CSSFontFaceDescriptors", () => styles().CSSFontFaceDescriptors);
     }
     get CSSFontFeatureValuesRule() {
       return styles().CSSFontFeatureValuesRule;
@@ -19667,10 +19673,10 @@ function buildWindow(
       return styles().CSSKeyframeRule;
     }
     get CSSMarginDescriptors() {
-      return styles().CSSMarginDescriptors;
+      return lazyInterfaces.get("CSSMarginDescriptors", () => styles().CSSMarginDescriptors);
     }
     get CSSPageDescriptors() {
-      return styles().CSSPageDescriptors;
+      return lazyInterfaces.get("CSSPageDescriptors", () => styles().CSSPageDescriptors);
     }
     get CSSMarginRule() {
       return styles().CSSMarginRule;
@@ -19697,7 +19703,7 @@ function buildWindow(
       return styles().CSSStyleDeclaration;
     }
     get CSSStyleProperties() {
-      return styles().CSSStyleProperties;
+      return lazyInterfaces.get("CSSStyleProperties", () => styles().CSSStyleProperties);
     }
     get StyleSheet() {
       return styles().StyleSheet;

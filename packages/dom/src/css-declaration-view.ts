@@ -399,6 +399,8 @@ export function createDeclarationViews(input: {
   objectPrototype: object;
   functionPrototype: object;
   arrayValues: typeof Array.prototype.values;
+  /** Called when an interface's prototype first becomes reachable; binds its public constructor. */
+  exposeInterface: <T extends Function>(name: string, real: T) => T;
 }) {
   const ordinaryViews = createSlotTable<object, CSSStyleProperties>();
   const indexedHandlers = createSlotTable<object, ProxyHandler<object>>();
@@ -510,6 +512,7 @@ export function createDeclarationViews(input: {
         configurable: true,
       });
       descriptorNamesInstalled = true;
+      input.exposeInterface("CSSPositionTryDescriptors", CSSPositionTryDescriptors);
     }
     return CSSPositionTryDescriptors;
   }
@@ -574,6 +577,7 @@ export function createDeclarationViews(input: {
     for (const key of openedProperties ?? []) Reflect.deleteProperty(propertyPrototype, key);
     openedProperties = undefined;
     for (const entry of input.styleProperties()) installProperty(entry);
+    input.exposeInterface("CSSStyleProperties", CSSStyleProperties);
   }
 
   function ensureProperty(key: PropertyKey): void {
