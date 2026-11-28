@@ -97,7 +97,7 @@ describe("getComputedStyle live views", () => {
         expect(() => new Proxy(style, {}).color).toThrow(TypeError);
         expect(() => color.call(new Proxy(style, {}))).toThrow(TypeError);
         expect(() => new Proxy(computed, {}).color).toThrow(TypeError);
-        void window.document.body.style.color;
+        void window.document.createElement("b").style.color;
         expect(color.call(style)).toBe(expected);
         void window.getComputedStyle(p).display;
         expect(color.call(computed)).toBe(expected === "red" ? "rgb(255, 0, 0)" : "rgb(0, 0, 255)");
