@@ -26,6 +26,8 @@ function computedLonghands(): readonly string[] {
 export type DeclarationImplementation = {
   readonly _length: number;
   readonly [index: number]: string | undefined;
+  /** The CSSOM-visible property names, when they differ from the stored indices. */
+  publicNames?: () => readonly string[] | undefined;
   cssText: string;
   readonly parentRule: object | null;
   getPropertyValue: (property: string) => string;
@@ -149,6 +151,14 @@ function cssString(value: unknown): string {
   if (typeof value === "symbol") throw new TypeError("Cannot convert a Symbol to a string");
   return String(value).toWellFormed();
 }
+const upperASCII = /[A-Z]/;
+/** CSSOM matches standard property names ASCII case-insensitively; custom properties are exact. */
+function propertyName(value: unknown): string {
+  const name = cssString(value);
+  return upperASCII.test(name) && !name.startsWith("--")
+    ? name.replace(/[A-Z]+/g, (letters) => letters.toLowerCase())
+    : name;
+}
 function indexOf(key: PropertyKey): number | undefined {
   if (typeof key !== "string" || key === "") return;
   const first = key.charCodeAt(0);
@@ -171,7 +181,8 @@ type AddedIndices = {
 type MaterializedDeclaration = { style: DeclarationImplementation; indices?: AddedIndices };
 
 function indexedLength(style: DeclarationImplementation, indices?: AddedIndices): number {
-  return style._length + (indices?.names.length ?? 0) + (indices?.last ? 1 : 0);
+  if (!indices) return style.publicNames?.()?.length ?? style._length;
+  return style._length + indices.names.length + (indices.last ? 1 : 0);
 }
 
 function indexedItem(
@@ -179,7 +190,10 @@ function indexedItem(
   index: number,
   indices?: AddedIndices,
 ): string | undefined {
-  if (!indices) return style[index];
+  if (!indices) {
+    const names = style.publicNames?.();
+    return names ? names[index] : style[index];
+  }
   if (indices.last && index === indexedLength(style, indices) - 1) return indices.last;
   let start = 0;
   for (const group of indices.groups) {
@@ -286,12 +300,12 @@ export function createDeclarationViews(input: {
     getPropertyValue(property: string): string {
       const style = receiver(this);
       if (arguments.length === 0) throw new TypeError("1 argument required, but only 0 present.");
-      return style.getPropertyValue(cssString(property));
+      return style.getPropertyValue(propertyName(property));
     }
     getPropertyPriority(property: string): string {
       const style = receiver(this);
       if (arguments.length === 0) throw new TypeError("1 argument required, but only 0 present.");
-      return style.getPropertyPriority(cssString(property));
+      return style.getPropertyPriority(propertyName(property));
     }
     setProperty(property: string, value: string, priority = ""): void {
       const style = receiver(this);
@@ -306,7 +320,7 @@ export function createDeclarationViews(input: {
     removeProperty(property: string): string {
       const style = receiver(this);
       if (arguments.length === 0) throw new TypeError("1 argument required, but only 0 present.");
-      return style.removeProperty(cssString(property));
+      return style.removeProperty(propertyName(property));
     }
     get cssText(): string {
       return receiver(this).cssText;
@@ -319,8 +333,7 @@ export function createDeclarationViews(input: {
       const target = ComputedView.target(this);
       if (target && typeof computedSource(target) === "function")
         return computedNames(style).length;
-      const indices = inheritedIndices.get(style);
-      return style._length + (indices?.names.length ?? 0) + (indices?.last ? 1 : 0);
+      return indexedLength(style, inheritedIndices.get(style));
     }
     get parentRule(): object | null {
       return receiver(this).parentRule;

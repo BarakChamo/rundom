@@ -1,5 +1,4 @@
 // Transfers the private completed fragment tree without repeatedly shifting a large donor array.
-import invariant from "node:assert/strict";
 import {
   Parser,
   html,
@@ -9,6 +8,15 @@ import {
   type ParserOptions,
   type TreeAdapter,
 } from "parse5";
+
+// node:assert/strict loads seven built-in modules at start-up; an invariant only fails on a
+// programmer error, so the module is loaded on that failure and throws the same AssertionError.
+function invariant(value: unknown, message: string): asserts value {
+  if (value) return;
+  const assert: typeof import("node:assert/strict") =
+    process.getBuiltinModule("node:assert/strict");
+  assert(value, message);
+}
 
 const ownedAdapters = new WeakSet<TreeAdapter<Raw.DefaultTreeAdapterMap>>();
 /** Adds a project-owned metadata callback without exposing private parser arrays to author code.

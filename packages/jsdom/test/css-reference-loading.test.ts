@@ -56,6 +56,135 @@ describe("Window CSS reference loading", () => {
     expect(output).toBe("verified");
   });
 
+  it("reflects every Window global without loading the CSS engine artifact", () => {
+    const output = runIsolated(`
+      // Given: a fresh visual Window, as Vitest's populateGlobal sees it
+      const { window } = new JSDOM("<!doctype html><p></p>", { pretendToBeVisual: true, runScripts: "dangerously" });
+      // When: every own Window property is read once
+      for (const key of Object.getOwnPropertyNames(window)) {
+        try { void window[key]; } catch {}
+      }
+      // Then: only the interface artifact of the CSS reference was loaded
+      const artifacts = Object.keys(require.cache)
+        .filter((path) => path.startsWith(${JSON.stringify(domDist + "/css-reference")}))
+        .map((path) => path.slice(${JSON.stringify(domDist.length + 1)}));
+      assert.deepEqual(artifacts, ["css-reference-interfaces.cjs"]);
+      window.close();
+      process.stdout.write("verified");
+    `);
+    expect(output).toBe("verified");
+  });
+
+  it("resolves simple computed styles without loading the CSS engine artifact", () => {
+    const output = runIsolated(`
+      // Given: a stylesheet of plain longhands and a border shorthand
+      const { window } = new JSDOM(\`<!doctype html><style>
+        p { width: 10px; position: absolute; top: 0; border: 1px solid red; color: rgba(0, 0, 0, 0.5); }
+      </style><p>x</p>\`);
+      // When: computed values are read for the first time in the process
+      const computed = window.getComputedStyle(window.document.querySelector("p"));
+      // Then: values resolve from the property tables alone
+      assert.equal(computed.width, "10px");
+      assert.equal(computed.borderTopColor, "rgb(255, 0, 0)");
+      assert.equal(computed.color, "rgba(0, 0, 0, 0.5)");
+      const artifacts = Object.keys(require.cache)
+        .filter((path) => path.startsWith(${JSON.stringify(domDist + "/css-reference")}))
+        .map((path) => path.slice(${JSON.stringify(domDist.length + 1)}));
+      assert.deepEqual(artifacts, ["css-reference-properties.cjs"]);
+      assert.deepEqual(rawReferenceModules(), []);
+      window.close();
+      process.stdout.write("verified");
+    `);
+    expect(output).toBe("verified");
+  });
+
+  it("evaluates px width and height media rules without loading any CSS reference artifact", () => {
+    const output = runIsolated(`
+      // Given: a stylesheet whose rules sit in responsive width and height media groups
+      const { window } = new JSDOM(\`<!doctype html><style>
+        .a { color: red; display: flex }
+        @media (min-width: 600px) { .a { margin: 1px } }
+        @media screen and (max-width: 599.95px) { .a { margin: 2px } }
+        @media (min-height:700px) and (max-height:800px) { .a { padding: 3px } }
+      </style><div class="a">x</div>\`);
+      // When: computed values and the media lists are read for the first time in the process
+      const div = window.document.querySelector("div");
+      const computed = window.getComputedStyle(div);
+      // Then: the default 1024x768 device matches, media text is canonical, and no reference artifact loaded
+      assert.equal(computed.display, "flex");
+      assert.equal(computed.marginTop, "1px");
+      assert.equal(computed.paddingTop, "3px");
+      const rules = window.document.styleSheets[0].cssRules;
+      assert.equal(rules[1].media.mediaText, "(min-width: 600px)");
+      assert.equal(rules[2].media.mediaText, "screen and (max-width: 599.95px)");
+      assert.equal(rules[3].conditionText, "(min-height: 700px) and (max-height: 800px)");
+      const artifacts = Object.keys(require.cache)
+        .filter((path) => path.startsWith(${JSON.stringify(domDist + "/css-reference")}))
+        .map((path) => path.slice(${JSON.stringify(domDist.length + 1)}));
+      assert.deepEqual(artifacts, []);
+      assert.deepEqual(rawReferenceModules(), []);
+      window.close();
+      process.stdout.write("verified");
+    `);
+    expect(output).toBe("verified");
+  });
+
+  it("reflects the same descriptor interfaces before and after the CSS engine loads", () => {
+    // Given: descriptor interface shapes read in one process that never loads the engine,
+    // and in one where another Window parsed descriptor rules first
+    const shape = (prelude: string) =>
+      runIsolated(`
+        ${prelude}
+        const { window } = new JSDOM("<!doctype html><head></head>");
+        // When: each interface's global, constructor, prototype, chain and brand checks are read
+        const describe = (object) => Reflect.ownKeys(object).map((key) => [
+          String(key),
+          Object.entries(Object.getOwnPropertyDescriptor(object, key)).map(([field, value]) =>
+            field + ":" + (typeof value === "function" ? value.name + "/" + value.length : typeof value === "object" && value !== null ? "object" : String(value)),
+          ),
+        ]);
+        const error = (operation) => { try { operation(); return "none"; } catch (e) { return e.name + ": " + e.message; } };
+        const chain = (object) => {
+          const names = [];
+          for (let prototype = Object.getPrototypeOf(object); prototype; prototype = Object.getPrototypeOf(prototype))
+            names.push(Object.prototype.toString.call(prototype) + " " + prototype.constructor?.name);
+          return names;
+        };
+        const shapes = ${JSON.stringify(descriptorInterfaces)}.map((name) => {
+          const constructor = window[name];
+          const getter = Object.values(Object.getOwnPropertyDescriptors(constructor.prototype)).find(({ get }) => get);
+          return {
+            name,
+            global: describe(window).find(([key]) => key === name),
+            constructor: describe(constructor),
+            prototype: describe(constructor.prototype),
+            chain: chain(constructor.prototype),
+            tag: Object.prototype.toString.call(constructor.prototype),
+            construct: error(() => new constructor()),
+            call: error(() => constructor()),
+            brand: error(() => getter.get.call({})),
+          };
+        });
+        process.stdout.write(JSON.stringify({ engineLoaded: grammarInitialized(), shapes }));
+      `);
+    const cold = JSON.parse(shape(""));
+    const warm = JSON.parse(
+      shape(`
+        const first = new JSDOM(\`<!doctype html><style>
+          @function --double(--x) { result: calc(var(--x) * 2); }
+          @font-face { font-family: X; src: url(x.woff); }
+          @page :first { margin: 1in; @top-left { content: "a"; } }
+        </style>\`);
+        void first.window.document.styleSheets[0].cssRules.length;
+      `),
+    );
+    // Then: the engine loaded only in the second process, and every shape is identical
+    expect(cold.engineLoaded).toBe(false);
+    expect(warm.engineLoaded).toBe(true);
+    expect(cold.shapes).toHaveLength(descriptorInterfaces.length);
+    expect(cold.shapes).toEqual(warm.shapes);
+  });
+
   it("keeps early-read descriptor interfaces as the constructors of later parsed rules", () => {
     const output = runIsolated(`
       // Given: descriptor interfaces read before any stylesheet exists

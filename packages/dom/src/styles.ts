@@ -28,6 +28,7 @@ import {
   type RegisteredProperty,
 } from "./css-reference.js";
 import {
+  dependsOnWinnersOnly,
   substitutionFunction,
   substitutionFrame,
   type SubstitutionFrame,
@@ -73,6 +74,8 @@ import { elementLocalName, xmlSpecial } from "./xml.js";
 const require = createRequire(import.meta.url);
 const arrayValues = Array.prototype.values;
 const setParsedOutline = Symbol();
+const storedPropertyValue = Symbol();
+const referenceShorthandValue = Symbol();
 type Declaration = DeclarationFields &
   Iterable<string> & {
     readonly _length: number;
@@ -1126,6 +1129,7 @@ function cssInput(value: unknown, replaceEscapedEOF = true): string {
 }
 
 const cssNumericToken = /^[+-]?(?:\d*\.\d+|\d+)(?:e[+-]?\d+)?$/i;
+const alphaValueProperty = /^(?:(?:fill-|stroke-|flood-|stop-)?opacity|shape-image-threshold)$/;
 
 function normalizePropertyInput(property: string, value: string): string {
   if (property.startsWith("--") || /var\(/i.test(value)) return value;
@@ -1175,6 +1179,37 @@ function normalizePropertyInput(property: string, value: string): string {
   }
 }
 
+let shorthandNames: ReadonlyMap<string, readonly (readonly string[])[]> | undefined;
+let shorthandMembers: ReadonlySet<string> | undefined;
+/** Every longhand that some jsdom shorthand other than `all` covers. */
+function coveredLonghands(): ReadonlySet<string> {
+  return (shorthandMembers ??= new Set(
+    [...referenceShorthands()].flatMap(([name, groups]) => (name === "all" ? [] : groups.flat())),
+  ));
+}
+let shorthandsByLonghand: ReadonlyMap<string, readonly (readonly string[])[]> | undefined;
+/** For each longhand, the flattened members of every jsdom shorthand other than `all` covering it. */
+function containingShorthands(): ReadonlyMap<string, readonly (readonly string[])[]> {
+  if (shorthandsByLonghand) return shorthandsByLonghand;
+  const result = new Map<string, (readonly string[])[]>();
+  for (const [name, groups] of referenceShorthands()) {
+    if (name === "all") continue;
+    const members = groups.flat();
+    for (const member of members) {
+      const lists = result.get(member);
+      if (lists) lists.push(members);
+      else result.set(member, [members]);
+    }
+  }
+  return (shorthandsByLonghand = result);
+}
+/** jsdom's shorthand table: each shorthand's longhand groups. */
+function referenceShorthands(): ReadonlyMap<string, readonly (readonly string[])[]> {
+  return (shorthandNames ??= require("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js"));
+}
+// Longhands whose shorthand cssstyle stores without separate longhand entries.
+const unstoredLonghand = /^(?:overflow-[xy]|border-image-|background-(?:position|repeat)-[xy]$)/;
+
 const flattenedCSSLonghands = new Map<string, readonly string[]>();
 function shorthandLonghands(
   name: string,
@@ -1223,6 +1258,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     _updating: boolean;
     _onChange: ((text: string) => void) | undefined;
     _setProperty(property: string, value: string, priority: string): void;
+    _removeIndexedProperty(index: number): void;
+    _clearIndexedProperties(): void;
     _borderSetter(property: string, value: unknown, priority: string | undefined): void;
     _positionLonghandSetter(
       property: string,
@@ -1258,8 +1295,35 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
   Object.defineProperty(Base, "name", { value: "CSSStyleDeclaration", configurable: true });
   initializeDeclarationMetadata(propertyDefinitions);
 
+  // cssstyle's verdict depends only on the property and value text; its own LRU key and
+  // lookup cost more than this bounded map. Throwing parses are not remembered.
+  const acceptedValues = new Map<string, boolean>();
+  function acceptsPropertyValue(name: string, value: string): boolean {
+    const key = `${name.length}:${name}${value}`;
+    let accepted = acceptedValues.get(key);
+    if (accepted !== undefined) return accepted;
+    accepted = parsePropertyValue(name, value) !== undefined;
+    if (acceptedValues.size >= 4096)
+      for (const oldest of acceptedValues.keys()) {
+        acceptedValues.delete(oldest);
+        break;
+      }
+    acceptedValues.set(key, accepted);
+    return accepted;
+  }
+
   function canonicalProperty(name: string): string {
     return propertyDefinitions.get(name)?.legacyAliasOf ?? name;
+  }
+  // jsdom shorthands whose cssstyle metadata lists no longhands.
+  const metadataLonghandless = new Set(
+    "rule-inset-cap rule-inset-junction animation-delay background-repeat column-rule-inset-cap column-rule-inset-junction max-size min-size row-rule-inset-cap row-rule-inset-junction size text-box timeline-trigger-activation-range timeline-trigger-active-range glyph-orientation-vertical page-break-after page-break-before page-break-inside".split(
+      " ",
+    ),
+  );
+  /** Cheap filter before consulting jsdom's shorthand table, which loads lazily. */
+  function mayBeReferenceShorthand(name: string): boolean {
+    return !!propertyDefinitions.get(name)?.longhands || metadataLonghandless.has(name);
   }
 
   function unresolvedMathValue(property: string, value: string): string | undefined {
@@ -1328,8 +1392,12 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     #writeRevision = 0;
     #precisionRevision = 0;
+    // The block's serialization after the last published write; every mutation clears it.
+    #serialized: string | undefined;
 
     override _setProperty(property: string, value: string, priority?: string): void {
+      this.#serialized = undefined;
+      this.#indexRevision++;
       if (calculationSources?.get(this)?.delete(property)) this.#precisionRevision++;
       shorthandSources?.get(this)?.delete(property);
       if (value && urlDependentValue.test(value)) {
@@ -1429,6 +1497,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
 
     restoreBlock(block: DeclarationBlock): void {
+      this.#serialized = undefined;
+      this.#indexRevision++;
       this._values = new Map(block.values);
       this._priorities = new Map(block.priorities);
       this._length = block.properties.length;
@@ -1442,14 +1512,23 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     override get cssText(): string {
       const ordered = orderedStyles.get(this);
       if (ordered) return ordered.cssText;
-      let text = super.cssText;
-      if (shorthandSources?.get(this)?.size) {
+      let text = this.#plainBlockText() ?? super.cssText;
+      const pending = shorthandSources?.get(this)?.size;
+      if (pending || this.#completesShorthand()) {
         // CSSOM deliberately hides the value of a longhand with a pending shorthand.
         // Feed its specified source into the serializer while preserving original order.
         const declarations: string[] = [];
         for (let i = 0; i < this._length; i++) {
           const name = this[i];
           if (!name) continue;
+          // cssstyle appends the shorthands it stores; CSSOM declares only their longhands.
+          if (
+            !pending &&
+            referenceShorthands()
+              .get(name)
+              ?.every((group) => group.every((member) => this._values.has(member)))
+          )
+            continue;
           const value = shorthandSources?.get(this)?.has(name)
             ? "initial"
             : super.getPropertyValue(name);
@@ -1530,11 +1609,78 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         ? serializeOutline(text, shorthand, this.getPropertyPriority("outline"))
         : text;
     }
+    // Advances whenever the stored index list changes.
+    #indexRevision = 0;
+    #publicNames: { revision: number; names: readonly string[] | undefined } | undefined;
+    override _removeIndexedProperty(index: number): void {
+      this.#indexRevision++;
+      super._removeIndexedProperty(index);
+    }
+    override _clearIndexedProperties(): void {
+      this.#indexRevision++;
+      super._clearIndexedProperties();
+    }
+    /**
+     * CSSOM indexes only longhands; cssstyle also indexes the shorthands it stores. A stored
+     * shorthand whose longhands are all stored is hidden, and any other expands in place into
+     * jsdom's longhand order. Undefined when the stored list is already public.
+     */
+    publicNames(): readonly string[] | undefined {
+      if (this._computed) return;
+      if (this.#publicNames?.revision === this.#indexRevision) return this.#publicNames.names;
+      let names: string[] | undefined;
+      for (let i = 0; i < this._length && !names; i++)
+        if (mayBeReferenceShorthand(this[i] ?? "") && referenceShorthands().has(this[i] ?? ""))
+          names = [];
+      if (names) {
+        const shorthands = referenceShorthands();
+        const listed = new Set<string>();
+        for (let i = 0; i < this._length; i++) {
+          const name = this[i] ?? "";
+          const members = shorthands.get(name)?.flat();
+          if (members?.every((member) => this._values.has(member))) continue;
+          for (const member of members ?? [name]) listed.add(member);
+        }
+        names = [...listed];
+      }
+      this.#publicNames = { revision: this.#indexRevision, names };
+      return names;
+    }
+    // CSSOM serializes a shorthand in place of its longhands once all of them are declared.
+    #completesShorthand(): boolean {
+      if (this._computed) return false;
+      const containing = containingShorthands();
+      for (let i = 0; i < this._length; i++) {
+        const lists = containing.get(this[i] ?? "");
+        if (lists?.some((members) => members.every((member) => this._values.has(member))))
+          return true;
+      }
+      return false;
+    }
+    // cssstyle's block serializer only rewrites shorthands and border declarations; a block
+    // without them is its declarations in order, which skips its per-call normalization.
+    #plainBlockText(): string | undefined {
+      if (this._computed) return;
+      let text = "";
+      for (let i = 0; i < this._length; i++) {
+        const name = this[i];
+        if (
+          name === undefined ||
+          name.startsWith("border") ||
+          propertyDefinitions.get(name)?.longhands
+        )
+          return;
+        const priority = this._priorities.get(name);
+        text += `${text ? " " : ""}${name}: ${this.getPropertyValue(name)}${priority ? ` !${priority}` : ""};`;
+      }
+      return text;
+    }
     #updateStyle<T>(write: () => T, publish: "changed" | "always" = "changed"): T {
       const changed = this._onChange;
       if (!changed || this._updating) return write();
-      const before = this.cssText;
+      const before = this.#serialized ?? this.cssText;
       const precisionRevision = this.#precisionRevision;
+      this.#serialized = undefined;
       this._onChange = undefined;
       let result: T;
       try {
@@ -1543,6 +1689,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         this._onChange = changed;
       }
       const after = this.cssText;
+      this.#serialized = after;
       if (publish === "always" || after !== before || precisionRevision !== this.#precisionRevision)
         changed(after);
       return result;
@@ -1559,6 +1706,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           `Cannot remove property "${property}" from a read-only style declaration.`,
           "NoModificationAllowedError",
         );
+      this.#serialized = undefined;
       // Native shorthand setters remove their serialized entry while rebuilding
       // longhands. Only a public removal expands to the complete declaration.
       if (requestedStyleWrites.has(this)) return super.removeProperty(name);
@@ -1581,6 +1729,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           "NoModificationAllowedError",
         );
       }
+      this.#serialized = undefined;
       const trackOrder =
         this._onChange &&
         /(?:margin|inset|border|padding)-(?:block|inline|start|end)-?/i.test(value);
@@ -1659,6 +1808,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const pending = variableSyntax.test(value);
       const components = pending ? undefined : splitOutline(value);
       if (!pending && !components) return;
+      this.#serialized = undefined;
       const changed = this._onChange;
       const original = changed && !this._updating ? this.cssText : undefined;
       this._onChange = undefined;
@@ -1681,6 +1831,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (original !== undefined && original !== this.cssText) changed?.(this.cssText);
     }
     #removeProperty(property: string): string {
+      this.#serialized = undefined;
       const name = property.toLowerCase();
       declarationBases?.get(this)?.delete(name);
       if (calculationSources?.get(this)?.delete(name)) this.#precisionRevision++;
@@ -1689,12 +1840,20 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           ? ["background-repeat-x", "background-repeat-y"]
           : name === "outline"
             ? outlineLonghands
-            : (grammarLonghands(name) ?? shorthandLonghands(name, propertyDefinitions));
+            : name === "border"
+              ? // The border shorthand also resets border-image, which its setter stores.
+                [
+                  ...shorthandLonghands(name, propertyDefinitions),
+                  "border-image",
+                  ...(grammarLonghands("border-image") ?? []),
+                ]
+              : (grammarLonghands(name) ?? shorthandLonghands(name, propertyDefinitions));
       if (this._readonly) return super.removeProperty(property);
       if (name.startsWith("background-") && super.getPropertyValue(name))
         super.removeProperty("background");
       if (!longhands.length && !isPhysicalBorder(name)) {
         shorthandSources?.get(this)?.delete(name);
+        this.#releaseStoredShorthands(name);
         return super.removeProperty(property);
       }
       const previous = this.getPropertyValue(name);
@@ -1708,6 +1867,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           shorthandSources?.get(this)?.delete(child);
           super.removeProperty(child);
         }
+        // Longhands listed only in jsdom's table (background-repeat-x) are removed with it too.
+        if (name !== "all" && mayBeReferenceShorthand(name))
+          for (const child of referenceShorthands().get(name)?.flat() ?? [])
+            if (this._values.has(child)) super.removeProperty(child);
         if (isPhysicalBorder(name)) {
           const removed = new Set([name, ...longhands]);
           for (const parent of borderShorthands) {
@@ -1720,6 +1883,44 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       if (original !== undefined && original !== this.cssText) changed?.(this.cssText);
       return previous;
+    }
+    /** A longhand cssstyle keeps only inside its stored shorthand's value. */
+    #expandedLonghand(longhand: string): string | undefined {
+      for (let i = 0; i < this._length; i++) {
+        const shorthand = this[i];
+        if (!shorthand || !referenceShorthands().get(shorthand)?.flat().includes(longhand))
+          continue;
+        const entries = expandedDeclaration(shorthand, super.getPropertyValue(shorthand))?.entries;
+        const value = entries?.find(([name]) => name === longhand)?.[1];
+        if (value) return value;
+      }
+      return;
+    }
+    // cssstyle serializes a stored shorthand entry over its longhands. CSSOM stores only
+    // longhands, so removing one drops that entry and keeps the shorthand's other longhands.
+    #releaseStoredShorthands(longhand: string): void {
+      let stored = false;
+      for (let i = 0; i < this._length && !stored; i++)
+        stored = mayBeReferenceShorthand(this[i] ?? "");
+      if (!stored || !coveredLonghands().has(longhand)) return;
+      for (let i = this._length - 1; i >= 0; i--) {
+        const shorthand = this[i];
+        const groups = shorthand && referenceShorthands().get(shorthand);
+        const members = groups && groups.flat();
+        if (!shorthand || shorthand === "all" || !members?.includes(longhand)) continue;
+        const priority = super.getPropertyPriority(shorthand);
+        let expanded: Map<string, string> | undefined;
+        for (const member of members) {
+          if (member === longhand || this._values.has(member)) continue;
+          const value =
+            this.getPropertyValue(member) ||
+            (expanded ??= new Map(
+              expandedDeclaration(shorthand, super.getPropertyValue(shorthand))?.entries,
+            )).get(member);
+          if (value) this._setProperty(member, value, priority);
+        }
+        super.removeProperty(shorthand);
+      }
     }
     override getPropertyPriority(property: string): string {
       property = canonicalProperty(property);
@@ -1802,6 +2003,30 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
     }
     override getPropertyValue(property: string): string {
+      return this[storedPropertyValue](property) || this[referenceShorthandValue](property);
+    }
+    /**
+     * Serializes a jsdom shorthand or legacy alias from the longhands public indices list
+     * (for example background-position from its -x and -y longhands), which cssstyle cannot
+     * recombine. Empty unless every longhand is stored.
+     */
+    [referenceShorthandValue](property: string): string {
+      if (this._computed || !this._length) return "";
+      const canonical = canonicalProperty(property);
+      if (!mayBeReferenceShorthand(property) && !mayBeReferenceShorthand(canonical)) return "";
+      if (!referenceShorthands().has(property)) property = canonical;
+      const members = referenceShorthands().get(property)?.flat();
+      if (!members || property === "all") return "";
+      let text = "";
+      for (const member of members) {
+        const value = this._values.get(member);
+        if (value === undefined) return "";
+        text += `${member}: ${value}${this._priorities.get(member) ? " !important" : ""}; `;
+      }
+      return orderedDeclaration(text).getPropertyValue(property);
+    }
+    // Symbol-keyed: computed contexts inherit this class through Object.create, without private slots.
+    [storedPropertyValue](property: string): string {
       if (this._computed && /^(?:(?:column|row)-)?rule$/.test(property)) {
         const frame = computedGapRules.get(this);
         if (frame) return frame.read(property);
@@ -1848,6 +2073,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           (child) => super.getPropertyPriority(child),
         );
       const value = super.getPropertyValue(property);
+      if (!value && !this._computed && unstoredLonghand.test(property)) {
+        const expanded = this.#expandedLonghand(property);
+        if (expanded) return expanded;
+      }
       if (!value && !this._computed && /^(?:margin|inset)(?:-block|-inline)?$/.test(property)) {
         const children = propertyDefinitions.get(property)?.longhands;
         if (children?.length) {
@@ -2133,6 +2362,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (!ordered && this._onChange && logicalBoxName.test(name)) {
         ordered = orderedDeclaration(this.cssText);
         orderedStyles.set(this, ordered);
+        this.#serialized = undefined;
       }
       this.#updateStyle(() => {
         const previous = requestedStyleWrites.get(this);
@@ -2170,7 +2400,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         (/^-webkit-box-(?:flex|ordinal-group)$/.test(name) ||
           (!name.startsWith("--") &&
             /^[-+]?(?:[0-9]*\.[0-9]+|[0-9]+)(?:e[+-]?[0-9]+)?(?:[a-z]+|%)?$/i.test(value) &&
-            (value.length >= 8 || value === "-0")))
+            (value.length >= 8 ||
+              value === "-0" ||
+              // <alpha-value> percentages specify as numbers.
+              (value.endsWith("%") && alphaValueProperty.test(name)))))
       ) {
         const serialized = specifiedDeclaration(name, value);
         if (serialized !== undefined) value = serialized;
@@ -2331,10 +2564,13 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         /^(?:inherit|initial|unset|revert(?:-layer|-rule)?)$/i.test(value)
       ) {
         this.#removeProperty(name);
-        for (const child of propertyDefinitions.get(name)?.longhands ?? [])
+        // CSSOM lists the position axes directly after background-image.
+        for (const child of propertyDefinitions.get(name)?.longhands ?? []) {
           this._setProperty(child, value.toLowerCase(), priority);
-        for (const axis of backgroundPositionAxes)
-          this._setProperty(axis, value.toLowerCase(), priority);
+          if (child === "background-image")
+            for (const axis of backgroundPositionAxes)
+              this._setProperty(axis, value.toLowerCase(), priority);
+        }
         this._setProperty(name, value.toLowerCase(), priority);
         return;
       }
@@ -2483,7 +2719,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       if (value && !property.startsWith("--")) {
         try {
-          if (parsePropertyValue(name, value) === undefined) {
+          if (!acceptsPropertyValue(name, value)) {
             const unresolved =
               propertyDefinitions.has(name) && !propertyDefinitions.get(name)?.longhands
                 ? unresolvedMathValue(name, value)
@@ -4161,11 +4397,23 @@ function simplifyResolutionCalculations(
 }
 
 /** Parses a CSSOM media query and shares its evaluator with stylesheet media rules. */
-export function parseMediaQuery(query: string): {
+type ParsedMediaQuery = {
   media: string;
   queries: string[];
   matches: (viewport: Viewport) => boolean;
-} {
+};
+// Parsing depends only on the text, and matches() reads the viewport on every call, so one
+// shared, never-mutated parse serves every MediaList, rule and matchMedia list with that text.
+const parsedMediaQueries = new Map<string, ParsedMediaQuery>();
+export function parseMediaQuery(query: string): ParsedMediaQuery {
+  const known = parsedMediaQueries.get(query);
+  if (known) return known;
+  const parsed = readMediaQuery(query);
+  if (query.length <= 1024) rememberSyntax(parsedMediaQueries, query, parsed, 256);
+  return parsed;
+}
+
+function readMediaQuery(query: string): ParsedMediaQuery {
   const css: typeof import("css-tree") & CSSTokenizer = require("./css-runtime.cjs").cssTree;
   const { parse, generate } = css;
   const render = (node: MediaConditionNode) => generate(node as CssNode);
@@ -4900,6 +5148,14 @@ function deferredDeclaration(
   };
 }
 
+// The pinned generator re-emits every token of raw text and only appends a newline after a
+// backslash delimiter, so backslash-free raw text is already its own serialization.
+function preludeText(prelude: CssNode, generate: (typeof import("css-tree"))["generate"]): string {
+  return prelude.type === "Raw" && !prelude.value.includes("\\")
+    ? prelude.value
+    : generate(prelude);
+}
+
 type FlatStyleRule = {
   current: RuleSelection;
   declaration: RuleDeclarationFactory;
@@ -4922,7 +5178,7 @@ function prepareFlatRules(input: {
   for (const node of ast.children) {
     if (node.type !== "Rule") continue;
     const selection = parseRuleSelection({
-      text: generate(node.prelude),
+      text: preludeText(node.prelude, generate),
       isXML,
       statePseudos,
       requireMatchable: false,
@@ -5384,7 +5640,7 @@ function parseSheet(
     }
     if (node.type !== "Rule") return;
     const parsed = parseRuleSelection({
-      text: generate(node.prelude),
+      text: preludeText(node.prelude, generate),
       isXML,
       statePseudos,
       requireMatchable: false,
@@ -6069,6 +6325,11 @@ const fontWidths = new Map([
 
 const fontWidthKeywords = new Map([...fontWidths].map(([keyword, width]) => [width, keyword]));
 
+// Defined outside the cascade so the reader's closure context holds only the captured map.
+function capturedParentValues(captured: ReadonlyMap<string, string>) {
+  return { getPropertyValue: (name: string) => captured.get(name) ?? "" };
+}
+
 /** Owns stylesheets and declarations for a single document. */
 export function createStyles(input: {
   document: Raw.Document;
@@ -6750,7 +7011,8 @@ export function createStyles(input: {
     if (existing) delete sheetState(existing.sheet).owner;
     if (elementLocalName(node) === "style") node[stylesheetSourceVersion] = sourceVersion;
     const sheet = createAttachedSheet(href === undefined ? { owner: node } : { owner: node, href });
-    if (href === undefined) sheetState(sheet).base = input.baseURL(input.ownerDocument(node));
+    if (href === undefined)
+      sheetState(sheet).base = base ?? input.baseURL(input.ownerDocument(node));
     encoding ??= input.documentEncoding(node);
     sheetState(sheet).encoding = encoding;
     // Parse diagnostics and import requests are observable at attachment. For a large
@@ -6785,7 +7047,8 @@ export function createStyles(input: {
     if (state.media || media) record.sheet.media = media;
   }
 
-  function inlineStyle(node: Raw.Element): Declaration {
+  /** `base` resolves the attribute's initial URLs; later writes read the live document base. */
+  function inlineStyle(node: Raw.Element, base?: string): Declaration {
     const inline = (inlineStyles ??= new WeakMap());
     const existing = inline.get(node);
     if (existing) return existing.style;
@@ -6799,7 +7062,8 @@ export function createStyles(input: {
       syncing: false,
     };
     inline.set(node, state);
-    inlineBaseReaders.set(state.style, () => input.baseURL(input.ownerDocument(node)));
+    const liveBase = () => input.baseURL(input.ownerDocument(node));
+    inlineBaseReaders.set(state.style, base === undefined ? liveBase : () => base);
     const text = node.attrs.find((attr) => !attr.namespace && attr.name === "style")?.value;
     if (text) {
       const block = parseInlineBlock(text);
@@ -6815,6 +7079,7 @@ export function createStyles(input: {
         }
       } else syncInlineStyle(node);
     }
+    if (base !== undefined) inlineBaseReaders.set(state.style, liveBase);
     const view = publicInlineViews?.get(node);
     if (view) views().materializedInline(view, state.style);
     return state.style;
@@ -6838,7 +7103,7 @@ export function createStyles(input: {
     return view;
   }
 
-  function applyInline(node: Raw.Element): Sheet | null {
+  function applyInline(node: Raw.Element, base?: string): Sheet | null {
     const type = node.attrs.find((attr) => !attr.namespace && attr.name === "type")?.value;
     if (node.namespaceURI !== html.NS.HTML || (type && type.toLowerCase() !== "text/css")) {
       return null;
@@ -6848,7 +7113,7 @@ export function createStyles(input: {
       if (tree.isTextNode(child)) text += child.value;
       else if (tree.isCommentNode(child) && xmlSpecial(child)?.kind === "cdata") text += child.data;
     }
-    return applySheet(node, text);
+    return applySheet(node, text, base);
   }
 
   type CollectionSnapshot = {
@@ -7273,9 +7538,13 @@ export function createStyles(input: {
     baseURL: string | undefined;
     focusRevision?: number | undefined;
     substitution?: SubstitutionFrame;
+    // The frame's values depend only on winners and ancestors: reusable, and not inherited.
+    staticSubstitution?: true;
     siblingColor?: boolean;
     registered?: boolean;
     custom?: CustomProjection;
+    // The frame this one was copied from when its element adopted a sibling's frame.
+    family?: ComputedFrame;
     units: number;
     characters: number;
     declarationCharacters: number;
@@ -7310,6 +7579,57 @@ export function createStyles(input: {
     if (node && slots?.[owner.role] === frame) {
       delete slots[owner.role];
       if (!slots.target && !slots.ancestor) computedFrames.delete(node);
+    }
+  }
+
+  // Recent frames per parent frame and element shape (namespace, tag, role), newest first.
+  // Sibling lists alternate between a few shapes, such as odd and even rows.
+  const siblingFrames = new WeakMap<ComputedFrame, Map<string, ComputedFrame[]>>();
+  // Copies of one frame hold the same values, so a descendant built under one fits under all.
+  function sameFamily(a: ComputedFrame | undefined, b: ComputedFrame): boolean {
+    return !!a && (a.family ?? a) === (b.family ?? b);
+  }
+  function sameCascadeInputs(a: readonly CascadeInput[], b: readonly CascadeInput[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index++) {
+      const x = a[index]!,
+        y = b[index]!;
+      if (
+        x.weight !== y.weight ||
+        x.hostContext !== y.hostContext ||
+        x.base !== y.base ||
+        x.proximity !== y.proximity ||
+        x.layerIndex !== y.layerIndex ||
+        x.outerDepth !== y.outerDepth ||
+        x.entries.length !== y.entries.length
+      )
+        return false;
+      if (x.entries === y.entries) continue;
+      for (let entry = 0; entry < x.entries.length; entry++) {
+        const p = x.entries[entry]!,
+          q = y.entries[entry]!;
+        if (
+          p !== q &&
+          (p.name !== q.name ||
+            p.value !== q.value ||
+            p.important !== q.important ||
+            p.order !== q.order ||
+            p.base !== q.base ||
+            p.shorthand !== q.shorthand)
+        )
+          return false;
+      }
+    }
+    return true;
+  }
+  function rememberSiblingFrame(parent: ComputedFrame, shape: string, frame: ComputedFrame): void {
+    let shapes = siblingFrames.get(parent);
+    if (!shapes) siblingFrames.set(parent, (shapes = new Map()));
+    const frames = shapes.get(shape);
+    if (!frames) shapes.set(shape, [frame]);
+    else {
+      frames.unshift(frame);
+      if (frames.length > 4) frames.pop();
     }
   }
 
@@ -7536,7 +7856,9 @@ export function createStyles(input: {
           linkedSheetRevision === proof.linked &&
           (!proof.authorSheets || !exposedStylesheets) &&
           !didAdoptStylesheets)) &&
-      (frame.focusRevision === undefined || frame.focusRevision === input.focusRevision())
+      (frame.focusRevision === undefined || frame.focusRevision === input.focusRevision()) &&
+      // The UA focus ring is the one focus input every frame has; rules add the revision.
+      !!frame.userAgentFocus === (input.statePseudos["focus-visible"]?.(node) === true)
     );
   }
 
@@ -7731,6 +8053,41 @@ export function createStyles(input: {
     return { resolveValue, expandPending, substitution, registrations };
   }
 
+  // A computed write whose validation stores exactly its own normalized longhand, with no
+  // provenance, is replayed from that text instead of re-validating per element.
+  const validatedWrites = new Map<string, string | null>();
+  // cssstyle's border, flex and box longhand setters rebuild their shorthand from sibling state.
+  const statefulSetter =
+    /^(?:border(?:-(?:top|right|bottom|left))?(?:-(?:width|style|color))?|flex(?:-(?:grow|shrink|basis))?|(?:margin|padding)(?:-(?:top|right|bottom|left))?)$/;
+  function setComputedProperty(style: ComputedDeclaration, name: string, value: string): void {
+    const key = name + "\0" + value;
+    let stored = validatedWrites.get(key);
+    if (stored === undefined) {
+      if (key.length > 512 || statefulSetter.test(name)) {
+        style.setProperty(name, value);
+        return;
+      }
+      const probe = declaration();
+      probe.setProperty(name, value);
+      const text = probe._values.get(name);
+      stored =
+        probe._length === 1 &&
+        probe[0] === name &&
+        text !== undefined &&
+        probe.getPropertyPriority(name) === "" &&
+        !shorthandSources?.get(probe)?.size &&
+        !calculationSources?.get(probe)?.size &&
+        !declarationBases?.get(probe)?.size &&
+        !borderColorSourceOrder.has(probe)
+          ? text
+          : null;
+      if (validatedWrites.size >= 4096) validatedWrites.clear();
+      validatedWrites.set(key, stored);
+    }
+    if (stored === null) style.setProperty(name, value);
+    else style._setProperty(name, stored, "");
+  }
+
   // Resolution reads only named parent values, so a captured subset can stand in for the parent.
   type ParentValues = Pick<ComputedDeclaration, "getPropertyValue">;
   type ResolutionValues = {
@@ -7834,6 +8191,16 @@ export function createStyles(input: {
         result._setProperty(name, `${Number(fontSize.toPrecision(6))}px`, "");
         continue;
       }
+      // `box-shadow: none` computes to `none` with a literal `transparent` color longhand, as in
+      // jsdom; the substitution read would serialize it as `rgba(0, 0, 0, 0) none`.
+      const offset = name === "box-shadow-color" ? winners.get("box-shadow-offset") : undefined;
+      if (
+        (name === "box-shadow" && specified.toLowerCase() === "none") ||
+        (typeof offset === "object" && offset.value === "none" && specified === "transparent")
+      ) {
+        result._setProperty(name, specified.toLowerCase(), "");
+        continue;
+      }
       if (
         resolver.substitution &&
         (!shorthand ||
@@ -7870,7 +8237,7 @@ export function createStyles(input: {
             );
       if (value === undefined) {
         const inheritedValue = inherited.has(name) && prior?.getPropertyValue(name);
-        if (inheritedValue) result.setProperty(name, inheritedValue);
+        if (inheritedValue) setComputedProperty(result, name, inheritedValue);
         continue;
       }
       if (isCustomProperty && /^(?:initial|inherit|unset|revert-layer)$/i.test(value)) continue;
@@ -7900,7 +8267,7 @@ export function createStyles(input: {
               ? (partialAncestors?.get(prior)?.complete() ?? prior)
               : prior;
           const inheritedValue = shouldInherit ? source?.getPropertyValue(name) : undefined;
-          if (inheritedValue) result.setProperty(name, inheritedValue);
+          if (inheritedValue) setComputedProperty(result, name, inheritedValue);
           continue;
         }
       }
@@ -7916,7 +8283,7 @@ export function createStyles(input: {
             ? (projected?.values.get(name) ?? prior?.getPropertyValue(name))
             : undefined;
         const fallback = userAgentValue || inheritedValue || (name === "font-size" ? "16px" : "");
-        if (fallback) result.setProperty(name, fallback);
+        if (fallback) setComputedProperty(result, name, fallback);
         continue;
       }
       if (isCustomProperty) {
@@ -7942,7 +8309,7 @@ export function createStyles(input: {
         continue;
       }
       if (name === "flex-basis") {
-        result.setProperty(name, simplifyCSSCalculation(value));
+        setComputedProperty(result, name, simplifyCSSCalculation(value));
         continue;
       }
       if (name === "font-weight") {
@@ -7984,7 +8351,7 @@ export function createStyles(input: {
         const length = computeNumericValue(value, () => currentViewport);
         const computed =
           name === "outline-width" ? snapOutlineWidth(length, currentViewport.resolution) : length;
-        result.setProperty(name, computed);
+        setComputedProperty(result, name, computed);
         continue;
       }
       if (name === "outline-color" && value.toLowerCase() === "auto") {
@@ -7999,7 +8366,8 @@ export function createStyles(input: {
       // System colors compute in their declaring element's scheme; currentColor
       // paint references retain the target's foreground dependency.
       const paint = target && (name === "fill" || name === "stroke");
-      result.setProperty(
+      setComputedProperty(
+        result,
         name,
         paint
           ? resolveColor(computed, { currentColor: color, colorScheme, fallback: computed })
@@ -8284,6 +8652,11 @@ export function createStyles(input: {
     return deferred;
   }
 
+  // Substitution frames outlive this computation; keep their reader's context to the element.
+  function elementBaseURL(element: Raw.Element): () => string {
+    return () => input.baseURL(input.ownerDocument(element));
+  }
+
   function computeStyle(
     node: Raw.Element,
     root: Raw.ParentNode | undefined,
@@ -8293,7 +8666,8 @@ export function createStyles(input: {
     pseudo?: string,
   ): PublicDeclaration {
     let reusableEligible = proof !== undefined;
-    let focusRevision: number | undefined = input.focusRevision();
+    // Set once a focus-dependent selector is a candidate anywhere along the computed path.
+    let focusRevision: number | undefined;
     function certify(frame: ComputedFrame): void {
       if (
         reusableEligible &&
@@ -8529,10 +8903,8 @@ export function createStyles(input: {
       const parentFrame = frame;
       const role = element === node && (!pseudo || activePseudo) ? "target" : "ancestor";
       const documentChild = element.parentNode?.nodeName === "#document";
-      const previous = activePseudo ? undefined : computedFrames.get(element)?.[role];
-      const sameParent =
-        previous &&
-        (parentFrame ? previous.parent?.deref() === parentFrame : previous.parent === undefined);
+      let previous = activePseudo ? undefined : computedFrames.get(element)?.[role];
+      let siblingAdopted = false;
       const inputs: CascadeInput[] = [];
       let themeEntries: readonly CascadeEntry[] | undefined;
       const {
@@ -8566,7 +8938,12 @@ export function createStyles(input: {
         !activePseudo && input.statePseudos["focus-visible"]?.(element) === true;
       const userAgentDirection = needsDirection ? input.directionality(element) : undefined;
       function sameEnvironment(cached: ComputedFrame): boolean {
-        if (cached.substitution || cached.siblingColor || cached.registered || scriptRegistrations)
+        if (
+          (cached.substitution && !cached.staticSubstitution) ||
+          cached.siblingColor ||
+          cached.registered ||
+          scriptRegistrations
+        )
           return false;
         const currentViewport = cached.viewport && (viewport ??= input.viewport());
         const sameViewport =
@@ -8581,25 +8958,32 @@ export function createStyles(input: {
             : (documentBase ??= input.baseURL(input.ownerDocument(element)));
         return !!sameViewport && cached.baseURL === currentBase;
       }
-      const sameContext =
-        previous &&
-        sameParent &&
-        previous.documentChild === documentChild &&
-        previous.userAgentColor === userAgentColor &&
-        previous.userAgentDisplay === userAgentDisplay &&
-        previous.userAgentContentVisibility === userAgentContentVisibility &&
-        !!previous.userAgentFocus === userAgentFocus &&
-        previous.userAgentDirection === userAgentDirection &&
-        previous.userAgentHiddenInput === hiddenInput;
-      // Inline declaration provenance, automatic direction and shadow styling retain
-      // the complete path; serialized attribute equality alone cannot certify them.
-      if (
-        reusableEligible &&
-        (userAgentDirection !== undefined ||
-          input.shadowRoot(element) ||
-          (inlineStyles?.get(element)?.style._length ?? 0) !== 0 ||
-          element.attrs.some((attr) => !attr.namespace && attr.name === "style" && attr.value))
-      )
+      function sameContextAs(previous: ComputedFrame): boolean {
+        return (
+          (parentFrame
+            ? sameFamily(previous.parent?.deref(), parentFrame)
+            : previous.parent === undefined) &&
+          previous.documentChild === documentChild &&
+          previous.userAgentColor === userAgentColor &&
+          previous.userAgentDisplay === userAgentDisplay &&
+          previous.userAgentContentVisibility === userAgentContentVisibility &&
+          !!previous.userAgentFocus === userAgentFocus &&
+          previous.userAgentDirection === userAgentDirection &&
+          previous.userAgentHiddenInput === hiddenInput
+        );
+      }
+      let sameContext = !!previous && sameContextAs(previous);
+      // An element without its own frame may adopt the frame of a sibling with the same shape
+      // (every userAgentStyle input) under the same parent frame when its freshly matched
+      // inputs are equal. Adoption never certifies: the frame's proof belongs to its owner.
+      const shape =
+        previous || activePseudo || !parentFrame
+          ? undefined
+          : `${element.namespaceURI ?? ""} ${element.tagName} ${role} ${button} ${field}`;
+      // Automatic direction and shadow styling retain the complete path. Inline declarations
+      // can certify: every change to them rewrites the style attribute, which advances the
+      // style revision, and their URL bases are fixed when declared.
+      if (reusableEligible && (userAgentDirection !== undefined || input.shadowRoot(element)))
         reusableEligible = false;
       let borderColorBlock = 0;
       let collectLosers = false,
@@ -9001,17 +9385,44 @@ export function createStyles(input: {
         )
           take(inlineStyle(element), 2 ** 52);
       }
+      if (shape && !sheetRegistrations) {
+        for (const candidate of siblingFrames
+          .get(parentFrame!.family ?? parentFrame!)
+          ?.get(shape) ?? []) {
+          if (
+            candidate.inputs &&
+            sameCascadeInputs(candidate.inputs, inputs) &&
+            sameContextAs(candidate) &&
+            sameEnvironment(candidate)
+          ) {
+            previous = candidate;
+            siblingAdopted = sameContext = true;
+            break;
+          }
+        }
+      }
       if (
         previous &&
         !sheetRegistrations &&
         sameContext &&
         previous.inputs &&
         previous.inputs.length === inputs.length &&
-        inputs.every((source, index) => source === previous.inputs?.[index]) &&
+        (siblingAdopted || inputs.every((source, index) => source === previous!.inputs?.[index])) &&
         sameEnvironment(previous)
       ) {
-        prioritizeAncestor(previous);
-        certify(previous);
+        if (siblingAdopted) {
+          // The owner's proof stays with the owner. A copy carries this element's proof and
+          // shares the owner's immutable values, including a deferred publisher.
+          const copy: ComputedFrame = { ...previous, family: previous.family ?? previous };
+          delete copy.reuse;
+          delete copy.focusRevision;
+          certify(copy);
+          rememberComputedFrame(element, role, copy);
+          previous = copy;
+        } else {
+          prioritizeAncestor(previous);
+          certify(previous);
+        }
         if (role === "target") return computedFrameView(previous);
         result = previous.style;
         if (displays) displays.set(element, result?._values.get("display") === "none");
@@ -9026,6 +9437,8 @@ export function createStyles(input: {
         const winners = new Map<string, Winner>();
         let hasVariableShorthand = false;
         let usesSubstitution = false;
+        let environmentSubstitution = false;
+        let tokenReaders: string[] | undefined;
 
         // Cached frames return above without allocating winner-expansion closures.
         const consider = (name: string, candidate: Winner): void => {
@@ -9085,14 +9498,29 @@ export function createStyles(input: {
             )
               hasRollback = true;
 
-            usesSubstitution ||=
-              contextualLonghand.test(name) ||
-              (name.startsWith("--") && /\)var\(/i.test(value)) ||
-              ((name === "container-type" || name === "container") &&
-                /(?:^|[ /])(?:inline-)?size(?:$| )/.test(value)) ||
-              (value.includes("(") &&
-                (substitutionFunction.test(value) || usesTypedValueGrammar(name, value))) ||
-              (!name.startsWith("--") && elementDimension.test(value));
+            if (!environmentSubstitution) {
+              const evaluated =
+                contextualLonghand.test(name) ||
+                (value.includes("(") && usesTypedValueGrammar(name, value));
+              // var() in evaluated values and pending shorthands is checked once the
+              // custom properties it reads are known.
+              const tokenReader =
+                (evaluated || !!shorthand || deferredShorthandLonghands.has(name)) &&
+                variableSyntax.test(value);
+              if (tokenReader) {
+                if (dependsOnWinnersOnly(value.replace(/var\(/gi, "calc(")))
+                  (tokenReaders ??= []).push(value);
+                else environmentSubstitution = true;
+              }
+              environmentSubstitution ||=
+                (evaluated && !tokenReader && !dependsOnWinnersOnly(value)) ||
+                (name.startsWith("--") && /\)var\(/i.test(value)) ||
+                ((name === "container-type" || name === "container") &&
+                  /(?:^|[ /])(?:inline-)?size(?:$| )/.test(value)) ||
+                (value.includes("(") && substitutionFunction.test(value)) ||
+                (!name.startsWith("--") && elementDimension.test(value));
+              usesSubstitution ||= evaluated || environmentSubstitution;
+            }
             const winner: Winner = {
               context,
               weight,
@@ -9280,7 +9708,7 @@ export function createStyles(input: {
         const substitutionValues =
           usesSubstitution ||
           hasVariableShorthand ||
-          parentFrame?.substitution ||
+          (parentFrame?.substitution && !parentFrame.staticSubstitution) ||
           registrations?.size
             ? new Map([...winners].map(([name, winner]) => [name, winner.value]))
             : undefined;
@@ -9391,6 +9819,16 @@ export function createStyles(input: {
           custom = { block: theme, placements: [{ before, end: theme.names.length }] };
         }
         custom ??= packCustomWinners(computedWinners);
+        if (tokenReaders && !environmentSubstitution) {
+          const block = custom?.block;
+          const token = (name: string): string | undefined => {
+            const winner = computedWinners.get(name);
+            return typeof winner === "string" ? winner : (winner?.value ?? block?.values.get(name));
+          };
+          environmentSubstitution = tokenReaders.some(
+            (value) => !dependsOnWinnersOnly(value, token),
+          );
+        }
         if (
           previous &&
           sameContext &&
@@ -9398,8 +9836,10 @@ export function createStyles(input: {
           sameWinners(previous.winners, computedWinners) &&
           sameEnvironment(previous)
         ) {
-          prioritizeAncestor(previous);
-          certify(previous);
+          if (!siblingAdopted) {
+            prioritizeAncestor(previous);
+            certify(previous);
+          }
           if (role === "target") return computedFrameView(previous);
           result = previous.style;
           if (displays) displays.set(element, result?._values.get("display") === "none");
@@ -9411,7 +9851,7 @@ export function createStyles(input: {
         }
         let substitution: SubstitutionFrame | undefined;
         if (substitutionValues) {
-          const baseURL = () => input.baseURL(input.ownerDocument(element));
+          const baseURL = elementBaseURL(element);
           let inheritedFrame = parentFrame?.substitution;
           if (
             !inheritedFrame &&
@@ -9668,7 +10108,7 @@ export function createStyles(input: {
             independent
               ? {
                   ...attributes,
-                  prior: captured && { getPropertyValue: (name) => captured.get(name) ?? "" },
+                  prior: captured && capturedParentValues(captured),
                 }
               : attributes,
             resolver,
@@ -9694,6 +10134,12 @@ export function createStyles(input: {
           ...resolved,
           ...(formattingContainer && { formattingContainer: true as const }),
           ...(substitution && { substitution }),
+          ...(substitution &&
+            !environmentSubstitution &&
+            !registrations?.size &&
+            (!parentFrame?.substitution || parentFrame.staticSubstitution) && {
+              staticSubstitution: true as const,
+            }),
           ...(siblingColor ? { siblingColor } : {}),
           ...(registrations ? { registered: true } : {}),
           inputs: retainInputs ? inputs : undefined,
@@ -9718,6 +10164,8 @@ export function createStyles(input: {
         };
         certify(frame);
         if (!activePseudo) rememberComputedFrame(element, role, frame);
+        if (shape && frame.inputs)
+          rememberSiblingFrame(parentFrame!.family ?? parentFrame!, shape, frame);
         if (frame.deferred && frameOrder.has(frame)) frame.deferred.retained = new WeakRef(frame);
         if (role === "target") return computedFrameView(frame);
         if (displays) displays.set(element, result?._values.get("display") === "none");

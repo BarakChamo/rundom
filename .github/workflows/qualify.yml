@@ -19,6 +19,32 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile && bun run check
+  # Reports load-immune probe counts (modules, interfaces, instructions where the VM exposes them) and never fails the run.
+  probe:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - name: Enable perf instruction counting where the runner allows it
+        run: |
+          sudo apt-get install -y --no-install-recommends "linux-tools-$(uname -r)" linux-tools-common || true
+          sudo sysctl -w kernel.perf_event_paranoid=1 || true
+      - name: Probe fresh-process scenarios and check deterministic counts against the budget
+        continue-on-error: true
+        run: node packages/jsdom/bench/lab/probe.ts --repeat 3 --out "$RUNNER_TEMP/probe.json" --budget packages/jsdom/bench/lab/probe-budget.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe
+          path: ${{ runner.temp }}/probe.json
   performance:
     if: "!contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
     runs-on: ubuntu-24.04
@@ -207,12 +233,14 @@ jobs:
             mui) cases=(--project node:@mui/material); for f in Button Checkbox Dialog Select TextField; do cases+=("packages/mui-material/src/$f/$f.test.js"); done;;
           esac
           status=0
-          for provider in candidate reference happy turbo; do
+          # The untimed warmup run fills on-disk caches (Svelte's compiled samples, the OS file cache)
+          # so the first timed provider does not pay for them alone.
+          for provider in warmup candidate reference happy turbo; do
             export QUAL_ENV=jsdom
             unset JSDOM_ENTRY
             case "$provider" in
               candidate) export JSDOM_ENTRY="$root/packages/jsdom/dist/jsdom.cjs";;
-              reference) export JSDOM_ENTRY=$(realpath "$root/packages/jsdom/node_modules/jsdom/lib/api.js");;
+              warmup|reference) export JSDOM_ENTRY=$(realpath "$root/packages/jsdom/node_modules/jsdom/lib/api.js");;
               happy) export QUAL_ENV=happy-dom;;
               turbo) export QUAL_ENV=$(realpath "$root/packages/jsdom/node_modules/@miaskiewicz/turbo-dom/src/environment/vitest.mjs");;
             esac
@@ -232,6 +260,7 @@ jobs:
             assert "process.env.QUAL_ENV" in text;path.write_text(text)
           PYENV
             NODE_OPTIONS="--import=$root/qualification/provider.mjs" /usr/bin/time -f '%e %M' -o "$RUNNER_TEMP/timing-$provider.txt" timeout 360 node node_modules/vitest/vitest.mjs run "${cases[@]}" --maxWorkers 1 --no-file-parallelism --no-cache --reporter=json "--outputFile=$RUNNER_TEMP/result-$provider.json" || status=1
+            if [[ "$provider" == warmup ]]; then rm -f "$RUNNER_TEMP/timing-warmup.txt" "$RUNNER_TEMP/result-warmup.json"; fi
           done
           exit "$status"
       - uses: actions/upload-artifact@v4

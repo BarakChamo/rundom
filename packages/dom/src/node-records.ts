@@ -14,6 +14,8 @@ class RecordTarget {
 /** Creates an independent private store; stamping adds no observable properties or strong key registry. */
 export function createNodeRecords(): {
   get: (target: object) => NodeRecord | undefined;
+  /** Same result as `get`; faster for receivers that are nearly always nodes, slower for others. */
+  read: (target: object) => NodeRecord | undefined;
   has: (target: object) => boolean;
   set: (target: object, record: NodeRecord) => void;
 } {
@@ -28,10 +30,24 @@ export function createNodeRecords(): {
       if ((typeof target !== "object" || target === null) && typeof target !== "function") return;
       return #record in target ? target.#record : undefined;
     }
+    static read(target: object): NodeRecord | undefined {
+      if ((typeof target !== "object" || target === null) && typeof target !== "function") return;
+      // One private load beats `#record in` plus a load once receivers span many wrapper classes; misses throw.
+      try {
+        return (target as Records).#record;
+      } catch {
+        return undefined;
+      }
+    }
     static set(target: object, record: NodeRecord): void {
       if (#record in target) target.#record = record;
       else new Records(target, record);
     }
   }
-  return { get: Records.get, has: (target) => Records.get(target) !== undefined, set: Records.set };
+  return {
+    get: Records.get,
+    read: Records.read,
+    has: (target) => Records.get(target) !== undefined,
+    set: Records.set,
+  };
 }

@@ -15,6 +15,7 @@ import {
   type DirectSelector,
   type DirectSimple,
 } from "./selector-parser.js";
+import { withSignatureFilter } from "./selector-signature.js";
 import { checkedness, inputType, isInput } from "./input-state.js";
 import { hasCustomState } from "./custom-state.js";
 import { elementLocalName, xmlSpecial } from "./xml.js";
@@ -758,10 +759,20 @@ function compileSimpleList(branches: readonly SimpleBranch[], isXML: boolean) {
   return (element: Raw.Element) => matchers.some((matches) => matches(element));
 }
 
-function simpleTypeMatcher(tag: string, isXML: boolean) {
+/** Matches a type selector by tag name, comparing local names only for prefixed tags. */
+export function simpleTypeMatcher(tag: string, isXML: boolean) {
   const lower = tag.toLowerCase();
-  return (element: Raw.Element) =>
-    elementLocalName(element) === (!isXML && element.namespaceURI === html.NS.HTML ? lower : tag);
+  return (element: Raw.Element) => {
+    const expected = !isXML && element.namespaceURI === html.NS.HTML ? lower : tag;
+    const name = element.tagName;
+    // Type selectors never contain ":", so only an exact or "prefix:"-qualified tag name can match.
+    if (name.length === expected.length) return name === expected;
+    return (
+      name.length > expected.length &&
+      name.charCodeAt(name.length - expected.length - 1) === 58 &&
+      elementLocalName(element) === expected
+    );
+  };
 }
 
 // HTML's legacy attribute-value folding applies only to HTML elements in HTML documents.
@@ -773,7 +784,12 @@ const htmlInsensitiveValues = new Set(
   ).split(" "),
 );
 function asciiFold(value: string): string {
-  return value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+  // Most attribute values are already lowercase; scanning avoids a replace per comparison.
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code >= 65 && code <= 90) return value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+  }
+  return value;
 }
 function attributeValueTest(
   operator: string,
@@ -1197,16 +1213,14 @@ export function compileSelector(input: {
   // A default namespace still constrains these selectors in author stylesheets.
   if (!input.namespaces?.size) {
     const list = simpleSelectorList(input.selector);
-    if (list) return compileSimpleList(list, input.isXML);
-    const literal = compileAttributeLiteral(input.selector, input.isXML);
-    if (literal) return literal;
-    const compound = compileSimpleCompound(input.selector, input.isXML);
-    if (compound) return compound;
-    const simple = compileSimpleSubject(input.selector);
-    if (simple) return simple;
+    const fast =
+      (list && compileSimpleList(list, input.isXML)) ||
+      compileAttributeLiteral(input.selector, input.isXML) ||
+      compileSimpleCompound(input.selector, input.isXML) ||
+      compileSimpleSubject(input.selector);
     const direct = parseDirectSelector(input.selector);
-    const compiled = direct && compileDirect(direct, input.isXML, input.statePseudos);
-    if (compiled) return compiled;
+    const compiled = fast || (direct && compileDirect(direct, input.isXML, input.statePseudos));
+    if (compiled) return withSignatureFilter(direct, compiled);
   }
   const { _compileUnsafe: compile }: typeof import("css-select") =
     require("./css-runtime.cjs").cssSelect;

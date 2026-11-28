@@ -63,7 +63,13 @@ import {
 } from "./xhr.js";
 import { validPseudoSelectorList } from "./css-reference.js";
 import { parseDirectSelector } from "./selector-parser.js";
-import { compileSelector, hasClass, simpleSubjectAttribute } from "./selectors.js";
+import {
+  compileSelector,
+  hasClass,
+  simpleSubjectAttribute,
+  simpleTypeMatcher,
+} from "./selectors.js";
+import { forgetSelectorSignature } from "./selector-signature.js";
 import { parseNativeInactiveHTML } from "./native-parser.js";
 import { parseLiteralDocument } from "./inactive-parser.js";
 import { firstStrongDirection } from "./text-direction.js";
@@ -145,6 +151,15 @@ import {
   serializeXMLNode,
   xmlSpecial,
 } from "./xml.js";
+import {
+  SubtreeKind,
+  createSubtreeScanner,
+  elementKinds,
+  invalidateSubtreeSummaries,
+  recordSubtreeSummary,
+  scannedSubtreeSummary,
+  subtreeSummary,
+} from "./subtree-summary.js";
 
 const construct = Reflect.construct;
 const streamingRequests = new WeakSet<Request>();
@@ -1129,17 +1144,19 @@ const inertTemplateDocuments = new WeakSet<Raw.Document>();
 let exposedTemplateHosts: WeakMap<Raw.Node, Raw.Element> | undefined;
 const creationRealms = new WeakMap<Raw.Node, symbol>();
 
-type DocumentFactory =
-  | "createElement"
-  | "createElementNS"
-  | "createAttribute"
-  | "createAttributeNS"
-  | "createTextNode"
-  | "createComment"
-  | "createCDATASection"
-  | "createProcessingInstruction"
-  | "createDocumentFragment"
-  | "createRange";
+const documentFactoryNames = [
+  "createElement",
+  "createElementNS",
+  "createAttribute",
+  "createAttributeNS",
+  "createTextNode",
+  "createComment",
+  "createCDATASection",
+  "createProcessingInstruction",
+  "createDocumentFragment",
+  "createRange",
+] as const;
+type DocumentFactory = (typeof documentFactoryNames)[number];
 type ImplementationFactory = "createDocumentType" | "createDocument" | "createHTMLDocument";
 const implementationOwners = new WeakMap<object, { owner: Raw.Document; realm: symbol }>();
 const windowControls = new WeakMap<
@@ -1192,6 +1209,16 @@ const realmTreeOperations = new WeakMap<
     frameWindow: (frame: Raw.Element) => ChildRealm["window"] | null;
     frameSVGDocument: (frame: Raw.Element) => object | null;
     focusViewport: () => void;
+    prepareDispatch: (node: object, event: object) => void;
+    /** The node's own live member objects, which every Window's getter must return. */
+    identity: {
+      childNodes: (node: object) => object;
+      children: (node: object, owner: Raw.ParentNode) => object;
+      classList: (node: object) => object;
+      attributes: (node: object) => object;
+      style: (node: object) => object;
+      dataset: (node: object) => object;
+    };
     insert: (
       target: Raw.ParentNode | null,
       node: Raw.Node,
@@ -1247,6 +1274,121 @@ function rememberCreationRealm({
 
 const realmWrappers = new WeakMap<symbol, (node: Raw.Node) => { nodeType: number }>();
 const records = createNodeRecords();
+// Tree-walk bodies shared by every Window, so one feedback vector and optimized version serve them
+// all. Each Window passes its own `raw`/`element` (brand errors, foreign-node bookkeeping) and
+// `wrap`, used only for receivers from another realm or targets without a handle yet.
+function localNode<N extends object>(self: N, token: symbol, raw: (node: N) => Raw.Node): Raw.Node {
+  const record = records.read(self);
+  return record !== undefined && record.realm === token ? record.node : raw(self);
+}
+function localElement<N extends object>(
+  self: N,
+  token: symbol,
+  element: (node: N) => Raw.Element,
+): Raw.Element {
+  const record = records.read(self);
+  return record !== undefined && record.realm === token && record.kind === "element"
+    ? record.node
+    : element(self);
+}
+function handleOf<R extends Raw.Node, H>(
+  node: R | null | undefined,
+  wrap: (node: R) => H,
+): H | null {
+  return node ? ((wrappers.get(node) as H | undefined) ?? wrap(node)) : null;
+}
+function walkParentNode<N extends object, H>(
+  self: N,
+  token: symbol,
+  raw: (node: N) => Raw.Node,
+  wrap: (node: Raw.Node) => H,
+): H | null {
+  const record = localNode(self, token, raw);
+  return handleOf("parentNode" in record ? record.parentNode : null, wrap);
+}
+function walkParentElement<N extends object, H>(
+  self: N,
+  token: symbol,
+  raw: (node: N) => Raw.Node,
+  wrapElement: (node: Raw.Element) => H,
+): H | null {
+  const record = localNode(self, token, raw);
+  const owner = "parentNode" in record ? record.parentNode : null;
+  return owner && tree.isElementNode(owner) ? handleOf(owner, wrapElement) : null;
+}
+function walkChild<N extends object, H>(
+  self: N,
+  token: symbol,
+  raw: (node: N) => Raw.Node,
+  wrap: (node: Raw.Node) => H,
+  last: boolean,
+): H | null {
+  const record = localNode(self, token, raw);
+  if (!("childNodes" in record)) return null;
+  return handleOf(last ? record.childNodes.at(-1) : record.childNodes[0], wrap);
+}
+function walkSibling<N extends object, H>(
+  self: N,
+  token: symbol,
+  raw: (node: N) => Raw.Node,
+  wrap: (node: Raw.Node) => H,
+  direction: 1 | -1,
+): H | null {
+  const record = localNode(self, token, raw);
+  if (!("parentNode" in record) || !record.parentNode) return null;
+  const siblings = record.parentNode.childNodes;
+  return handleOf(siblings[siblings.indexOf(record) + direction], wrap);
+}
+function walkElementChild<N extends object, H>(
+  self: N,
+  token: symbol,
+  element: (node: N) => Raw.Element,
+  wrapElement: (node: Raw.Element) => H,
+  last: boolean,
+): H | null {
+  const { childNodes } = localElement(self, token, element);
+  const match = last
+    ? childNodes.findLast(tree.isElementNode)
+    : childNodes.find(tree.isElementNode);
+  return match ? handleOf(match, wrapElement) : null;
+}
+function walkElementSibling<N extends object, H>(
+  self: N,
+  token: symbol,
+  element: (node: N) => Raw.Element,
+  wrapElement: (node: Raw.Element) => H,
+  direction: 1 | -1,
+): H | null {
+  const node = localElement(self, token, element);
+  const siblings = node.parentNode?.childNodes;
+  if (!siblings) return null;
+  for (
+    let index = siblings.indexOf(node) + direction;
+    index >= 0 && index < siblings.length;
+    index += direction
+  ) {
+    const sibling = siblings[index];
+    if (sibling && tree.isElementNode(sibling)) return handleOf(sibling, wrapElement);
+  }
+  return null;
+}
+function attributeByKey(record: Raw.Element, key: string): AttributeRecord | undefined {
+  for (const attr of record.attrs)
+    if ((attr.prefix ? qualifiedAttributeName(attr) : attr.name) === key) return attr;
+  return undefined;
+}
+/** Shared attribute lookup; `keyOf` is the Window's case folding, consulted only for uppercase names. */
+function findLocalAttribute<N extends object>(
+  self: N,
+  token: symbol,
+  element: (node: N) => Raw.Element,
+  name: unknown,
+  keyOf: (record: Raw.Element, name: string) => string,
+): AttributeRecord | undefined {
+  const record = localElement(self, token, element);
+  const text = String(name);
+  return attributeByKey(record, asciiUppercase.test(text) ? keyOf(record, text) : text);
+}
 const asciiUppercase = /[A-Z]/;
 const htmlNodeNames = new Map<string, string>(
   Object.values(html.TAG_NAMES).map((name) => [name, name.toUpperCase()]),
@@ -1406,6 +1548,33 @@ function treeRoot(node: Raw.Node, composed = false): Raw.Node {
     root = owner;
   }
   return root;
+}
+
+function composedParent(node: Raw.Node): Raw.ParentNode | null {
+  return treeParent(node, true);
+}
+
+// False only when root's ordinary inclusive subtree certainly has no element of the given kinds:
+// root and each element child are recorded or leaves. Anything else answers true, so the caller's
+// exact walk decides without paying for a second unrecorded traversal here.
+function subtreeMayContain(root: Raw.Node, kinds: number): boolean {
+  if (!tree.isElementNode(root)) return true;
+  const summary = subtreeSummary(root);
+  if (summary !== undefined) return (summary & kinds) !== 0;
+  if (elementKinds(root) & kinds) return true;
+  if (packedLeafText(root) !== undefined) return false;
+  const children = root.childNodes;
+  for (let index = 0; index < children.length; index++) {
+    const child = children[index];
+    if (!child || !tree.isElementNode(child)) continue;
+    const childSummary =
+      subtreeSummary(child) ??
+      (packedLeafText(child) !== undefined || !child.childNodes.some(tree.isElementNode)
+        ? elementKinds(child)
+        : undefined);
+    if (childSummary === undefined || childSummary & kinds) return true;
+  }
+  return false;
 }
 
 const manualShadowRoots = new WeakSet<Raw.Node>();
@@ -2403,7 +2572,7 @@ function buildWindow(
   let stopActiveParser: (() => void) | undefined;
   let focusFixupPending = false;
   class DOMException extends HostDOMException {}
-  Object.defineProperties(DOMException, exceptionConstants);
+  installInterfaceTable(DOMException, exceptionConstants);
   for (const name of ["name", "message", "code"]) {
     const getter = Object.getOwnPropertyDescriptor(HostDOMException.prototype, name)!.get!;
     Object.defineProperty(DOMException.prototype, name, {
@@ -2423,7 +2592,7 @@ function buildWindow(
     value: "DOMException",
     configurable: true,
   });
-  Object.defineProperties(DOMException.prototype, exceptionConstants);
+  installInterfaceTable(DOMException.prototype, exceptionConstants);
 
   class QuotaExceededError extends DOMException {
     readonly #quota: number | null;
@@ -3094,8 +3263,26 @@ function buildWindow(
       else setAttributeValue(handle, existing, { name, value });
     },
     replaceData,
+    prepareDispatch: (node, event) =>
+      prepareNodeDispatch(node as Node, event as InstanceType<typeof Event>),
+    identity: {
+      childNodes: (node) => childLists.get(node as Node) ?? createChildList(node as Node),
+      children: (node, owner) => childElements(node as Node, owner),
+      classList: (node) => classLists.get(node as Element) ?? createClassList(node as Element),
+      attributes: (node) =>
+        attributeMaps?.get(node as Element) ?? createAttributeMap(node as Element),
+      style: (node) => styles().inlineStyle(element(node as Node)),
+      dataset: (node) => datasetFor(node as Element),
+    },
   });
   if (options.frameElement) nodeRecord(options.frameElement);
+  /** Members of another Window's node, which jsdom reaches through one shared wrapper. */
+  function foreignIdentity(node: object) {
+    const realm = records.read(node)?.realm;
+    return realm === undefined || realm === token
+      ? undefined
+      : realmTreeOperations.get(realm)?.identity;
+  }
   let revision = 0;
   // The source document already owns these members; invalidation must release affected entries immediately.
   let documentIdLookups = 0;
@@ -3234,6 +3421,7 @@ function buildWindow(
   function containsDocumentNames(root: Raw.Node): boolean {
     if (contributesDocumentName(root)) return true;
     if (!("childNodes" in root) || !root.childNodes.length) return false;
+    if (!subtreeMayContain(root, SubtreeKind.documentNamed)) return false;
     // Only the finite inserted/removed subtree is visited, never the destination document.
     return (
       firstQueryDescendant({ root, matches: contributesDocumentName, skipPackedText: true }) !==
@@ -3273,8 +3461,9 @@ function buildWindow(
       realmTreeOperations.get(realm)?.enableForeignCapabilities();
   }
 
-  function nodeRecord(node: object) {
-    const record = records.get(node);
+  /** `mayBeOther` uses the brand check: a failed private read on a non-node costs a thrown TypeError. */
+  function nodeRecord(node: object, mayBeOther = false) {
+    const record = mayBeOther ? records.get(node) : records.read(node);
     if (record && record.realm !== token) enableForeignCapabilities(record.realm);
     return record;
   }
@@ -3470,11 +3659,8 @@ function buildWindow(
         kind === "class"
           ? (node) => hasClass(node, name)
           : (node) => attribute(node, "id") === name;
-    } else if (/^[a-zA-Z][\w-]*$/.test(query)) {
-      const lower = query.toLowerCase();
-      compiled = (node) =>
-        elementLocalName(node) === (!isXML && node.namespaceURI === html.NS.HTML ? lower : query);
-    } else
+    } else if (/^[a-zA-Z][\w-]*$/.test(query)) compiled = simpleTypeMatcher(query, isXML);
+    else
       compiled = compileSelector({
         selector,
         isXML,
@@ -3969,19 +4155,32 @@ function buildWindow(
 
   function eventAssignedSlot(target: object): Node | undefined {
     if (!hasShadowRoots) return undefined;
-    const node = nodeRecord(target)?.node;
+    // Every path entry and non-node target (Window, AbortSignal, ...) arrives here.
+    const node = nodeRecord(target, true)?.node;
     const slot = node && assignedSlot(node);
     if (!slot) return undefined;
-    for (let current: Raw.Node | null = slot; current; current = treeParent(current, true))
-      bindPath(current);
+    bindPath(slot, true);
     return wrap(slot);
   }
 
-  function bindPath(node: Raw.Node): void {
-    const child = wrap(node);
-    const rawParent = "parentNode" in node ? node.parentNode : null;
-    if (rawParent) parent.set(child, wrap(rawParent));
-    else if (!isDocumentRecord(node)) parent.delete(child);
+  /** Records the current event parent of `start` and each of its ancestors for dispatch. */
+  function bindPath(start: Raw.Node, composed: boolean): void {
+    // Each wrapper is looked up once, and a link that is already current is not rewritten.
+    let current: Raw.Node | null = start;
+    let child = wrap(start);
+    while (current) {
+      const rawParent: Raw.ParentNode | null = "parentNode" in current ? current.parentNode : null;
+      if (rawParent) {
+        const next = wrap(rawParent);
+        if (parent.get(child) !== next) parent.set(child, next);
+        child = next;
+        current = rawParent;
+        continue;
+      }
+      if (!isDocumentRecord(current)) parent.delete(child);
+      current = composed ? (shadowHosts.get(current) ?? null) : null;
+      if (current) child = wrap(current);
+    }
   }
 
   let traversalBinding: ReturnType<typeof createTraversal<Node>> | undefined;
@@ -4123,6 +4322,7 @@ function buildWindow(
     if (!tree.isElementNode(root)) return false;
     if (isSheetOwner(root)) return true;
     if (packedLeafText(root) !== undefined || !root.childNodes.length) return false;
+    if (!subtreeMayContain(root, SubtreeKind.sheetOwner)) return false;
     return (
       firstQueryDescendant({
         root,
@@ -4158,6 +4358,9 @@ function buildWindow(
       rangeIndex()?.removed(target, child, 0);
       disconnect(child);
     }
+    invalidateSubtreeSummaries(target, composedParent);
+    removed.forEach(invalidateDocumentBaseIn);
+    children.forEach(invalidateDocumentBaseIn);
     target.childNodes = children;
     const sourceChanged = invalidateStyleSource(target);
     rangeIndex()?.inserted(target, 0, children.length);
@@ -4317,6 +4520,7 @@ function buildWindow(
   function detachWithRecord(node: Raw.ChildNode, notify = true): void {
     const target = node.parentNode;
     if (!target) return;
+    invalidateDocumentBaseIn(node);
     if (invalidateStyleSource(target)) {
       stylesheetDiscoveryRevision++;
       styleBinding?.invalidateSheetMembership();
@@ -4356,6 +4560,15 @@ function buildWindow(
   }
 
   function wouldCreateCycle(target: Raw.ParentNode, moving: Raw.Node): boolean {
+    // A node without children, shadow root or template content is no other node's ancestor.
+    if (
+      moving !== target &&
+      (!("childNodes" in moving) ||
+        (!moving.childNodes.length &&
+          !(tree.isElementNode(moving) && shadowRoots.has(moving)) &&
+          !templateContent(moving)))
+    )
+      return false;
     // Parent and host links form a finite acyclic chain before each insertion.
     for (
       let ancestor: Raw.Node | null = target;
@@ -4663,6 +4876,8 @@ function buildWindow(
         ? target.childNodes.indexOf(before)
         : target.childNodes.length;
     const previous = target.childNodes[index - 1];
+    invalidateSubtreeSummaries(target, composedParent);
+    added.forEach(invalidateDocumentBaseIn);
     rangeIndex()?.inserted(target, index, added.length);
     if (before && "parentNode" in before) {
       for (const member of added) tree.insertBefore(target, member, before);
@@ -4670,7 +4885,15 @@ function buildWindow(
       for (const member of added) tree.appendChild(target, member);
     }
     const sourceChanged = invalidateStyleSource(target);
-    for (const child of added) invalidateDocumentIdsIn(child);
+    // Only the source document's ordinary tree is indexed. A subtree entering another tree has its
+    // IDs invalidated once it reaches the source document; the root walk is paid only for subtrees.
+    if (
+      documentIdIndex &&
+      added.some((child) => "childNodes" in child && child.childNodes.length) &&
+      treeRoot(target) !== source
+    )
+      earlyDocumentId = undefined;
+    else for (const child of added) invalidateDocumentIdsIn(child);
     // The old first member and its replacement occupied the same slot. A reentrant
     // edit or an index eviction invalidates that proof before it can be published.
     if (
@@ -4723,6 +4946,35 @@ function buildWindow(
     });
     reactions?.forEach((react) => react());
     if (formerParent) refreshCustomFormLifecycle([formerParent, node]);
+  }
+
+  function createChildList(node: Node): NodeList<Node> {
+    const foreign = foreignIdentity(node);
+    if (foreign) return foreign.childNodes(node) as NodeList<Node>;
+    const owner = container(node);
+    const list = new NodeList(token, {
+      length: () => owner?.childNodes.length ?? 0,
+      at(index) {
+        const child = owner?.childNodes[index];
+        return child ? wrap(child) : undefined;
+      },
+    });
+    childLists.set(node, list);
+    return list;
+  }
+  function createClassList(node: Element): DOMTokenList {
+    const foreign = foreignIdentity(node);
+    if (foreign) return foreign.classList(node) as DOMTokenList;
+    const list = new DOMTokenList(token, node);
+    classLists.set(node, list);
+    return list;
+  }
+  function createAttributeMap(node: Element): NamedNodeMap {
+    const foreign = foreignIdentity(node);
+    if (foreign) return foreign.attributes(node) as NamedNodeMap;
+    const map = new NamedNodeMap(token, node);
+    (attributeMaps ??= new WeakMap()).set(node, map);
+    return map;
   }
 
   class Node extends EventTarget {
@@ -4873,8 +5125,7 @@ function buildWindow(
       return (container(this)?.childNodes.length ?? 0) > 0;
     }
     get parentElement(): Element | null {
-      const owner = treeParent(raw(this), false);
-      return owner && tree.isElementNode(owner) ? wrapElement(owner) : null;
+      return walkParentElement(this, token, raw, wrapElement);
     }
 
     get nodeName(): string {
@@ -4917,23 +5168,10 @@ function buildWindow(
       return owner === source ? document : (wrap(owner) as Document);
     }
     get parentNode(): Node | null {
-      const record = raw(this);
-      return "parentNode" in record && record.parentNode ? wrap(record.parentNode) : null;
+      return walkParentNode(this, token, raw, wrap);
     }
     get childNodes(): NodeList<Node> {
-      let list = childLists.get(this);
-      if (!list) {
-        const owner = container(this);
-        list = new NodeList(token, {
-          length: () => owner?.childNodes.length ?? 0,
-          at(index) {
-            const child = owner?.childNodes[index];
-            return child ? wrap(child) : undefined;
-          },
-        });
-        childLists.set(this, list);
-      }
-      return list;
+      return childLists.get(this) ?? createChildList(this);
     }
     get isConnected(): boolean {
       return isDocumentRecord(treeRoot(raw(this), true));
@@ -4942,27 +5180,16 @@ function buildWindow(
       return wrap(treeRoot(raw(this), options?.composed));
     }
     get lastChild(): Node | null {
-      const child = container(this)?.childNodes.at(-1);
-      return child ? wrap(child) : null;
+      return walkChild(this, token, raw, wrap, true);
     }
     get nextSibling(): Node | null {
-      const record = raw(this);
-      if (!("parentNode" in record) || !record.parentNode) return null;
-      const siblings = record.parentNode.childNodes;
-      const index = siblings.indexOf(record);
-      const sibling = siblings[index + 1];
-      return sibling ? wrap(sibling) : null;
+      return walkSibling(this, token, raw, wrap, 1);
     }
     get previousSibling(): Node | null {
-      const record = raw(this);
-      if (!("parentNode" in record) || !record.parentNode) return null;
-      const siblings = record.parentNode.childNodes;
-      const sibling = siblings[siblings.indexOf(record) - 1];
-      return sibling ? wrap(sibling) : null;
+      return walkSibling(this, token, raw, wrap, -1);
     }
     get firstChild(): Node | null {
-      const first = container(this)?.childNodes[0];
-      return first ? wrap(first) : null;
+      return walkChild(this, token, raw, wrap, false);
     }
 
     get nodeValue(): string | null {
@@ -5088,32 +5315,37 @@ function buildWindow(
       remove(record);
       return child;
     }
-
     override dispatchEvent(event: InstanceType<typeof Event>): boolean {
-      const type = event.type;
-      if (type === "click" || type === "mousedown" || type === "pointerdown" || type === "keydown")
-        noteFocusInput(raw(this), event);
-      // Only dispatch needs wrappers for ancestors; parsing never allocates them.
-      const related = events.relatedTargetOf(event);
-      const relatedRecord = related && nodeRecord(related);
-      if (relatedRecord) {
-        for (
-          let current: Raw.Node | null = relatedRecord.node;
-          current;
-          current = treeParent(current, true)
-        )
-          bindPath(current);
-      }
-      for (
-        let current: Raw.Node | null = raw(this);
-        current;
-        current = treeParent(current, event.composed || Boolean(relatedRecord))
-      ) {
-        bindPath(current);
-      }
-      return super.dispatchEvent(event);
+      prepareNodeDispatch(this, event);
+      return eventTargetDispatch.call(this, event);
     }
   }
+  function prepareNodeDispatch(node: Node, event: InstanceType<typeof Event>): void {
+    const type = event.type;
+    if (type === "click" || type === "mousedown" || type === "pointerdown" || type === "keydown")
+      noteFocusInput(raw(node), event);
+    // Only dispatch needs wrappers for ancestors; parsing never allocates them.
+    const related = events.relatedTargetOf(event);
+    const relatedRecord = related && nodeRecord(related);
+    if (relatedRecord) bindPath(relatedRecord.node, true);
+    bindPath(raw(node), event.composed || Boolean(relatedRecord));
+  }
+  // EventTarget.prototype.dispatchEvent called directly on a node, from any Window, builds the
+  // same event path as Node dispatch; the node's own Window prepares it.
+  const eventTargetDispatch = EventTarget.prototype.dispatchEvent;
+  Object.defineProperty(EventTarget.prototype, "dispatchEvent", {
+    value: {
+      dispatchEvent(this: unknown, event: InstanceType<typeof Event>): boolean {
+        if (arguments.length === 0) return Reflect.apply(eventTargetDispatch, this, []);
+        // Brand check: non-node targets (Window, AbortSignal, ...) would make a private read throw.
+        const realm = records.get(this as object)?.realm;
+        if (realm === token) prepareNodeDispatch(this as Node, event);
+        else if (realm !== undefined)
+          realmTreeOperations.get(realm)?.prepareDispatch(this as object, event);
+        return eventTargetDispatch.call(this, event);
+      },
+    }.dispatchEvent,
+  });
 
   type Members<T> = CollectionMembers<T>;
   const childLists = new WeakMap<Node, NodeList<Node>>();
@@ -5777,6 +6009,7 @@ function buildWindow(
     scheduleReaction?: typeof queueMicrotask,
   ): void {
     const record = element(owner);
+    forgetSelectorSignature(record);
     const { name, namespace } = attr;
     if (!namespace && (name === "width" || name === "height")) {
       const realm = frameStates.get(record)?.realm;
@@ -6111,6 +6344,8 @@ function buildWindow(
   function childElements(node: Node, owner: Raw.ParentNode): HTMLCollection {
     let list = elementLists.get(node);
     if (!list) {
+      const foreign = foreignIdentity(node);
+      if (foreign) return foreign.children(node, owner) as HTMLCollection;
       list = new HTMLCollection(token, {
         length() {
           let size = 0;
@@ -6381,7 +6616,7 @@ function buildWindow(
       const value = domString(token);
       const { attributeName, supportedTokens } = tokenList(this);
       if (!supportedTokens)
-        throw new TypeError(`The ${attributeName} attribute has no supported tokens`);
+        throw new TypeError(`${attributeName} attribute has no supported tokens`);
       return supportedTokens.has(asciiLower(value));
     }
     declare entries: () => IterableIterator<[number, string]>;
@@ -6576,12 +6811,7 @@ function buildWindow(
       this.part.value = value;
     }
     get classList(): DOMTokenList {
-      let list = classLists.get(this);
-      if (!list) {
-        list = new DOMTokenList(token, this);
-        classLists.set(this, list);
-      }
-      return list;
+      return classLists.get(this) ?? createClassList(this);
     }
     set classList(value: string) {
       this.classList.value = value;
@@ -6593,13 +6823,7 @@ function buildWindow(
       this.setAttribute("id", value);
     }
     get attributes(): NamedNodeMap {
-      const maps = (attributeMaps ??= new WeakMap());
-      let map = maps.get(this);
-      if (!map) {
-        map = new NamedNodeMap(token, this);
-        maps.set(this, map);
-      }
-      return map;
+      return attributeMaps?.get(this) ?? createAttributeMap(this);
     }
     getAttributeNode(name: string): Attr | null {
       const attr = findAttribute(element(this), String(name));
@@ -6620,7 +6844,7 @@ function buildWindow(
     }
     getAttribute(name: string): string | null {
       if (arguments.length < 1) throw new TypeError("Missing attribute argument");
-      return findAttribute(element(this), String(name))?.value ?? null;
+      return findLocalAttribute(this, token, element, name, attributeName)?.value ?? null;
     }
     getAttributeNS(namespace: string | null, localName: string): string | null {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
@@ -6637,7 +6861,7 @@ function buildWindow(
     }
     hasAttribute(name: string): boolean {
       if (arguments.length < 1) throw new TypeError("Missing attribute argument");
-      return findAttribute(element(this), String(name)) !== undefined;
+      return findLocalAttribute(this, token, element, name, attributeName) !== undefined;
     }
     hasAttributeNS(namespace: string | null, localName: string): boolean {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
@@ -6648,11 +6872,11 @@ function buildWindow(
     }
     setAttribute(name: string, value: string): void {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
-      const record = element(this);
+      const record = localElement(this, token, element);
       const key = attributeName(record, String(name));
       if (!validAttributeName(key))
         throw new DOMException("Invalid attribute name", "InvalidCharacterError");
-      setAttributeValue(this, findAttribute(record, key), { name: key, value });
+      setAttributeValue(this, attributeByKey(record, key), { name: key, value });
     }
     setAttributeNS(namespace: string | null, qualifiedName: string, value: string): void {
       if (arguments.length < 3) throw new TypeError("Missing attribute argument");
@@ -6667,7 +6891,7 @@ function buildWindow(
     }
     removeAttribute(name: string): void {
       if (arguments.length < 1) throw new TypeError("Missing attribute argument");
-      removeAttributeRecord(this, findAttribute(element(this), String(name)));
+      removeAttributeRecord(this, findLocalAttribute(this, token, element, name, attributeName));
     }
     removeAttributeNS(namespace: string | null, localName: string): void {
       if (arguments.length < 2) throw new TypeError("Missing attribute argument");
@@ -6694,7 +6918,13 @@ function buildWindow(
       return existing !== undefined;
     }
     get style(): ReturnType<ReturnType<typeof styles>["inlineStyle"]> {
-      return styles().inlineStyle(element(this));
+      const record = records.read(this);
+      if (record?.realm === token && record.kind === "element")
+        return styles().inlineStyle(record.node);
+      const foreign = foreignIdentity(this);
+      return foreign
+        ? (foreign.style(this) as ReturnType<ReturnType<typeof styles>["inlineStyle"]>)
+        : styles().inlineStyle(element(this));
     }
     set style(value: string) {
       styles().inlineStyle(element(this)).cssText = `${value}`;
@@ -6729,7 +6959,7 @@ function buildWindow(
       return this.children.length;
     }
     get lastElementChild(): Element | null {
-      return edgeElement(element(this), true);
+      return walkElementChild(this, token, element, wrapElement, true);
     }
     get innerHTML(): string {
       const record = element(this);
@@ -6822,13 +7052,13 @@ function buildWindow(
       replaceMarkup(element(this), value === null ? "" : domString(value));
     }
     get firstElementChild(): Element | null {
-      return edgeElement(element(this), false);
+      return walkElementChild(this, token, element, wrapElement, false);
     }
     get nextElementSibling(): Element | null {
-      return adjacentElement(element(this), 1);
+      return walkElementSibling(this, token, element, wrapElement, 1);
     }
     get previousElementSibling(): Element | null {
-      return adjacentElement(element(this), -1);
+      return walkElementSibling(this, token, element, wrapElement, -1);
     }
     getElementsByTagName(name: string): HTMLCollection {
       if (arguments.length < 1) throw new TypeError("A tag name is required");
@@ -7071,7 +7301,7 @@ function buildWindow(
           return;
         }
       }
-    } else if (!node || previous !== node || !focusable(node, view)) return;
+    } else if (!node || previous !== node) return;
 
     const request = Symbol();
     focusRequests.set(owner, request);
@@ -7108,12 +7338,15 @@ function buildWindow(
   }
 
   function noteFocusInput(node: Raw.Node, event: InstanceType<typeof Event>): void {
+    // The connection walk runs only when the input would change the document's pointer state.
     const owner = ownerRecord(node);
-    if (treeRoot(node, true) !== owner) return;
     if (event.type === "keydown") {
-      if (event instanceof KeyboardEvent && !event.altKey && !event.ctrlKey && !event.metaKey)
-        pointerFocusDocuments?.delete(owner);
+      if (!(event instanceof KeyboardEvent) || event.altKey || event.ctrlKey || event.metaKey)
+        return;
+      if (pointerFocusDocuments?.has(owner) && treeRoot(node, true) === owner)
+        pointerFocusDocuments.delete(owner);
     } else if (event instanceof MouseEvent) {
+      if (pointerFocusDocuments?.has(owner) || treeRoot(node, true) !== owner) return;
       (pointerFocusDocuments ??= new WeakSet()).add(owner);
     }
   }
@@ -7658,7 +7891,7 @@ function buildWindow(
         /-[a-z]/.test(name) ? null : attribute(record, toAttribute(name));
       const write = (name: string, value: unknown) => {
         if (/-[a-z]/.test(name))
-          throw new DOMException("Invalid dataset property name", "SyntaxError");
+          throw new DOMException(`'${name}' is not a valid property name`, "SyntaxError");
         Element.prototype.setAttribute.call(owner, toAttribute(name), String(value));
         return true;
       };
@@ -7716,6 +7949,8 @@ function buildWindow(
     const map = (datasets ??= new WeakMap());
     let dataset = map.get(owner);
     if (!dataset) {
+      const foreign = foreignIdentity(owner);
+      if (foreign) return foreign.dataset(owner) as DOMStringMap;
       dataset = new DOMStringMap(token, owner);
       map.set(owner, dataset);
     }
@@ -8117,8 +8352,8 @@ function buildWindow(
     declare readonly SVG_MEETORSLICE_SLICE: 2;
 
     static {
-      Object.defineProperties(this, aspectRatioDescriptors);
-      Object.defineProperties(this.prototype, aspectRatioDescriptors);
+      installInterfaceTable(this, aspectRatioDescriptors);
+      installInterfaceTable(this.prototype, aspectRatioDescriptors);
     }
 
     readonly #owner: Element;
@@ -9081,7 +9316,8 @@ function buildWindow(
     const limit = event.bubbles ? path.length : 1;
     for (let index = 0; index < limit; index++) {
       const target = path[index];
-      const node = target && nodeRecord(target)?.node;
+      // Only the last entry can be a non-node (the Window).
+      const node = target && nodeRecord(target, index === path.length - 1)?.node;
       if (!node || !tree.isElementNode(node) || node.namespaceURI !== html.NS.HTML) continue;
       const type = isInput(node) ? inputType(node) : null;
       if (type === "checkbox" || type === "radio") return checkableActivation(node, type);
@@ -9092,13 +9328,13 @@ function buildWindow(
       }
       if (node.tagName === "button" || (type !== null && type !== "hidden")) {
         return (canceled) => {
-          if (canceled || isDisabledControl(node) || !isDocumentRecord(treeRoot(node, true)))
-            return;
+          if (canceled) return;
+          // Cheapest conjuncts first: most clicked buttons have no form owner.
           const currentType = node.tagName === "button" ? buttonType(node) : inputType(node);
           const reset = currentType === "reset";
           if (!reset && !isSubmitButton(node)) return;
           const owner = formOwner(node);
-          if (!owner) return;
+          if (!owner || isDisabledControl(node) || !isDocumentRecord(treeRoot(node, true))) return;
           const form = wrapElement(owner) as HTMLFormElement;
           if (reset) {
             resetForm(form, "activation");
@@ -11656,6 +11892,7 @@ function buildWindow(
     for (const child of added) {
       if (!tree.isElementNode(child) || (!child.childNodes.length && child.tagName !== "details"))
         continue;
+      if (!subtreeMayContain(child, SubtreeKind.details)) continue;
       const rootName = openDetailsName(child);
       if (rootName) (incoming ??= new Map()).set(child, rootName);
       if (!child.childNodes.length) continue;
@@ -14090,8 +14327,8 @@ function buildWindow(
     declare readonly HAVE_ENOUGH_DATA: 4;
 
     static {
-      Object.defineProperties(this, mediaStateDescriptors);
-      Object.defineProperties(this.prototype, mediaStateDescriptors);
+      installInterfaceTable(this, mediaStateDescriptors);
+      installInterfaceTable(this.prototype, mediaStateDescriptors);
     }
 
     #currentTime = 0;
@@ -14382,8 +14619,8 @@ function buildWindow(
     declare readonly ERROR: 3;
 
     static {
-      Object.defineProperties(this, trackStateDescriptors);
-      Object.defineProperties(this.prototype, trackStateDescriptors);
+      installInterfaceTable(this, trackStateDescriptors);
+      installInterfaceTable(this.prototype, trackStateDescriptors);
     }
 
     get [Symbol.toStringTag](): string {
@@ -15396,8 +15633,8 @@ function buildWindow(
     declare readonly END_TO_START: 3;
 
     static {
-      Object.defineProperties(this, rangeConstantDescriptors);
-      Object.defineProperties(this.prototype, rangeConstantDescriptors);
+      installInterfaceTable(this, rangeConstantDescriptors);
+      installInterfaceTable(this.prototype, rangeConstantDescriptors);
     }
 
     readonly #points: RangePoints;
@@ -16506,7 +16743,25 @@ function buildWindow(
     }
   }
 
-  let cachedDocumentBase: { revision: number; fallback: string; url: string } | undefined;
+  // Valid until a base element enters or leaves a tree, a base href changes, or parsing finishes;
+  // other tree edits cannot change which base comes first. The fallback key covers URL changes.
+  let cachedDocumentBase: { fallback: string; url: string } | undefined;
+
+  function invalidateDocumentBaseIn(node: Raw.ChildNode): void {
+    if (cachedDocumentBase && containsBaseElement(node)) cachedDocumentBase = undefined;
+  }
+  function isBaseElement(node: Raw.Element): boolean {
+    return htmlChildNamed(node, "base");
+  }
+  function containsBaseElement(node: Raw.ChildNode): boolean {
+    if (!tree.isElementNode(node)) return false;
+    if (isBaseElement(node)) return true;
+    if (!node.childNodes.length || packedLeafText(node) !== undefined) return false;
+    return (
+      firstQueryDescendant({ root: node, matches: isBaseElement, skipPackedText: true }) !==
+      undefined
+    );
+  }
 
   function resolveDocumentBase(owner: Raw.Document, fallback: string): string {
     for (const candidate of descendants(owner)) {
@@ -16561,10 +16816,9 @@ function buildWindow(
       (owner === source ? options.inheritedBase : detachedSettings?.get(owner)?.url) ?? url.href;
     if (kind === "fallback") return fallback;
     if (owner !== source) return resolveDocumentBase(owner, fallback);
-    if (cachedDocumentBase?.revision === revision && cachedDocumentBase.fallback === fallback)
-      return cachedDocumentBase.url;
+    if (cachedDocumentBase?.fallback === fallback) return cachedDocumentBase.url;
     const base = resolveDocumentBase(owner, fallback);
-    cachedDocumentBase = { revision, fallback, url: base };
+    cachedDocumentBase = { fallback, url: base };
     return base;
   }
   function bodyRecord(owner: Raw.Document = source): Raw.Element | undefined {
@@ -16654,7 +16908,7 @@ function buildWindow(
     method: DocumentFactory,
     args: readonly unknown[],
   ): object {
-    const factory = documentFactoryDescriptors[method]?.value;
+    const factory = documentFactories.get(method);
     if (typeof factory !== "function") throw new Error("Missing intrinsic Document factory");
     return Reflect.apply(factory, receiver, args);
   }
@@ -17702,7 +17956,13 @@ function buildWindow(
     return record;
   }
 
-  const documentFactoryDescriptors = Object.getOwnPropertyDescriptors(Document.prototype);
+  // Capture only the intrinsic factories; copying every Document member is per-Window waste.
+  const documentFactories = new Map<DocumentFactory, unknown>(
+    documentFactoryNames.map((name) => [
+      name,
+      Object.getOwnPropertyDescriptor(Document.prototype, name)?.value,
+    ]),
+  );
 
   class XMLSerializer {
     constructor() {
@@ -19950,8 +20210,12 @@ function buildWindow(
     });
   }
   installWindowProperties();
-  const nativeGetComputedStyle = WindowMembers.prototype.getComputedStyle;
-  const windowMemberDescriptors = Object.getOwnPropertyDescriptors(WindowMembers.prototype);
+  const windowMembers = WindowMembers.prototype;
+  // A named load would make V8 migrate this never-inherited holder to fast mode.
+  const nativeGetComputedStyle: unknown = Object.getOwnPropertyDescriptor(
+    windowMembers,
+    "getComputedStyle",
+  )?.value;
   // Allocate with the public prototype from the outset. Switching a populated
   // member holder's prototype makes subsequent global descriptor installation costly.
   const bindings = construct(WindowMembers, [], Window) as WindowMembers;
@@ -19962,29 +20226,31 @@ function buildWindow(
     DOMException.prototype,
     (context ? Reflect.get(context, "Error") : Error).prototype,
   );
-  // The private member holder is never the public prototype. Install globals
-  // together instead of repeatedly deleting the holder's prototype properties.
-  const globals: PropertyDescriptorMap = {};
-  for (const [name, descriptor] of Object.entries(windowMemberDescriptors)) {
+  // The private member holder is never the public prototype. Copy its members
+  // one by one instead of materializing a descriptor map of the whole holder.
+  for (const name of Object.getOwnPropertyNames(windowMembers)) {
     if (name === "constructor" || Object.hasOwn(window, name)) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(windowMembers, name);
+    if (!descriptor) continue;
     descriptor.enumerable = name === "XPathException" || !/^[A-Z]/.test(name);
-    globals[name] = descriptor;
+    Object.defineProperty(window, name, descriptor);
   }
   if (options.pretendToBeVisual) {
-    globals.requestAnimationFrame = {
-      value: requestAnimationFrame,
-      writable: true,
-      enumerable: true,
-      configurable: true,
-    };
-    globals.cancelAnimationFrame = {
-      value: cancelAnimationFrame,
-      writable: true,
-      enumerable: true,
-      configurable: true,
-    };
+    Object.defineProperties(window, {
+      requestAnimationFrame: {
+        value: requestAnimationFrame,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      },
+      cancelAnimationFrame: {
+        value: cancelAnimationFrame,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      },
+    });
   }
-  Object.defineProperties(window, globals);
   if (context) {
     const realmObject: ObjectConstructor = Reflect.get(context, "Object");
     realmObjectPrototypes.set(realmObject.prototype, token);
@@ -20158,12 +20424,12 @@ function buildWindow(
   }
   defineReplaceable("screen", () => (screen ??= new Screen(screenKey)));
   for (const name of ["localStorage", "sessionStorage"]) {
-    const descriptor = windowMemberDescriptors[name];
+    const descriptor = Object.getOwnPropertyDescriptor(windowMembers, name);
     if (!descriptor) throw new Error(`Missing Window ${name} descriptor`);
     Object.defineProperty(window, name, { ...descriptor, enumerable: true });
   }
   for (const name of ["self", "frames", "parent", "length"]) {
-    const get = windowMemberDescriptors[name]?.get;
+    const get = Object.getOwnPropertyDescriptor(windowMembers, name)?.get;
     if (!get) throw new Error(`Missing Window ${name} getter`);
     defineReplaceable(name, () => Reflect.apply(get, window, []));
   }
@@ -20184,7 +20450,7 @@ function buildWindow(
     "MutationObserver",
     "FileReader",
   ]) {
-    const descriptor = windowMemberDescriptors[name];
+    const descriptor = Object.getOwnPropertyDescriptor(windowMembers, name);
     if (!descriptor?.get) throw new Error(`Missing Window ${name} getter`);
     const get = descriptor.get;
     defineReplaceable(name, () => Reflect.apply(get, window, []));
@@ -20453,14 +20719,19 @@ function buildWindow(
     return treeRoot(node, true) === source;
   }
 
-  function startStyle(node: Raw.Element): void {
+  function startStyle(node: Raw.Element, base?: string): void {
     const loader = options.loadTextResource;
     if (closed || !loader || node.namespaceURI !== html.NS.HTML || node.tagName !== "link") return;
     const href = attribute(node, "href");
     const isStylesheet = asciiLower(attribute(node, "rel") ?? "")
       .split(/[\t\n\f\r ]+/)
       .includes("stylesheet");
-    const target = href && isStylesheet ? parseElementURL(node, href) : null;
+    const target =
+      href && isStylesheet
+        ? base === undefined
+          ? parseElementURL(node, href)
+          : parseDocumentURL({ value: href, base, encoding: documentEncoding(ownerRecord(node)) })
+        : null;
     if (!target) {
       removeLinkedStylesheet(node);
       return;
@@ -20794,6 +21065,62 @@ function buildWindow(
     }
   }
 
+  // A subtree this Window's insertion scan already passed has its inline styles captured. Only
+  // radios, sheet owners, frames and scripts make it worth visiting again; the last three act only
+  // in a connected tree.
+  const insertionScanner = createSubtreeScanner();
+  const insertionKinds = SubtreeKind.input | SubtreeKind.sheetOwner | SubtreeKind.frameOrScript;
+  const detachedInsertionKinds = SubtreeKind.input;
+  const insertionVisits: Raw.Element[] = [];
+
+  function pushInsertedChildren(
+    pending: Raw.Element[],
+    children: readonly Raw.ChildNode[],
+    relevant: (summary: number) => boolean,
+  ): void {
+    for (let index = children.length - 1; index >= 0; index--) {
+      const child = children[index];
+      if (!child || !tree.isElementNode(child)) continue;
+      const summary = scannedSubtreeSummary(child, insertionScanner);
+      if (summary === undefined || relevant(summary)) pending.push(child);
+    }
+  }
+
+  // Undefined for a leaf, which carries no entry.
+  function childSummaries(children: readonly Raw.ChildNode[]): number | undefined {
+    let kinds: number | undefined;
+    for (let index = 0; index < children.length; index++) {
+      const child = children[index];
+      if (!child || !tree.isElementNode(child)) continue;
+      const summary = subtreeSummary(child) ?? leafKinds(child);
+      if (summary === undefined) throw new Error("A scanned child must have a subtree summary");
+      kinds = (kinds ?? 0) | summary;
+    }
+    return kinds;
+  }
+
+  function leafKinds(node: Raw.Element): number | undefined {
+    return shadowRoots.has(node) || node.childNodes.some(tree.isElementNode)
+      ? undefined
+      : elementKinds(node);
+  }
+
+  // Reverse preorder reaches every visited element after its descendants, whose entries exist.
+  function recordInsertedSummaries(visited: Raw.Element[]): void {
+    for (let index = visited.length - 1; index >= 0; index--) {
+      const node = visited[index] as Raw.Element;
+      const shadow = shadowRoots.get(node);
+      const children = childSummaries(node.childNodes);
+      const shadowChildren = shadow ? childSummaries(shadow.childNodes) : undefined;
+      if (children === undefined && !shadow) continue;
+      recordSubtreeSummary(
+        node,
+        elementKinds(node) | (children ?? 0) | (shadowChildren ?? 0),
+        insertionScanner,
+      );
+    }
+  }
+
   function finishInsertedContent(roots: readonly Raw.ChildNode[], parent: Raw.ParentNode): void {
     // Capture the eligible descendants before scripts can mutate or remove later entries.
     const active: Raw.Element[] = [];
@@ -20801,17 +21128,28 @@ function buildWindow(
     let hasStyles = false;
     const scriptsEnabled = options.runScripts === "dangerously";
     const pending: Raw.Element[] = [];
+    // Only recorded subtrees can be skipped, so a detached parent is resolved on first need.
+    let kinds = 0;
+    const resolveKinds = () =>
+      (kinds ||= treeRoot(parent, true) === source ? insertionKinds : detachedInsertionKinds);
+    const relevant = (summary: number) => (summary & resolveKinds()) !== 0;
+    // No author code runs between this walk and recording, so the visited tree stays fixed.
+    const visited = insertionVisits;
+    visited.length = 0;
     for (const root of roots) {
       if (!tree.isElementNode(root)) continue;
+      const summary = scannedSubtreeSummary(root, insertionScanner);
+      if (summary !== undefined && !relevant(summary)) continue;
       pending.push(root);
       // Same shadow-including preorder as shadowIncludingElements, without generator frames.
-      // Each finite inserted subtree edge is visited once.
+      // Each finite inserted subtree edge is visited once; recorded irrelevant subtrees are skipped.
       while (pending.length) {
         const node = pending.pop();
         if (!node) break;
-        pushElementChildren(pending, node.childNodes);
+        visited.push(node);
+        pushInsertedChildren(pending, node.childNodes, relevant);
         const shadow = shadowRoots.get(node);
-        if (shadow) pushElementChildren(pending, shadow.childNodes);
+        if (shadow) pushInsertedChildren(pending, shadow.childNodes, relevant);
         if (insertedElementIsCheckedRadio(node)) checked.push(node);
         const inline = node.attrs.length ? attribute(node, "style") : null;
         if (inline && /(?:url|image-set|var)\(/i.test(inline)) styles().captureInlineBase(node);
@@ -20820,6 +21158,12 @@ function buildWindow(
           active.push(node);
       }
     }
+    // Connected content is seldom inserted again, so only detached builds repay recording. Leaves
+    // carry no entry, which keeps leaf appends free of the root walk.
+    const recordable =
+      visited.length > 1 || (visited[0] !== undefined && leafKinds(visited[0]) === undefined);
+    if (recordable && resolveKinds() === detachedInsertionKinds) recordInsertedSummaries(visited);
+    visited.length = 0;
     // Snapshot checked defaults across every root before normalization changes a later root.
     for (const node of checked) setChecked(node, true);
     if (hasStyles) for (const root of roots) if (tree.isElementNode(root)) scanInsertedStyles(root);
@@ -20875,6 +21219,25 @@ function buildWindow(
       startParsedFrames(descendants(source));
   }
 
+  /**
+   * The parser handled elements before the first `<base href>` while the fallback was still the
+   * document base, so their sheets, links and style attributes keep it. Undefined without a base.
+   * Positions are read after parsing, so a script that moved the base mid-load is not replayed.
+   */
+  function baseBeforeFirstBaseElement(): ((node: Raw.Element) => string | undefined) | undefined {
+    const fallback = baseURL(source, "fallback");
+    if (baseURL() === fallback) return;
+    const before = new Set<Raw.Element>();
+    for (const node of descendants(source)) {
+      if (!tree.isElementNode(node)) continue;
+      if (isBaseElement(node) && attribute(node, "href") !== null)
+        return (element) => (before.has(element) ? fallback : undefined);
+      if (node.tagName === "style" || node.tagName === "link" || attribute(node, "style") !== null)
+        before.add(node);
+    }
+    return;
+  }
+
   let parsedDetailsTasksScheduled = false;
   let didFinishInitialInput = false;
   function finishLoading(
@@ -20885,13 +21248,17 @@ function buildWindow(
     const generation = loadGeneration;
     const current = () => !closed && !documentLoadStopped && generation === loadGeneration;
     const keepsEmptyNames = !didFinishInitialInput && options.canKeepInitialDocumentNamesEmpty;
+    const parsedBase =
+      didFinishInitialInput || !(options.hasMarkupStyles || options.hasInlineURLStyles)
+        ? undefined
+        : baseBeforeFirstBaseElement();
     if (!didFinishInitialInput && options.hasInlineURLStyles) {
       for (const node of descendants(source)) {
         if (
           tree.isElementNode(node) &&
           /(?:url|image-set|var)\(/i.test(attribute(node, "style") ?? "")
         )
-          styles().captureInlineBase(node);
+          styles().captureInlineBase(node, parsedBase?.(node));
       }
     }
     didFinishInitialInput = true;
@@ -20910,10 +21277,16 @@ function buildWindow(
     bindBodyHandlers();
     if (!didScanStyles && options.hasMarkupStyles && !closed) {
       didScanStyles = true;
+      if (parsedBase)
+        for (const node of descendants(source)) {
+          const base = tree.isElementNode(node) && node.tagName === "style" && parsedBase(node);
+          if (base && connected(node)) styles().applyInline(node, base);
+        }
       styles().initialize();
       if (options.loadTextResource) {
         for (const child of descendants(source)) {
-          if (tree.isElementNode(child) && child.tagName === "link") startStyle(child);
+          if (tree.isElementNode(child) && child.tagName === "link")
+            startStyle(child, parsedBase?.(child));
         }
       }
     }
@@ -21035,6 +21408,7 @@ function buildWindow(
     }
 
     function inserted(node: Raw.ChildNode): void {
+      invalidateDocumentBaseIn(node);
       advanceRevision({ namesChanged: containsDocumentNames(node) });
       if (hasFormLifecycleCallbacks) refreshCustomFormLifecycle([node]);
       if (tree.isElementNode(node) && customStates.get(node)?.connected && connected(node))
@@ -21048,6 +21422,11 @@ function buildWindow(
         adapter.setTemplateContent(template, content);
         (exposedTemplateHosts ??= new WeakMap()).set(content, template);
         setOwner(content, templateOwner(ownerRecord(template)));
+      },
+      adoptAttributes(recipient, attrs) {
+        // A recorded subtree certifies captured inline styles; parser-added attributes void it.
+        invalidateSubtreeSummaries(recipient, composedParent);
+        adapter.adoptAttributes(recipient, attrs);
       },
       setDocumentType(document, name, publicId, systemId) {
         // parse5's default setter appends directly and can rewrite an existing doctype.
@@ -21067,6 +21446,7 @@ function buildWindow(
       appendChild(parent, node) {
         parent = insertionParent(parent);
         if (!canInsert(parent, node)) return;
+        invalidateSubtreeSummaries(parent, composedParent);
         adapter.appendChild(parent, node);
         inserted(node);
       },
@@ -21077,6 +21457,7 @@ function buildWindow(
           return;
         }
         if (reference.parentNode !== parent || !canInsert(parent, node)) return;
+        invalidateSubtreeSummaries(parent, composedParent);
         adapter.insertBefore(parent, node, reference);
         inserted(node);
       },

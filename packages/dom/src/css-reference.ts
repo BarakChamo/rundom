@@ -15,43 +15,75 @@ export function longhandDefinition(name: string): Property | undefined {
   return Object.hasOwn(definitions, name) ? definitions[name] : undefined;
 }
 
+type DeclarationParser = {
+  createContext(owner: object): object;
+  parseDestructuredDeclaration(
+    name: string,
+    value: string,
+    important: boolean,
+    context: object,
+  ): unknown;
+  isFailure(result: unknown): boolean;
+  serializeDeclarationValue(declaration: unknown): string;
+};
+let parser: DeclarationParser | undefined;
+
+// Resolved once: a module lookup on every inline write costs more than the parse cache hit.
+function declarationParser(): DeclarationParser {
+  return (parser ??= {
+    ...(require("rundom-css-reference/lib/jsdom/living/css/parse/context.js") as Pick<
+      DeclarationParser,
+      "createContext"
+    >),
+    ...(require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js") as Pick<
+      DeclarationParser,
+      "parseDestructuredDeclaration"
+    >),
+    ...(require("rundom-css-reference/lib/jsdom/living/css/values/value.js") as Pick<
+      DeclarationParser,
+      "isFailure"
+    >),
+    ...(require("rundom-css-reference/lib/jsdom/living/css/serialize.js") as Pick<
+      DeclarationParser,
+      "serializeDeclarationValue"
+    >),
+  });
+}
+
 /** Returns the specified serialization of a valid CSS declaration in an ordinary style rule. */
 function parseDeclaration(name: string, value: string, important = false): unknown {
   if (!name.startsWith("--") && !longhandDefinition(name)) return;
-  const {
-    createContext,
-  }: {
-    createContext(owner: object): object;
-  } = require("rundom-css-reference/lib/jsdom/living/css/parse/context.js");
-  const {
-    parseDestructuredDeclaration,
-  }: {
-    parseDestructuredDeclaration(
-      name: string,
-      value: string,
-      important: boolean,
-      context: object,
-    ): unknown;
-  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
-  const {
-    isFailure,
-  }: {
-    isFailure(result: unknown): boolean;
-  } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+  const { createContext, parseDestructuredDeclaration, isFailure } = declarationParser();
   context ??= createContext({ _globalObject: globalThis });
   const result = parseDestructuredDeclaration(name, value, important, context);
   if (!isFailure(result)) return result;
 }
 
+// The same bound as cssstyle's parse LRU: a two-property animation cycle fits.
+const maximumSpecifiedEntries = 4096;
+const maximumSpecifiedValueLength = 256;
+const specifiedValues = new Map<string, string | undefined>();
+
+/**
+ * Returns the specified serialization of `value` for `name`, or undefined when it is invalid.
+ * The parse context is process-global, so the result depends only on its inputs; values that
+ * draw random numbers are never remembered.
+ */
 export function specifiedDeclaration(name: string, value: string): string | undefined {
+  const cacheable = value.length <= maximumSpecifiedValueLength && !/random/i.test(value);
+  const key = `${name.length}:${name}${value}`;
+  if (cacheable && specifiedValues.has(key)) return specifiedValues.get(key);
   const parsed = parseDeclaration(name, value);
-  if (!parsed) return;
-  const {
-    serializeDeclarationValue,
-  }: {
-    serializeDeclarationValue(declaration: unknown): string;
-  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
-  return serializeDeclarationValue(parsed);
+  const serialized = parsed ? declarationParser().serializeDeclarationValue(parsed) : undefined;
+  if (!cacheable) return serialized;
+  // Oldest entries leave first; repeated animation and React style values stay resident.
+  if (specifiedValues.size >= maximumSpecifiedEntries)
+    for (const oldest of specifiedValues.keys()) {
+      specifiedValues.delete(oldest);
+      break;
+    }
+  specifiedValues.set(key, serialized);
+  return serialized;
 }
 
 function detachedDeclaration(declarations: readonly unknown[]) {
@@ -365,8 +397,41 @@ export function validPseudoSelectorList(
   return canonicalSelectorList(text, namespaces) !== undefined;
 }
 
+// Width and height ranges in px, as responsive CSS-in-JS writes them, serialize and match without
+// the reference engine; css-media-direct.test.ts compares every admitted shape with the grammar.
+const directFeatureSource = String.raw`\(\s*(min-|max-)?(width|height)\s*:\s*(\d{1,6}(?:\.\d{1,4})?)px\s*\)`;
+const directMedia = new RegExp(
+  String.raw`^\s*(?:(only\s+screen|screen|all)\s+and\s+)?(${directFeatureSource}(?:\s+and\s+${directFeatureSource})*)\s*$`,
+);
+const directFeature = new RegExp(directFeatureSource, "g");
+
+/** Parses a lowercase query of px width/height ranges for the default 1024x768 device, or returns undefined. */
+export function directMediaQuery(text: string): { media: string; matches: boolean } | undefined {
+  const query = directMedia.exec(text);
+  if (!query) return;
+  const type = query[1]?.replace(/\s+/, " ");
+  let matches = true;
+  const features: string[] = [];
+  for (const [, range = "", axis, number] of query[2]!.matchAll(directFeature)) {
+    const value = Number(number);
+    const size = axis === "width" ? 1024 : 768;
+    features.push(`(${range}${axis}: ${value}px)`);
+    matches &&=
+      range === "min-" ? size >= value : range === "max-" ? size <= value : size === value;
+  }
+  return {
+    media: (type && type !== "all" ? `${type} and ` : "") + features.join(" and "),
+    matches,
+  };
+}
+
 /** Parses one query and precomputes its result for the default headless device. */
 export function defaultMediaQuery(text: string): { media: string; matches?: boolean } {
+  return directMediaQuery(text) ?? referenceMediaQuery(text);
+}
+
+/** The pinned grammar's parse, serialization and default-device match of one media query. */
+export function referenceMediaQuery(text: string): { media: string; matches?: boolean } {
   const {
     parseGrammar,
   }: {
