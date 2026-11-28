@@ -58,4 +58,4 @@ Set `RUN_DOM_HTML_PARSER=rust` before loading the facade to exercise eligible in
 
 The [performance laboratory](docs/performance-lab.md) provides `bun run benchmark:lab prepare`, then `run`, `compare`, `profile`, `memory` and `parallel` against a frozen cohort. It covers checked reads/writes/queries/events/styles, first and repeated operations, multiple windows, CPU/allocation attribution and lifetime checkpoints.
 
-Measured findings and the next implementation batch are recorded in [performance evidence](docs/performance-lab-results.md) and the [remaining TurboDOM gaps](docs/remaining-turbodom-optimization-plan.md).
+Measured findings are recorded in [performance evidence](docs/performance-lab-results.md). Where RunDOM still trails TurboDOM, why, and what was tried is in the [TurboDOM gap analysis](docs/turbodom-gap-analysis.md).
