@@ -74,4 +74,34 @@ describe("getComputedStyle live views", () => {
       expect(() => read.call(Object.create(view), "display")).toThrow(TypeError);
     });
   });
+
+  it("should reject user proxies around inline and computed views read through their traps", () => {
+    // Given: an inline style written through the view and one parsed from the attribute
+    withWindow(`<p style="color: red">x</p><i></i>`, (window) => {
+      const p = window.document.querySelector("p")!;
+      const i = window.document.querySelector("i")!;
+      i.style.color = "blue";
+      const color = Object.getOwnPropertyDescriptor(
+        window.CSSStyleProperties.prototype,
+        "color",
+      )!.get!;
+      for (const [element, expected] of [
+        [p, "red"],
+        [i, "blue"],
+      ] as const) {
+        const style = element.style;
+        const computed = window.getComputedStyle(element);
+        // When: each view is read through a forwarding user proxy, and directly after another
+        //   view's trap ran
+        // Then: only the views themselves are valid receivers
+        expect(() => new Proxy(style, {}).color).toThrow(TypeError);
+        expect(() => color.call(new Proxy(style, {}))).toThrow(TypeError);
+        expect(() => new Proxy(computed, {}).color).toThrow(TypeError);
+        void window.document.body.style.color;
+        expect(color.call(style)).toBe(expected);
+        void window.getComputedStyle(p).display;
+        expect(color.call(computed)).toBe(expected === "red" ? "rgb(255, 0, 0)" : "rgb(0, 0, 255)");
+      }
+    });
+  });
 });

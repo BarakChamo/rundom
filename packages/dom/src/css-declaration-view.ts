@@ -2,6 +2,7 @@
 
 import { createRequire } from "node:module";
 import type { PositionTryStyle } from "./css-reference.js";
+import { createSlotTable } from "./slot-table.js";
 
 const requireCSS = createRequire(import.meta.url);
 let standardNames: readonly string[] | undefined;
@@ -40,34 +41,63 @@ type DeferredDeclaration = {
   read: (name: string) => string | undefined;
   materialize: () => DeclarationImplementation;
 };
-const deferredDeclarations = new WeakMap<object, DeferredDeclaration>();
-const implementations = new WeakMap<object, DeclarationImplementation>();
-
-type ComputedSource = DeclarationImplementation | (() => object | undefined);
-type ComputedResolver = (target: object) => DeclarationImplementation;
+// Per-declaration and per-target side data lives in private slots (see slot-table.ts): a WeakMap
+// keeps its values alive through minor GCs while the key is young, which promoted every discarded
+// tree with an inline style. Only position-descriptor views, which are rare, stay in a WeakMap.
 class SlotTarget {
   constructor(target: object) {
     return target;
   }
 }
-// Computed views publish once per getComputedStyle call, so their private state lives in native
-// slots instead of WeakMaps. All state sits on the never-escaping proxy target (cheap ordinary
-// object slots); the public proxy carries only one slot pointing at its target, because V8 private
-// fields on proxies are much slower to add and read. Slots add no keys and invoke no traps.
+// Marks a declaration whose reads are answered before it is materialized. A module-private symbol
+// property on the private implementation object holds nothing but itself, so no side table keeps
+// discarded trees alive, and a named load is cheaper than a private brand check across shapes.
+const deferredRecord = Symbol("deferred declaration");
+type DeferredHolder = { [deferredRecord]?: DeferredDeclaration };
+const deferredDeclarations = {
+  get(implementation: object): DeferredDeclaration | undefined {
+    return (implementation as DeferredHolder)[deferredRecord];
+  },
+  set(implementation: object, record: DeferredDeclaration): void {
+    (implementation as DeferredHolder)[deferredRecord] = record;
+  },
+};
+const implementations = new WeakMap<object, DeclarationImplementation>();
+// The receiver and target seen by the latest declaration-view trap. Accessors and methods reached
+// through that trap receive the proxy as `this`; when the target's own proxy is that receiver,
+// the target is known without reading the slot on the proxy, which is slow. A user proxy wrapping
+// a view forwards its own receiver, which never matches. It keeps at most one view reachable.
+let trapView: object | undefined;
+let trapTarget: object | undefined;
+
+type ComputedSource = DeclarationImplementation | (() => object | undefined);
+type ComputedResolver = (target: object) => DeclarationImplementation;
+// Declaration views keep their private state in native slots on the never-escaping proxy target
+// (cheap ordinary object slots) instead of WeakMaps, whose values survive minor GCs while their
+// keys are young. Computed views hold their source and owning resolver; inline and ordinary views
+// hold their current implementation. Every published target also points back at its own public
+// proxy, so a trap's receiver can be proven to be that proxy without reading the proxy's slot:
+// V8 private fields on proxies are much slower to add and read. The proxy still carries one slot
+// pointing at its target for receivers that did not come through a trap. Slots add no keys and
+// invoke no traps.
 class ComputedTarget extends SlotTarget {
-  #source: ComputedSource;
-  #resolve: ComputedResolver;
+  #source: ComputedSource | undefined;
+  #resolve: ComputedResolver | undefined;
   #connected: (() => boolean) | undefined;
+  #implementation: DeclarationImplementation | undefined;
+  #view: object | undefined = undefined;
   constructor(
     target: object,
-    source: ComputedSource,
-    resolve: ComputedResolver,
+    source: ComputedSource | undefined,
+    resolve: ComputedResolver | undefined,
     connected: (() => boolean) | undefined,
+    implementation?: DeclarationImplementation,
   ) {
     super(target);
     this.#source = source;
     this.#resolve = resolve;
     this.#connected = connected;
+    this.#implementation = implementation;
   }
   static resolver(target: object): ComputedResolver | undefined {
     return #resolve in target ? target.#resolve : undefined;
@@ -77,6 +107,24 @@ class ComputedTarget extends SlotTarget {
   }
   static connected(target: object): (() => boolean) | undefined {
     return #connected in target ? target.#connected : undefined;
+  }
+  static attach(target: object, view: object): void {
+    if (#view in target) target.#view = view;
+  }
+  /** The declaration behind a target (bare computed snapshots included), if it is one. */
+  static resolve(target: object): DeclarationImplementation | undefined {
+    if (!(#view in target)) return undefined;
+    return target.#implementation ?? target.#resolve?.(target);
+  }
+  /** Like `resolve`, but only when `view` is the target's own proxy rather than a wrapper. */
+  static own(target: object, view: object): DeclarationImplementation | undefined {
+    if (!(#view in target) || target.#view !== view) return undefined;
+    return target.#implementation ?? target.#resolve?.(target);
+  }
+  static replace(target: object, implementation: DeclarationImplementation): boolean {
+    if (!(#implementation in target) || !target.#implementation) return false;
+    target.#implementation = implementation;
+    return true;
   }
 }
 class ComputedView extends SlotTarget {
@@ -126,11 +174,12 @@ class Registration extends SlotTarget {
 let resolvingLiveSource = false;
 
 function declarationImplementation(view: object): DeclarationImplementation {
-  let implementation = implementations.get(view);
-  if (!implementation) {
-    const target = ComputedView.target(view) ?? view;
-    implementation = ComputedTarget.resolver(target)?.(target);
+  if (view === trapView && trapTarget) {
+    const own = ComputedTarget.own(trapTarget, view);
+    if (own) return own;
   }
+  const implementation =
+    ComputedTarget.resolve(ComputedView.target(view) ?? view) ?? implementations.get(view);
   if (!implementation) throw new TypeError("Illegal invocation");
   return implementation;
 }
@@ -235,6 +284,8 @@ function indexedHandler(
 ): ProxyHandler<object> {
   return {
     get(target, key, proxy) {
+      trapView = proxy;
+      trapTarget = target;
       const index = indexOf(key);
       return index === undefined ? lookup.get(target, key, proxy) : item(target, index);
     },
@@ -259,6 +310,8 @@ function indexedHandler(
         : undefined;
     },
     set(target, key, value, proxy) {
+      trapView = proxy;
+      trapTarget = target;
       return indexOf(key) === undefined && lookup.set(target, key, value, proxy);
     },
     defineProperty(target, key, descriptor) {
@@ -347,8 +400,8 @@ export function createDeclarationViews(input: {
   functionPrototype: object;
   arrayValues: typeof Array.prototype.values;
 }) {
-  const ordinaryViews = new WeakMap<object, CSSStyleProperties>();
-  const indexedHandlers = new WeakMap<object, ProxyHandler<object>>();
+  const ordinaryViews = createSlotTable<object, CSSStyleProperties>();
+  const indexedHandlers = createSlotTable<object, ProxyHandler<object>>();
   const inheritedIndices = new WeakMap<DeclarationImplementation, AddedIndices>();
   class CSSStyleDeclaration {
     constructor() {
@@ -609,6 +662,7 @@ export function createDeclarationViews(input: {
         ? CSSStyleProperties.prototype
         : pageDeclarationPrototype(),
     ) as CSSStyleProperties;
+    new ComputedTarget(target, undefined, undefined, undefined, implementation);
     let handler = indexedHandlers.get(implementation);
     if (!handler)
       indexedHandlers.set(
@@ -616,11 +670,12 @@ export function createDeclarationViews(input: {
         (handler = indexedDeclaration(implementation, published ? Reflect : privateLookup)),
       );
     const view = new Proxy<CSSStyleProperties>(target, handler);
-    implementations.set(view, implementation);
+    ComputedTarget.attach(target, view);
+    new ComputedView(view, target);
     ordinaryViews.set(implementation, view);
     return view;
   }
-  const inlineTargets = new WeakMap<object, InlineImplementation>();
+  const inlineTargets = createSlotTable<object, InlineImplementation>();
   function inlineTarget(target: object): InlineImplementation {
     const record = inlineTargets.get(target);
     if (!record) throw new TypeError("Illegal invocation");
@@ -697,6 +752,7 @@ export function createDeclarationViews(input: {
     new ComputedTarget(target, value, computedValue, connected);
     if (resolvingLiveSource) return target;
     const view = new Proxy<CSSStyleProperties>(target, computedHandler);
+    ComputedTarget.attach(target, view);
     new ComputedView(view, target);
     return view;
   }
@@ -723,13 +779,17 @@ export function createDeclarationViews(input: {
     inlineView(style: InlineImplementation): CSSStyleProperties {
       const target = Object.create(propertyPrototype) as CSSStyleProperties;
       inlineTargets.set(target, style);
+      new ComputedTarget(target, undefined, undefined, undefined, style);
       const view = new Proxy<CSSStyleProperties>(target, inlineHandler);
-      implementations.set(view, style);
+      ComputedTarget.attach(target, view);
+      new ComputedView(view, target);
       deferredDeclarations.set(style, style);
       return view;
     },
     materializedInline(view: object, style: DeclarationImplementation): void {
-      implementations.set(view, style);
+      const target = ComputedView.target(view);
+      if (!target || !ComputedTarget.replace(target, style))
+        throw new TypeError("Expected an inline declaration view");
     },
     /** Binds private immutable context metadata once while returning a fresh public snapshot on every call. */
     freshPublisher(

@@ -70,6 +70,7 @@ import {
 import { compileSelector, compileSimpleSubject, compileTreeSelector } from "./selectors.js";
 import { queryDependsOnTreeOrFocus, queryDependsOnlyOnTree } from "./query-index.js";
 import { elementLocalName, xmlSpecial } from "./xml.js";
+import { createSlotTable } from "./slot-table.js";
 
 const require = createRequire(import.meta.url);
 const arrayValues = Array.prototype.values;
@@ -4015,9 +4016,11 @@ export function invalidateStyleSource(node: Raw.ParentNode): boolean {
 }
 
 type InlineStyle = { text: string; style: Declaration; syncing: boolean };
-let inlineStyles: WeakMap<Raw.Element, InlineStyle> | undefined;
+let inlineStyles: ReturnType<typeof createSlotTable<Raw.Element, InlineStyle>> | undefined;
 
-let publicInlineViews: WeakMap<Raw.Element, PublicDeclaration> | undefined;
+let publicInlineViews:
+  | ReturnType<typeof createSlotTable<Raw.Element, PublicDeclaration>>
+  | undefined;
 
 /** Updates an existing inline declaration after its content attribute changes. */
 export function syncInlineStyle(node: Raw.Element): void {
@@ -7091,7 +7094,7 @@ export function createStyles(input: {
 
   /** `base` resolves the attribute's initial URLs; later writes read the live document base. */
   function inlineStyle(node: Raw.Element, base?: string): Declaration {
-    const inline = (inlineStyles ??= new WeakMap());
+    const inline = (inlineStyles ??= createSlotTable());
     const existing = inline.get(node);
     if (existing) return existing.style;
     const state = {
@@ -7129,7 +7132,7 @@ export function createStyles(input: {
 
   const inlineAccess = {
     source(node: Raw.Element) {
-      if (inlineStyles?.has(node)) return;
+      if (inlineStyles?.get(node)) return;
       return node.attrs.find((attr) => !attr.namespace && attr.name === "style")?.value ?? "";
     },
     update: input.writeInlineStyle,
@@ -7138,10 +7141,10 @@ export function createStyles(input: {
   function publicInlineStyle(node: Raw.Element): PublicDeclaration {
     const pending = publicInlineViews?.get(node);
     if (pending) return pending;
-    const view = inlineStyles?.has(node)
+    const view = inlineStyles?.get(node)
       ? views().expose(inlineStyle(node))
       : views().inlineView(new InlineDeclaration(node, inlineAccess));
-    (publicInlineViews ??= new WeakMap()).set(node, view);
+    (publicInlineViews ??= createSlotTable()).set(node, view);
     return view;
   }
 
