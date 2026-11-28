@@ -27,7 +27,7 @@ export type DeclarationImplementation = {
   readonly _length: number;
   readonly [index: number]: string | undefined;
   /** The CSSOM-visible property names, when they differ from the stored indices. */
-  publicNames?: () => readonly string[] | undefined;
+  publicNames?: () => readonly (string | undefined)[] | undefined;
   cssText: string;
   readonly parentRule: object | null;
   getPropertyValue: (property: string) => string;
@@ -274,6 +274,70 @@ function indexedHandler(
   };
 }
 
+/**
+ * A computed declaration that answers reads from its pending values and builds the complete
+ * declaration on first need. Frames create one per publication source, so its behavior lives on
+ * a shared prototype instead of per-instance closures, and its indices are published through
+ * publicNames instead of an index proxy.
+ */
+class DeferredBlock implements DeclarationImplementation, DeferredDeclaration {
+  #pending: DeferredDeclaration["read"] | undefined;
+  #create: (() => MaterializedDeclaration) | undefined;
+  #completed: MaterializedDeclaration | undefined;
+  #names: readonly (string | undefined)[] | undefined;
+  // Never stored: indexedLength and indexedItem read publicNames first.
+  readonly [index: number]: string | undefined;
+  readonly parentRule = null;
+  constructor(read: DeferredDeclaration["read"], create: () => MaterializedDeclaration) {
+    this.#pending = read;
+    this.#create = create;
+  }
+  block(): MaterializedDeclaration {
+    if (this.#completed) return this.#completed;
+    const create = this.#create;
+    if (!create) throw new Error("Expected pending computed-style values");
+    const result = create();
+    this.#pending = undefined;
+    this.#create = undefined;
+    return (this.#completed = result);
+  }
+  /** The materialized declaration is read-only, so its index list is listed once. */
+  publicNames(): readonly (string | undefined)[] {
+    if (this.#names) return this.#names;
+    const { style, indices } = this.block();
+    return (this.#names = Array.from({ length: indexedLength(style, indices) }, (_, index) =>
+      indexedItem(style, index, indices),
+    ));
+  }
+  read(name: string): string | undefined {
+    return this.#pending?.(name);
+  }
+  materialize(): DeclarationImplementation {
+    return this.block().style;
+  }
+  get _length(): number {
+    const { style, indices } = this.block();
+    return indexedLength(style, indices);
+  }
+  get cssText(): string {
+    return "";
+  }
+  set cssText(value: string) {
+    this.materialize().cssText = value;
+  }
+  getPropertyValue(name: string): string {
+    return this.read(name) ?? this.materialize().getPropertyValue(name);
+  }
+  getPropertyPriority(): string {
+    return "";
+  }
+  setProperty(name: string, value: string, priority?: string): void {
+    this.materialize().setProperty(name, value, priority);
+  }
+  removeProperty(name: string): string {
+    return this.materialize().removeProperty(name);
+  }
+}
 /** Creates Window-local public prototypes while retaining only private implementation ownership. */
 export function createDeclarationViews(input: {
   emptyComputed: () => DeclarationImplementation;
@@ -682,55 +746,9 @@ export function createDeclarationViews(input: {
       read: DeferredDeclaration["read"],
       create: () => MaterializedDeclaration,
     ): () => CSSStyleProperties {
-      let completed: MaterializedDeclaration | undefined;
-      let pending: { read: DeferredDeclaration["read"]; create: typeof create } | undefined = {
-        read,
-        create,
-      };
-      function materializeBlock(): MaterializedDeclaration {
-        if (completed) return completed;
-        if (!pending) throw new Error("Expected pending computed-style values");
-        const result = pending.create();
-        pending = undefined;
-        return (completed = result);
-      }
-      const materialize = () => materializeBlock().style;
-      const readPending: DeferredDeclaration["read"] = (name) => pending?.read(name);
-      const deferred: DeclarationImplementation = {
-        get _length() {
-          const { style, indices } = materializeBlock();
-          return indexedLength(style, indices);
-        },
-        get cssText() {
-          return "";
-        },
-        set cssText(value) {
-          materialize().cssText = value;
-        },
-        parentRule: null,
-        getPropertyValue(name) {
-          return readPending(name) ?? materialize().getPropertyValue(name);
-        },
-        getPropertyPriority() {
-          return "";
-        },
-        setProperty(name, value, priority) {
-          materialize().setProperty(name, value, priority);
-        },
-        removeProperty(name) {
-          return materialize().removeProperty(name);
-        },
-      };
-      const implementation = new Proxy(deferred, {
-        get(target, name, receiver) {
-          const index = indexOf(name);
-          if (index === undefined) return Reflect.get(target, name, receiver);
-          const { style, indices } = materializeBlock();
-          return indexedItem(style, index, indices);
-        },
-      });
-      deferredDeclarations.set(implementation, { read: readPending, materialize });
-      return () => publishComputed(CSSStyleProperties.prototype, implementation);
+      const block = new DeferredBlock(read, create);
+      deferredDeclarations.set(block, block);
+      return () => publishComputed(CSSStyleProperties.prototype, block);
     },
     liveView(
       read: () => CSSStyleProperties | undefined,
