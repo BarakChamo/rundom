@@ -1207,6 +1207,14 @@ function containingShorthands(): ReadonlyMap<string, readonly (readonly string[]
 function referenceShorthands(): ReadonlyMap<string, readonly (readonly string[])[]> {
   return (shorthandNames ??= require("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js"));
 }
+// jsdom's block serializer rewrites these declarations; a block without them is serialized as is.
+const blockSerializedDeclaration =
+  /(?:^|; )(?:(?:column|row)-rule-(?:width|style|color|inset)|grid-(?:template|auto)|corner-|border-(?:top|bottom)-(?:left|right)-radius|animation-range-)/;
+// Name classes for direct block serialization: not plain at all, read through
+// getPropertyValue's general path, or needing the block serializer.
+const plainShorthand = 4;
+const plainGeneral = 1;
+const plainRescan = 2;
 // Longhands whose shorthand cssstyle stores without separate longhand entries.
 const unstoredLonghand = /^(?:overflow-[xy]|border-image-|background-(?:position|repeat)-[xy]$)/;
 
@@ -1294,6 +1302,22 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
   // Preserve the vendor class name when the dependency bundler renames its binding.
   Object.defineProperty(Base, "name", { value: "CSSStyleDeclaration", configurable: true });
   initializeDeclarationMetadata(propertyDefinitions);
+
+  // Classifies a stored declaration name once for direct block serialization (plain* bits).
+  const plainNames = new Map<string, number>();
+  function plainNameKind(name: string): number {
+    let kind = plainNames.get(name);
+    if (kind !== undefined) return kind;
+    if (name.startsWith("border") || propertyDefinitions.get(name)?.longhands)
+      kind = plainShorthand;
+    else
+      kind =
+        (canonicalProperty(name) !== name || name === "size" || grammarLonghands(name)
+          ? plainGeneral
+          : 0) | (blockSerializedDeclaration.test(name) ? plainRescan : 0);
+    plainNames.set(name, kind);
+    return kind;
+  }
 
   // cssstyle's verdict depends only on the property and value text; its own LRU key and
   // lookup cost more than this bounded map. Throwing parses are not remembered.
@@ -1512,7 +1536,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     override get cssText(): string {
       const ordered = orderedStyles.get(this);
       if (ordered) return ordered.cssText;
-      let text = this.#plainBlockText() ?? super.cssText;
+      const plain = this.#plainBlockText();
+      let text = plain ?? super.cssText;
       const pending = shorthandSources?.get(this)?.size;
       if (pending || this.#completesShorthand()) {
         // CSSOM deliberately hides the value of a longhand with a pending shorthand.
@@ -1537,11 +1562,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           );
         }
         text = serializeDeclarationBlock(declarations.join(" "), shorthandSources?.get(this));
-      } else if (
-        /(?:^|; )(?:(?:column|row)-rule-(?:width|style|color|inset)|grid-(?:template|auto)|corner-|border-(?:top|bottom)-(?:left|right)-radius|animation-range-)/.test(
-          text,
-        )
-      )
+      } else if (plain === undefined ? blockSerializedDeclaration.test(text) : this.#plainRescan)
         text = serializeDeclarationBlock(text);
       if (
         this._values.has("background") &&
@@ -1659,22 +1680,33 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     // cssstyle's block serializer only rewrites shorthands and border declarations; a block
     // without them is its declarations in order, which skips its per-call normalization.
+    // It also records in #plainRescan whether the text needs jsdom's block serializer, which
+    // matches blockSerializedDeclaration at a declaration start: at a listed name, or inside a
+    // value containing "; ".
     #plainBlockText(): string | undefined {
       if (this._computed) return;
+      const direct = !shorthandSources?.get(this)?.size;
+      let rescan = false;
       let text = "";
       for (let i = 0; i < this._length; i++) {
         const name = this[i];
-        if (
-          name === undefined ||
-          name.startsWith("border") ||
-          propertyDefinitions.get(name)?.longhands
-        )
-          return;
+        if (name === undefined) return;
+        const kind = plainNameKind(name);
+        if (kind & plainShorthand) return;
+        // A stored, canonical, grammar-free longhand of a specified block reads as its stored
+        // value; getPropertyValue reaches the same value through its general checks.
+        const value =
+          (direct && !(kind & plainGeneral) && super.getPropertyValue(name)) ||
+          this.getPropertyValue(name);
+        rescan ||= !!(kind & plainRescan) || value.includes("; ");
         const priority = this._priorities.get(name);
-        text += `${text ? " " : ""}${name}: ${this.getPropertyValue(name)}${priority ? ` !${priority}` : ""};`;
+        text += `${text ? " " : ""}${name}: ${value}${priority ? ` !${priority}` : ""};`;
       }
+      if (rescan) rescan = blockSerializedDeclaration.test(text);
+      this.#plainRescan = rescan;
       return text;
     }
+    #plainRescan = false;
     #updateStyle<T>(write: () => T, publish: "changed" | "always" = "changed"): T {
       const changed = this._onChange;
       if (!changed || this._updating) return write();
