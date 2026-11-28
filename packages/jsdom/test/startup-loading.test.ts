@@ -69,6 +69,87 @@ describe("RunDOM start-up loading", () => {
     expect(loads.style!.artifacts).toEqual(css);
   });
 
+  it("parses an Emotion-shaped stylesheet and reads computed styles without the reference engine", () => {
+    // Given: a fresh process with a Material UI rule (pseudo-class, media query, rem, font
+    // family list, border-radius and transition) in a <style> element
+    const sheet =
+      '.css-1x2y3z{display:flex;align-items:center;padding:8px 16px;color:rgba(0, 0, 0, 0.87);font-family:"Roboto","Helvetica","Arial",sans-serif;font-size:0.875rem;letter-spacing:0.02857em;border-radius:4px;transition:background-color 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms}.css-1x2y3z:hover{background-color:rgba(25, 118, 210, 0.04)}.css-1x2y3z::before{content:""}@media (min-width:600px){.css-1x2y3z{padding:6px 8px}}';
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--input-type=commonjs",
+        "-e",
+        `
+        const { basename } = require("node:path");
+        const { JSDOM } = require(${JSON.stringify(entry)});
+        const { window } = new JSDOM('<div class="css-1x2y3z" id="x"></div>');
+        const style = window.document.createElement("style");
+        style.textContent = ${JSON.stringify(sheet)};
+        window.document.head.append(style);
+        const rules = style.sheet.cssRules.length;
+        // When: the first computed style and its shorthands are read
+        const computed = window.getComputedStyle(window.document.getElementById("x"));
+        const values = [computed.display, computed.fontSize, computed.fontFamily, computed.borderRadius];
+        void computed.transition;
+        const artifacts = Object.keys(require.cache).map((path) => basename(path));
+        process.stdout.write(JSON.stringify({ rules, values, artifacts }));
+        `,
+      ],
+      { encoding: "utf8", timeout: 30000 },
+    );
+    const { rules, values, artifacts } = JSON.parse(output) as {
+      rules: number;
+      values: string[];
+      artifacts: string[];
+    };
+    // Then: the values are jsdom's and the reference engine artifact was never loaded
+    expect(rules).toBe(4);
+    expect(values).toEqual(["flex", "14px", "Roboto, Helvetica, Arial, sans-serif", "4px"]);
+    expect(artifacts).not.toContain("css-reference.cjs");
+  });
+
+  it("reads display and color under an Emotion-shaped sheet without cssstyle's parser", () => {
+    // Given: a fresh process that counts lexer forks and cssstyle parser loads in the CSS runtime
+    const sheet =
+      '.css-1x2y3z{display:flex;align-items:center;padding:8px 16px;color:rgba(0, 0, 0, 0.87);font-family:"Roboto","Helvetica","Arial",sans-serif;font-size:0.875rem;letter-spacing:0.02857em;border-radius:4px;transition:background-color 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms}.css-1x2y3z:hover{background-color:rgba(25, 118, 210, 0.04)}@media (min-width:600px){.css-1x2y3z{padding:6px 8px}}';
+    const runtime = fileURLToPath(new URL("../../dom/dist/css-runtime.cjs", import.meta.url));
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--input-type=commonjs",
+        "-e",
+        `
+        const runtime = require(${JSON.stringify(runtime)});
+        const counts = { forks: 0, parsers: 0 };
+        const tree = runtime.cssTree;
+        const fork = tree.fork;
+        tree.fork = function (...args) { counts.forks++; return fork.apply(this, args); };
+        const parser = Object.getOwnPropertyDescriptor(runtime, "cssValueParser");
+        Object.defineProperty(runtime, "cssValueParser", {
+          get() { counts.parsers++; return parser.get.call(this); },
+        });
+        const { JSDOM } = require(${JSON.stringify(entry)});
+        const { window } = new JSDOM('<div class="css-1x2y3z" id="x"></div>');
+        const style = window.document.createElement("style");
+        style.textContent = ${JSON.stringify(sheet)};
+        window.document.head.append(style);
+        // When: the first computed display and color are read
+        const computed = window.getComputedStyle(window.document.getElementById("x"));
+        const values = [computed.display, computed.color];
+        process.stdout.write(JSON.stringify({ values, counts }));
+        `,
+      ],
+      { encoding: "utf8", timeout: 30000 },
+    );
+    const { values, counts } = JSON.parse(output) as {
+      values: string[];
+      counts: { forks: number; parsers: number };
+    };
+    // Then: the values are jsdom's and cssstyle never forked its lexer or loaded its parser API
+    expect(values).toEqual(["flex", "rgba(0, 0, 0, 0.87)"]);
+    expect(counts).toEqual({ forks: 0, parsers: 0 });
+  });
+
   it("defers node:assert, node:fs/promises and node:stream/web past Window creation", () => {
     // Given: a fresh process running what a component test file does at start
     // When: the facade is required and a Window with a stylesheet is created

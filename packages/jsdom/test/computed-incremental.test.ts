@@ -259,11 +259,11 @@ describe("getComputedStyle reuse beside state selectors", () => {
         steps.push(read());
         // Then: pointer states never match, while checked and validity state are current
         expect(steps).toEqual([
-          ["rgb(1, 1, 1)", "1", "inline", "1", "dashed"],
-          ["rgb(1, 1, 1)", "1", "inline", "1", "dashed"],
-          ["rgb(1, 1, 1)", "1", "inline", "1", "dashed"],
-          ["rgb(1, 1, 1)", "1", "inline", "0.25", "dashed"],
-          ["rgb(1, 1, 1)", "1", "inline", "0.25", "none"],
+          ["rgb(1, 1, 1)", "1", "inline-block", "1", "dashed"],
+          ["rgb(1, 1, 1)", "1", "inline-block", "1", "dashed"],
+          ["rgb(1, 1, 1)", "1", "inline-block", "1", "dashed"],
+          ["rgb(1, 1, 1)", "1", "inline-block", "0.25", "dashed"],
+          ["rgb(1, 1, 1)", "1", "inline-block", "0.25", "none"],
         ]);
       },
     );

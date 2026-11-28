@@ -38,7 +38,7 @@ import {
   packedLeafText,
 } from "./private-template-copy.js";
 import { createWrapperHandles } from "./wrapper-handles.js";
-import { createStaticNodeListFactory } from "./static-node-list.js";
+import { createSlotTable } from "./slot-table.js";
 import { randomFillSync, randomUUID } from "node:crypto";
 import {
   atob as decodeBase64,
@@ -1123,18 +1123,30 @@ const attachedInternals = new WeakSet<Raw.Element>();
 const wrappers = createWrapperHandles();
 const documentRealms = new WeakMap<Raw.Document, symbol>();
 type CollectionMembers<T> = { length: () => number; at: (index: number) => T | undefined };
-// The store is shared across Window factories so borrowed Web IDL methods preserve receiver identity.
-const collectionRecords = new WeakMap<
-  object,
-  {
-    kind: "nodes" | "elements";
-    members: CollectionMembers<object>;
+/** Private state of one NodeList or HTMLCollection view, kept on its never-escaping Proxy target. */
+class CollectionState {
+  constructor(
+    readonly kind: "nodes" | "elements",
+    readonly members: CollectionMembers<object>,
+    readonly lookupName: ((name: string) => object | undefined) | undefined,
+    readonly setIndex: ((index: number, value: unknown) => void) | undefined,
+    readonly view: object,
+  ) {}
+}
+/** Members of an immutable snapshot, without per-view closures. */
+class SnapshotMembers {
+  constructor(readonly nodes: readonly object[]) {}
+  length(): number {
+    return this.nodes.length;
   }
->();
-const registerCollectionRecord: Parameters<typeof createStaticNodeListFactory>[0]["register"] = (
-  view,
-  record,
-) => collectionRecords.set(view, record);
+  at(index: number): object | undefined {
+    return this.nodes[index];
+  }
+}
+const collectionStates = createSlotTable<object, CollectionState>();
+// Shared across Window factories, so a borrowed Web IDL method can still read a view's state:
+// only that view's own get trap answers this key, and only for the view itself as receiver.
+const collectionBrand = Symbol("collection");
 const realmObjectPrototypes = new WeakMap<object, symbol>();
 const realmDocuments = new WeakMap<symbol, Raw.Document>();
 const xmlDocuments = new WeakSet<Raw.Document>();
@@ -3300,7 +3312,9 @@ function buildWindow(
   let queryIndices: WeakMap<Raw.ParentNode, QueryIndexState> | undefined;
   let indexedRoots = 0;
   let indexedEntries = 0;
-  type QueryVector = readonly Element[] | { records: ElementSequence };
+  type QueryVector =
+    | readonly Element[]
+    | { records: ElementSequence; members?: Members<Element> | undefined };
   type QueryResult = {
     byRoot: WeakMap<Raw.ParentNode, { owner: Raw.Document; nodes: QueryVector }>;
     kind: "first" | "all";
@@ -3310,7 +3324,6 @@ function buildWindow(
   let queryResults: Map<string, QueryResult> | undefined;
   let queryResultUnits = 0;
   let queryResultCharacters = 0;
-  let cachedNodeListFactory: ReturnType<typeof createStaticNodeListFactory> | undefined;
   function reusableQuery(
     root: Raw.ParentNode,
     selector: string,
@@ -3344,7 +3357,7 @@ function buildWindow(
       queryResultCharacters -= selector.length;
     }
     if (
-      (queryResults?.size ?? 0) >= 128 ||
+      (queryResults?.size ?? 0) >= 512 ||
       queryResultUnits + size > 8192 ||
       queryResultCharacters + selector.length > 32768
     ) {
@@ -3750,14 +3763,19 @@ function buildWindow(
     return result;
   }
 
-  function deferredQueryView(members: { records: ElementSequence }): NodeList<Element> {
-    return new NodeList(token, {
-      length: () => members.records.length,
+  function deferredQueryView(vector: {
+    records: ElementSequence;
+    members?: Members<Element> | undefined;
+  }): NodeList<Element> {
+    // Views of one remembered vector share a single members object.
+    vector.members ??= {
+      length: () => vector.records.length,
       at(index) {
-        const node = members.records.at(index);
+        const node = vector.records.at(index);
         return node && wrapElement(node);
       },
-    });
+    };
+    return new NodeList(token, vector.members);
   }
 
   function collectAttributeMembers(
@@ -3823,12 +3841,7 @@ function buildWindow(
     const cached = root && reusableQuery(root, text, "all");
     if (cached) {
       if ("records" in cached) return deferredQueryView(cached);
-      // This owned target has all observable members on its Window-local prototype; the factory brands its Proxy.
-      const target = Object.create(NodeList.prototype) as NodeList<Element>;
-      const factory = (cachedNodeListFactory ??= createStaticNodeListFactory({
-        register: registerCollectionRecord,
-      }));
-      return factory({ target, nodes: cached });
+      return new NodeList(token, cached);
     }
     text = ownedString(text);
     const scope = root && isDocumentRecord(root) ? root.childNodes.find(tree.isElementNode) : root;
@@ -5348,8 +5361,8 @@ function buildWindow(
   });
 
   type Members<T> = CollectionMembers<T>;
-  const childLists = new WeakMap<Node, NodeList<Node>>();
-  const elementLists = new WeakMap<Node, HTMLCollection>();
+  const childLists = createSlotTable<Node, NodeList<Node>>();
+  const elementLists = createSlotTable<Node, HTMLCollection>();
 
   function collectionNames(candidate: Node): string[] {
     const record = raw(candidate);
@@ -5375,15 +5388,127 @@ function buildWindow(
     return undefined;
   }
 
+  // The get trap hands a genuine view and its state to the getter or method about to run on it,
+  // so the common brand check is an identity compare instead of a second trap call. A stale
+  // pair stays correct because the view is compared by identity.
+  // ponytail: keeps the last view read in this Window alive until the next read or close.
+  let handedView: object | undefined;
+  let handedState: CollectionState | undefined;
+
   function collectionMembers<T extends Node>(
     receiver: object,
     kind: "nodes" | "elements",
   ): Members<T> {
-    const record = collectionRecords.get(receiver);
-    if (!record || record.kind !== kind) throw new TypeError("Illegal invocation");
-    // Only collectionView writes these slots, with typed Node members from its owning Window.
-    return record.members as Members<T>;
+    let state = receiver === handedView ? handedState : undefined;
+    if (
+      !state &&
+      ((typeof receiver === "object" && receiver !== null) || typeof receiver === "function")
+    ) {
+      const branded: unknown = (receiver as { [collectionBrand]?: unknown })[collectionBrand];
+      // A user Proxy can answer the key itself; only a view's own trap returns its genuine state.
+      if (branded instanceof CollectionState && branded.view === receiver) state = branded;
+    }
+    if (!state || state.kind !== kind) throw new TypeError("Illegal invocation");
+    // Only collectionView creates these states, with typed Node members from its owning Window.
+    return state.members as Members<T>;
   }
+
+  function visibleName(
+    state: CollectionState,
+    owner: object,
+    property: PropertyKey,
+  ): Node | RadioNodeList | undefined {
+    if (
+      state.kind !== "elements" ||
+      typeof property !== "string" ||
+      indexedProperty(property) !== undefined ||
+      Reflect.has(owner, property)
+    )
+      return undefined;
+    return state.lookupName
+      ? (state.lookupName(property) as Node | RadioNodeList | undefined)
+      : namedMember(state.members as Members<Node>, property);
+  }
+
+  // Every view of this Window shares these traps; each view's state lives on its Proxy target.
+  const collectionHandler: ProxyHandler<object> = {
+    set(owner, property, value, receiver) {
+      const index = indexedProperty(property);
+      if (index === undefined) return Reflect.set(owner, property, value, receiver);
+      const { setIndex } = collectionStates.read(owner) as CollectionState;
+      if (!setIndex) return false;
+      setIndex(index, value);
+      return true;
+    },
+    get(owner, property, receiver): unknown {
+      const state = collectionStates.read(owner) as CollectionState;
+      if (property === collectionBrand) return receiver === state.view ? state : undefined;
+      const index = indexedProperty(property);
+      if (index !== undefined && index < state.members.length()) return state.members.at(index);
+      const named = visibleName(state, owner, property);
+      if (named !== undefined) return named;
+      if (receiver !== state.view) return Reflect.get(owner, property, receiver);
+      handedView = receiver;
+      handedState = state;
+      return Reflect.get(owner, property, receiver);
+    },
+    has(owner, property) {
+      const state = collectionStates.read(owner) as CollectionState;
+      const index = indexedProperty(property);
+      return (
+        (index !== undefined && index < state.members.length()) ||
+        Reflect.has(owner, property) ||
+        visibleName(state, owner, property) !== undefined
+      );
+    },
+    ownKeys(owner) {
+      const state = collectionStates.read(owner) as CollectionState;
+      const members = state.members as Members<Node>;
+      const keys: string[] = Array.from({ length: members.length() }, (_, index) => String(index));
+      if (state.kind === "elements") {
+        const names = new Set<string>();
+        for (const candidate of collectionEntries(members))
+          for (const name of collectionNames(candidate))
+            if (indexedProperty(name) === undefined && !Reflect.has(owner, name)) names.add(name);
+        keys.push(...names);
+      }
+      return [...keys, ...Reflect.ownKeys(owner)];
+    },
+    getOwnPropertyDescriptor(owner, property) {
+      const state = collectionStates.read(owner) as CollectionState;
+      const index = indexedProperty(property);
+      if (index === undefined) {
+        const value = visibleName(state, owner, property);
+        return value === undefined
+          ? Reflect.getOwnPropertyDescriptor(owner, property)
+          : { value, writable: false, enumerable: Boolean(state.setIndex), configurable: true };
+      }
+      const value = state.members.at(index);
+      return value === undefined
+        ? Reflect.getOwnPropertyDescriptor(owner, property)
+        : { value, writable: Boolean(state.setIndex), enumerable: true, configurable: true };
+    },
+    defineProperty(owner, property, descriptor) {
+      const state = collectionStates.read(owner) as CollectionState;
+      if (
+        indexedProperty(property) !== undefined ||
+        visibleName(state, owner, property) !== undefined
+      )
+        return false;
+      return Reflect.defineProperty(owner, property, descriptor);
+    },
+    deleteProperty(owner, property) {
+      const state = collectionStates.read(owner) as CollectionState;
+      const index = indexedProperty(property);
+      if (
+        (index !== undefined && index < state.members.length()) ||
+        visibleName(state, owner, property) !== undefined
+      )
+        return false;
+      return Reflect.deleteProperty(owner, property);
+    },
+    preventExtensions: () => false,
+  };
 
   function collectionView<Target extends object, Member extends Node>(input: {
     target: Target;
@@ -5393,84 +5518,12 @@ function buildWindow(
     setIndex?: ((index: number, value: unknown) => void) | undefined;
   }): Target {
     const { target, kind, lookupName, setIndex } = input;
-    const snapshot = input.members as readonly Member[];
     const members =
       typeof input.members.length === "function"
         ? (input.members as Members<Member>)
-        : { length: () => snapshot.length, at: (index: number) => snapshot[index] };
-    const visibleName = (owner: Target, property: PropertyKey): Node | RadioNodeList | undefined =>
-      kind === "elements" &&
-      typeof property === "string" &&
-      indexedProperty(property) === undefined &&
-      !Reflect.has(owner, property)
-        ? lookupName
-          ? lookupName(property)
-          : namedMember(members, property)
-        : undefined;
-    const proxy = new Proxy(target, {
-      set(owner, property, value, receiver) {
-        const index = indexedProperty(property);
-        if (index === undefined) return Reflect.set(owner, property, value, receiver);
-        if (!setIndex) return false;
-        setIndex(index, value);
-        return true;
-      },
-      get(owner, property, receiver): unknown {
-        const index = indexedProperty(property);
-        if (index !== undefined && index < members.length()) return members.at(index);
-        return visibleName(owner, property) ?? Reflect.get(owner, property, receiver);
-      },
-      has(owner, property) {
-        const index = indexedProperty(property);
-        return (
-          (index !== undefined && index < members.length()) ||
-          Reflect.has(owner, property) ||
-          visibleName(owner, property) !== undefined
-        );
-      },
-      ownKeys(owner) {
-        const keys: string[] = Array.from({ length: members.length() }, (_, index) =>
-          String(index),
-        );
-        if (kind === "elements") {
-          const names = new Set<string>();
-          for (const candidate of collectionEntries(members))
-            for (const name of collectionNames(candidate))
-              if (indexedProperty(name) === undefined && !Reflect.has(owner, name)) names.add(name);
-          keys.push(...names);
-        }
-        return [...keys, ...Reflect.ownKeys(owner)];
-      },
-      getOwnPropertyDescriptor(owner, property) {
-        const index = indexedProperty(property);
-        if (index === undefined) {
-          const value = visibleName(owner, property);
-          return value === undefined
-            ? Reflect.getOwnPropertyDescriptor(owner, property)
-            : { value, writable: false, enumerable: Boolean(setIndex), configurable: true };
-        }
-        const value = members.at(index);
-        return value === undefined
-          ? Reflect.getOwnPropertyDescriptor(owner, property)
-          : { value, writable: Boolean(setIndex), enumerable: true, configurable: true };
-      },
-      defineProperty(owner, property, descriptor) {
-        if (indexedProperty(property) !== undefined || visibleName(owner, property) !== undefined)
-          return false;
-        return Reflect.defineProperty(owner, property, descriptor);
-      },
-      deleteProperty(owner, property) {
-        const index = indexedProperty(property);
-        if (
-          (index !== undefined && index < members.length()) ||
-          visibleName(owner, property) !== undefined
-        )
-          return false;
-        return Reflect.deleteProperty(owner, property);
-      },
-      preventExtensions: () => false,
-    });
-    collectionRecords.set(proxy, { kind, members });
+        : new SnapshotMembers(input.members as readonly Member[]);
+    const proxy = new Proxy<Target>(target, collectionHandler);
+    collectionStates.set(target, new CollectionState(kind, members, lookupName, setIndex, proxy));
     return proxy;
   }
 
@@ -6453,8 +6506,8 @@ function buildWindow(
   }
 
   let partLists: WeakMap<Element, DOMTokenList> | undefined;
-  const classLists = new WeakMap<Element, DOMTokenList>();
-  const tokenLists = new WeakMap<
+  const classLists = createSlotTable<Element, DOMTokenList>();
+  const tokenLists = createSlotTable<
     object,
     {
       owner: Element;
@@ -6466,7 +6519,7 @@ function buildWindow(
   >();
 
   function tokenList(list: object) {
-    const state = tokenLists.get(list);
+    const state = tokenLists.read(list);
     if (!state) throw new TypeError("Expected a DOMTokenList");
     const source = attribute(element(state.owner), state.attributeName);
     if (source !== state.source) {
@@ -7878,7 +7931,7 @@ function buildWindow(
 
   let customRegistry: CustomElementRegistry | undefined;
 
-  let datasets: WeakMap<Element, DOMStringMap> | undefined;
+  const datasets = createSlotTable<Element, DOMStringMap>();
 
   class DOMStringMap {
     [name: string]: string | undefined;
@@ -7946,7 +7999,7 @@ function buildWindow(
   }
 
   function datasetFor(owner: Element): DOMStringMap {
-    const map = (datasets ??= new WeakMap());
+    const map = datasets;
     let dataset = map.get(owner);
     if (!dataset) {
       const foreign = foreignIdentity(owner);
@@ -17131,8 +17184,17 @@ function buildWindow(
       indices.set(owner, next);
       return next;
     }
+    // The index is rebuilt exactly when namedRevision advances, so an empty index stays empty
+    // until then and ordinary member reads skip the lookup.
+    let emptyAt = -1;
     function visible(key: PropertyKey): key is string {
-      return typeof key === "string" && !Object.hasOwn(target, key) && names().has(key);
+      if (typeof key !== "string" || emptyAt === namedRevision) return false;
+      const known = names();
+      if (!known.size) {
+        emptyAt = namedRevision;
+        return false;
+      }
+      return !Object.hasOwn(target, key) && known.has(key);
     }
     function resolve(key: string): object | undefined {
       const entries = names().get(key);
@@ -18647,7 +18709,7 @@ function buildWindow(
     stopActiveParser = undefined;
     scriptInput = undefined;
     cancelScheduledLoads();
-    cachedNodeListFactory = undefined;
+    handedView = handedState = undefined;
     advanceRevision();
     blobURLs?.close();
     channelInterfaces?.close();
@@ -21121,12 +21183,26 @@ function buildWindow(
     }
   }
 
+  // A root is inert when the scan below would visit nothing or only the root and find nothing:
+  // not an element, or a leaf (no element child, no shadow root) of no insertion kind without a
+  // style attribute. Leaves are never recorded, so skipping the scan changes no summary either.
+  function insertedRootIsInert(root: Raw.ChildNode): boolean {
+    return (
+      !tree.isElementNode(root) ||
+      (leafKinds(root) === 0 && (!root.attrs.length || attribute(root, "style") === null))
+    );
+  }
+
   function finishInsertedContent(roots: readonly Raw.ChildNode[], parent: Raw.ParentNode): void {
+    const scriptsEnabled = options.runScripts === "dangerously";
+    if (roots.every(insertedRootIsInert)) {
+      if (scriptsEnabled && tree.isElementNode(parent)) activateInsertedScript(parent);
+      return;
+    }
     // Capture the eligible descendants before scripts can mutate or remove later entries.
     const active: Raw.Element[] = [];
     const checked: Raw.Element[] = [];
     let hasStyles = false;
-    const scriptsEnabled = options.runScripts === "dangerously";
     const pending: Raw.Element[] = [];
     // Only recorded subtrees can be skipped, so a detached parent is resolved on first need.
     let kinds = 0;
