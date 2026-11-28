@@ -1535,6 +1535,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (block.borderOrder) borderColorSourceOrder.set(this, new Map(block.borderOrder));
     }
     override get cssText(): string {
+      // Only a published write fills this, after the mutation and with change reporting
+      // restored; every mutation path (`_setProperty`, `removeProperty`, the setters)
+      // clears it first, so cssstyle's own before/after comparison never sees it.
+      if (this.#serialized !== undefined) return this.#serialized;
       const ordered = orderedStyles.get(this);
       if (ordered) return ordered.cssText;
       const plain = this.#plainBlockText();
