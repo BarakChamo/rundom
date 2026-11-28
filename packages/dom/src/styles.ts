@@ -1536,6 +1536,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (block.borderOrder) borderColorSourceOrder.set(this, new Map(block.borderOrder));
     }
     override get cssText(): string {
+      // Only a published write fills this, after the mutation and with change reporting
+      // restored; every mutation path (`_setProperty`, `removeProperty`, the setters)
+      // clears it first, so cssstyle's own before/after comparison never sees it.
+      if (this.#serialized !== undefined) return this.#serialized;
       const ordered = orderedStyles.get(this);
       if (ordered) return ordered.cssText;
       const plain = this.#plainBlockText();
@@ -6338,11 +6342,31 @@ function serializeHexColor(value: string): string | undefined {
   return `rgba(${channels}, ${alpha})`;
 }
 
+// Color resolution is a pure function of its inputs; a restyled frame re-resolves the same
+// foreground on every rebuild. Values that may draw random numbers are never kept.
+const resolvedColors = new Map<string, string>();
 function resolveColor(
   value: string,
   options: { currentColor: string; colorScheme: string; fallback?: string | undefined },
 ): string {
   const { currentColor, colorScheme, fallback } = options;
+  if (value.length > 256 || /random/i.test(value))
+    return resolveColorValue(value, currentColor, colorScheme, fallback);
+  const key = `${value}\0${currentColor}\0${colorScheme}\0${fallback ?? "\u0001"}`;
+  const known = resolvedColors.get(key);
+  if (known !== undefined) return known;
+  const resolved = resolveColorValue(value, currentColor, colorScheme, fallback);
+  if (resolvedColors.size >= 4096) resolvedColors.clear();
+  resolvedColors.set(key, resolved);
+  return resolved;
+}
+
+function resolveColorValue(
+  value: string,
+  currentColor: string,
+  colorScheme: string,
+  fallback: string | undefined,
+): string {
   const system = systemColor(value, colorScheme);
   if (system) return system;
   const rgb = value.startsWith("#") ? serializeHexColor(value) : serializeRGB(value);
@@ -7305,7 +7329,7 @@ export function createStyles(input: {
       style: declaration((text) => {
         if (state.syncing) return;
         state.text = text;
-        input.writeInlineStyle(node, text);
+        writeInlineAttribute(node, text);
       }),
       syncing: false,
     };
@@ -7338,7 +7362,7 @@ export function createStyles(input: {
       if (inlineStyles?.get(node)) return;
       return node.attrs.find((attr) => !attr.namespace && attr.name === "style")?.value ?? "";
     },
-    update: input.writeInlineStyle,
+    update: writeInlineAttribute,
     materialize: inlineStyle,
   };
   function publicInlineStyle(node: Raw.Element): PublicDeclaration {
@@ -7793,6 +7817,8 @@ export function createStyles(input: {
     custom?: CustomProjection;
     // The frame this one was copied from when its element adopted a sibling's frame.
     family?: ComputedFrame;
+    // The derived values a deferred target resolves against, kept for inline restyles.
+    resolution?: ResolutionValues;
     units: number;
     characters: number;
     declarationCharacters: number;
@@ -7957,6 +7983,148 @@ export function createStyles(input: {
     return true;
   }
 
+  // Winners that feed a deferred target's derived values (foreground, font size, display
+  // transformation, custom projection, writing mode) or replace the whole cascade.
+  const restyleStructural = new Set([
+    "all",
+    "color",
+    "color-scheme",
+    "direction",
+    "display",
+    "float",
+    "font-size",
+    "math-depth",
+    "position",
+    "text-orientation",
+    "writing-mode",
+    "zoom",
+  ]);
+  // Values that read the environment, other declarations, the parent or random draws.
+  const restyleContextual =
+    /var\(|env\(|attr\(|if\(|url\(|random|sibling-|anchor|inherit|initial|unset|revert|\\|(?:\d|\b)(?:[sld]?v(?:w|h|i|b|min|max)|cq(?:w|h|i|b|min|max))\b/i;
+
+  /**
+   * Character growth when `next` differs from `previous` only in the literal values of
+   * inline-declared, non-structural longhands at the same positions; undefined otherwise.
+   */
+  function restyledCharacters(
+    previous: ReadonlyMap<string, ComputedWinner>,
+    next: ReadonlyMap<string, ComputedWinner>,
+  ): number | undefined {
+    if (previous.size !== next.size) return;
+    const entries = previous.entries();
+    let characters = 0;
+    let changed = false;
+    for (const [name, value] of next) {
+      const old = entries.next().value;
+      if (!old || old[0] !== name) return;
+      const prior = old[1];
+      if (typeof prior === "string" || typeof value === "string") {
+        if (prior !== value) return;
+        continue;
+      }
+      if (
+        prior.base !== value.base ||
+        prior.shorthand !== value.shorthand ||
+        prior.context !== value.context ||
+        prior.weight !== value.weight ||
+        prior.layer !== value.layer ||
+        prior.layerIndex !== value.layerIndex ||
+        prior.proximity !== value.proximity ||
+        prior.block !== value.block ||
+        prior.order !== value.order
+      )
+        return;
+      if (prior.value === value.value) continue;
+      if (
+        value.weight !== 2 ** 52 ||
+        value.shorthand ||
+        name.startsWith("--") ||
+        restyleStructural.has(name) ||
+        restyleContextual.test(value.value)
+      )
+        return;
+      characters += value.value.length - prior.value.length;
+      changed = true;
+    }
+    return changed ? characters : undefined;
+  }
+
+  /**
+   * The previous deferred target frame with new winners, when an inline write changed only
+   * literal values of properties that its foreground, font size, display transformation and
+   * custom projection do not read; deferred values then resolve lazily from the new winners.
+   * The caller has established the same parent family, user-agent context and environment.
+   */
+  function restyledFrame(
+    previous: ComputedFrame,
+    inputs: readonly CascadeInput[],
+    winners: ReadonlyMap<string, ComputedWinner>,
+    custom: CustomProjection | undefined,
+    parentFrame: ComputedFrame | undefined,
+  ): ComputedFrame | undefined {
+    const resolution = previous.resolution;
+    if (
+      !resolution ||
+      !previous.deferred ||
+      !previous.inputs ||
+      previous.substitution ||
+      !sameCustomProjection(previous.custom, custom)
+    )
+      return;
+    const restyled = restyledCharacters(previous.winners, winners);
+    if (restyled === undefined) return;
+    const before = cascadeInputSize(previous.inputs);
+    const after = cascadeInputSize(inputs);
+    const units = previous.units - before.units + after.units;
+    const characters = previous.characters - before.characters + restyled + after.characters;
+    // The same retention limits as a fully computed frame; otherwise compute it fully.
+    if (
+      units + (custom?.block.names.length ?? 0) * 2 > 2048 ||
+      characters + (custom?.block.characters ?? 0) * 2 > 32768
+    )
+      return;
+    // The values differ from the source frame: no proof or family carries over. Omitting
+    // them by destructuring keeps the copy out of dictionary mode, unlike `delete`.
+    const { reuse: _reuse, focusRevision: _focusRevision, family: _family, ...kept } = previous;
+    return {
+      ...kept,
+      deferred: deferComputedValues(
+        winners,
+        resolution,
+        winningValueResolver(winners, custom?.block, undefined, undefined),
+        previous.viewport,
+        previous.baseURL,
+      ),
+      inputs,
+      winners,
+      parent: parentFrame && new WeakRef(parentFrame),
+      units,
+      characters,
+    };
+  }
+
+  function publishRestyledFrame(element: Raw.Element, frame: ComputedFrame): PublicDeclaration {
+    rememberComputedFrame(element, "target", frame);
+    if (frame.deferred && frameOrder.has(frame)) frame.deferred.retained = new WeakRef(frame);
+    return computedFrameView(frame);
+  }
+
+  /** The budget a frame charges for retaining its cascade inputs. */
+  function cascadeInputSize(inputs: readonly CascadeInput[]): {
+    units: number;
+    characters: number;
+  } {
+    let characters = 0,
+      units = inputs.length;
+    for (const source of inputs) {
+      characters += source.base?.length ?? 0;
+      units += source.entries.length;
+      for (const entry of source.entries) characters += entry.name.length + entry.value.length;
+    }
+    return { units, characters };
+  }
+
   const scopeSelections = new WeakMap<Raw.ParentNode, RuleSelection>();
   function scopeSelection(root: Raw.ParentNode): RuleSelection {
     const existing = scopeSelections.get(root);
@@ -8085,29 +8253,119 @@ export function createStyles(input: {
 
   let latestFrameRevision: FrameRevision | undefined;
 
+  // Style revisions after `base`, up to `base + count`, were each advanced by nothing but one
+  // CSSOM inline write; each written element remembers the revision of its latest such write
+  // in a slot, so the record retains no element.
+  let inlineSteps: { base: number; count: number } | undefined;
+  const inlineWriteRevisions = createSlotTable<Raw.Element, number>();
+
+  /** Writes reflected inline text and records the revision step when the write was its only cause. */
+  function writeInlineAttribute(node: Raw.Element, text: string): void {
+    const before = input.styleRevision(input.document);
+    input.writeInlineStyle(node, text);
+    const after = input.styleRevision(input.document);
+    if (before === undefined || after === before) return;
+    // Synchronous reactions to the attribute (custom element callbacks) may have mutated more.
+    if (after !== before + 1) {
+      inlineSteps = undefined;
+      return;
+    }
+    if (!inlineSteps || inlineSteps.base + inlineSteps.count !== before)
+      inlineSteps = { base: before, count: 0 };
+    inlineSteps.count++;
+    inlineWriteRevisions.set(node, after);
+  }
+
+  let styleAttributeScan: { entries: SheetRecord[]; ignored: boolean } | undefined;
+  /** True when no document rule's selector can read a `style` attribute (conservatively). */
+  function selectorsIgnoreStyleAttribute(): boolean {
+    const entries = collect(input.document);
+    if (styleAttributeScan?.entries === entries) return styleAttributeScan.ignored;
+    let ignored = true;
+    const pending = entries.map((record) => record.rules);
+    // Rule nesting is finite and acyclic; imports are declined rather than followed.
+    scan: while (pending.length) {
+      for (const rule of pending.pop() ?? []) {
+        let text: string | undefined = "";
+        if (rule.kind === "style") text = rule.selection.current.text;
+        else if (rule.kind === "declaration")
+          text = rule.view.selectorText ?? (rule.selectors.length ? undefined : "");
+        else if (rule.kind === "import" || rule.kind === "scope") text = undefined;
+        if (text === undefined || /style|\\/i.test(text)) {
+          ignored = false;
+          break scan;
+        }
+        if ("rules" in rule && rule.kind !== "keyframes") pending.push(rule.rules);
+      }
+    }
+    styleAttributeScan = { entries, ignored };
+    return ignored;
+  }
+
+  /** Whether every revision after `proven` up to `current` was an inline write that `node` cannot see. */
+  function inlineStepsSpare(
+    proven: number,
+    current: number | undefined,
+    node: Raw.Element,
+  ): boolean {
+    const steps = inlineSteps;
+    if (
+      !steps ||
+      current === undefined ||
+      proven < steps.base ||
+      proven >= current ||
+      current !== steps.base + steps.count
+    )
+      return false;
+    // Descendants inherit from a written element; nothing else reads its declarations.
+    for (
+      let at: Raw.ParentNode | null = node;
+      at;
+      at = tree.isElementNode(at) ? at.parentNode : null
+    ) {
+      const written = tree.isElementNode(at) ? inlineWriteRevisions.get(at) : undefined;
+      if (written !== undefined && written > proven) return false;
+    }
+    return selectorsIgnoreStyleAttribute();
+  }
+
   function completedFrame(
     frame: ComputedFrame | undefined,
     node: Raw.Element,
     currentRevision: number | undefined,
   ): frame is ComputedFrame {
     const proof = frame?.reuse;
-    return (
-      !!frame &&
-      !!proof &&
-      proof.tree === currentRevision &&
+    if (!frame || !proof) return false;
+    const stepped =
+      proof.tree !== currentRevision &&
+      input.styleRevision(input.document) === currentRevision &&
+      inlineStepsSpare(proof.tree, currentRevision, node);
+    const tree = stepped ? currentRevision : proof.tree;
+    const current =
+      tree === currentRevision &&
       proof.linked === linkedSheetRevision &&
       (!proof.authorSheets || !exposedStylesheets) &&
       !didAdoptStylesheets &&
       ((!frame.viewport && frame.baseURL === undefined) ||
         (sameCompletedEnvironment(frame, node) &&
-          input.styleRevision(input.document) === proof.tree &&
+          input.styleRevision(input.document) === tree &&
           linkedSheetRevision === proof.linked &&
           (!proof.authorSheets || !exposedStylesheets) &&
           !didAdoptStylesheets)) &&
       (frame.focusRevision === undefined || frame.focusRevision === input.focusRevision()) &&
       // The UA focus ring is the one focus input every frame has; rules add the revision.
-      !!frame.userAgentFocus === (input.statePseudos["focus-visible"]?.(node) === true)
-    );
+      !!frame.userAgentFocus === (input.statePseudos["focus-visible"]?.(node) === true);
+    if (current && stepped && tree !== undefined) {
+      // Re-prove at the current revision so later reads skip the step walk.
+      if (
+        latestFrameRevision?.tree !== tree ||
+        latestFrameRevision.linked !== proof.linked ||
+        latestFrameRevision.authorSheets !== proof.authorSheets
+      )
+        latestFrameRevision = { tree, linked: proof.linked, authorSheets: proof.authorSheets };
+      frame.reuse = latestFrameRevision;
+    }
+    return current;
   }
 
   function setComputedForeground(style: ComputedDeclaration, color: string): void {
@@ -10100,6 +10358,24 @@ export function createStyles(input: {
           color = previous.color;
           continue;
         }
+        // An inline write that changed only literal values of properties nothing else in the
+        // frame derives from keeps the previous frame's derived values (see restyledFrame).
+        const restyled =
+          role === "target" &&
+          previous?.resolution &&
+          sameContext &&
+          !siblingAdopted &&
+          !substitutionValues &&
+          !registrations &&
+          !theme &&
+          !materializedParent &&
+          sameEnvironment(previous)
+            ? restyledFrame(previous, inputs, computedWinners, custom, parentFrame)
+            : undefined;
+        if (restyled) {
+          certify(restyled);
+          return publishRestyledFrame(element, restyled);
+        }
         let substitution: SubstitutionFrame | undefined;
         if (substitutionValues) {
           const baseURL = elementBaseURL(element);
@@ -10409,6 +10685,7 @@ export function createStyles(input: {
           viewport: viewport && { ...viewport },
           baseURL: documentBase,
           ...(custom && { custom }),
+          ...(resolved.deferred && { resolution: attributes }),
           declarationCharacters,
           units: units + (retainInputs ? inputUnits : 0),
           characters: characters + (retainInputs ? inputCharacters : 0),
