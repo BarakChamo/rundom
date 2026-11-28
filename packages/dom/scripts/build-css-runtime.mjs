@@ -43,6 +43,30 @@ const result = await Bun.build({
       },
     },
     {
+      // cssstyle forks a second css-tree lexer when its parser module loads, although declaration
+      // classes and property tables never use it. Fork on the first parse or match instead.
+      name: "lazy-cssstyle-lexer",
+      setup(build) {
+        build.onLoad({ filter: /[\\/]cssstyle[\\/]lib[\\/]parsers\.js$/ }, ({ path }) => {
+          const eager = "const cssTree = csstree.fork(syntaxes);";
+          const source = readFileSync(path, "utf8");
+          const uses = source.match(/\bcssTree\b(?!\s*=)(?:\s*\.\s*\w+)?/g) ?? [];
+          if (
+            source.split(eager).length !== 2 ||
+            !uses.every((use) => /\.\s*(?:parse|generate|lexer)$/.test(use))
+          )
+            throw new Error(`Unexpected cssstyle lexer use in ${path}`);
+          return {
+            contents: source.replace(
+              eager,
+              "let forked;\nconst cssTree = { get parse() { return (forked ??= csstree.fork(syntaxes)).parse; }, get generate() { return (forked ??= csstree.fork(syntaxes)).generate; }, get lexer() { return (forked ??= csstree.fork(syntaxes)).lexer; } };",
+            ),
+            loader: "js",
+          };
+        });
+      },
+    },
+    {
       // css-tree copies its stack getter with Object.assign, which formats every
       // discarded syntax error. The bundled Node adapter captures the same call site lazily.
       name: "lazy-css-error-stacks",

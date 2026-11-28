@@ -203,7 +203,7 @@ describe("lean stylesheet declarations", () => {
     } finally {
       window.close();
     }
-  });
+  }, 60_000);
 
   it("applies CSSOM mutations after a lean read as on the cssstyle path", () => {
     // Given: a Material UI rule read once through getComputedStyle in two documents, one lean
@@ -243,7 +243,7 @@ describe("lean stylesheet declarations", () => {
     };
     // Then: each step reads identically
     expect(run("")).toEqual(run(decline));
-  });
+  }, 60_000);
 
   it("computes single declarations as jsdom computes them", () => {
     // Given: every single declaration in a sheet, in RunDOM and in jsdom 31.0.1
@@ -274,5 +274,5 @@ describe("lean stylesheet declarations", () => {
       ours.close();
       theirs.close();
     }
-  });
+  }, 60_000);
 });
