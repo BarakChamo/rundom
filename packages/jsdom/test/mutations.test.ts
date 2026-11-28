@@ -200,6 +200,76 @@ describe("DOM mutations", () => {
     }
   });
 
+  it("exposes MutationRecord members as jsdom's prototype accessors", () => {
+    // Given: an observer that records a child insertion and an attribute change
+    const { window } = new JSDOM("<div><i></i></div>");
+    try {
+      const parent = window.document.querySelector("div");
+      const italic = window.document.querySelector("i");
+      if (!parent || !italic) throw new Error("Expected the fixture nodes");
+      const observer = new window.MutationObserver(() => {});
+      observer.observe(parent, { childList: true, attributes: true, attributeOldValue: true });
+      const bold = window.document.createElement("b");
+
+      // When: the records are taken
+      parent.append(bold);
+      parent.setAttribute("data-x", "1");
+      const [inserted, changed] = observer.takeRecords();
+      if (!inserted || !changed) throw new Error("Expected two records");
+
+      // Then: records have no own properties, stringify as MutationRecord and read through
+      //   enumerable, configurable prototype getters in jsdom's order
+      const prototype = window.MutationRecord.prototype;
+      expect(Reflect.ownKeys(inserted)).toEqual([]);
+      expect(Object.prototype.toString.call(inserted)).toBe("[object MutationRecord]");
+      const names = [
+        "type",
+        "target",
+        "addedNodes",
+        "removedNodes",
+        "previousSibling",
+        "nextSibling",
+        "attributeName",
+        "attributeNamespace",
+        "oldValue",
+      ];
+      expect(Object.keys(prototype)).toEqual(names);
+      for (const name of names) {
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+        expect(descriptor).toMatchObject({ enumerable: true, configurable: true, set: undefined });
+        expect(typeof descriptor?.get).toBe("function");
+        expect(() => descriptor?.get?.call({})).toThrow("Illegal invocation");
+      }
+      expect(Object.getOwnPropertyDescriptor(prototype, Symbol.toStringTag)).toEqual({
+        value: "MutationRecord",
+        writable: false,
+        enumerable: false,
+        configurable: true,
+      });
+      // And: values match the change, and node lists are the same object on every read
+      expect([
+        inserted.type,
+        inserted.target,
+        inserted.previousSibling,
+        inserted.nextSibling,
+      ]).toEqual(["childList", parent, italic, null]);
+      expect(inserted.addedNodes).toBe(inserted.addedNodes);
+      expect([...inserted.addedNodes]).toEqual([bold]);
+      expect(inserted.removedNodes.length).toBe(0);
+      expect(inserted.addedNodes instanceof window.NodeList).toBe(true);
+      expect([
+        changed.type,
+        changed.attributeName,
+        changed.attributeNamespace,
+        changed.oldValue,
+      ]).toEqual(["attributes", "data-x", null, null]);
+      expect(changed.addedNodes.length).toBe(0);
+      observer.disconnect();
+    } finally {
+      window.close();
+    }
+  });
+
   it("adjusts selected node boundaries as siblings are inserted and removed", () => {
     // Given: a range that selects the second child.
     const { window } = new JSDOM("<div><i></i><b></b></div>");

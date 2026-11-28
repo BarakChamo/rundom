@@ -340,3 +340,44 @@ it("looks up HTML attribute names case-insensitively while preserving SVG and XM
     xml.window.close();
   }
 });
+
+it("rejects proxied, inherited and primitive receivers of collection operations", () => {
+  // Given: query results, cached query results, child lists and HTMLCollections
+  const { window: w } = new JSDOM('<p class="a"></p><p class="a"></p>');
+  try {
+    const length = Object.getOwnPropertyDescriptor(w.NodeList.prototype, "length")?.get;
+    const body = w.document.body;
+    if (!body) throw new Error("Expected a body");
+    const views = [
+      w.document.querySelectorAll(".a"),
+      w.document.querySelectorAll(".a"),
+      body.childNodes,
+    ];
+    for (const view of views) {
+      // When: a NodeList operation runs on a user Proxy (forwarding or not), an object
+      //   inheriting from the view, or a primitive
+      // Then: each throws the brand error, while the view itself still answers
+      expect(() => length?.call(new Proxy(view, {}))).toThrow("Illegal invocation");
+      expect(() =>
+        w.NodeList.prototype.item.call(
+          new Proxy(view, { get: (target, key) => Reflect.get(target, key) }),
+          0,
+        ),
+      ).toThrow("Illegal invocation");
+      expect(() => length?.call(Object.create(view))).toThrow("Illegal invocation");
+      expect(() => length?.call(null)).toThrow("Illegal invocation");
+      expect(() => length?.call(1)).toThrow("Illegal invocation");
+      expect(length?.call(view)).toBe(2);
+      expect(Object.getOwnPropertySymbols(view)).toEqual([]);
+    }
+    const elements = w.document.getElementsByTagName("p");
+    expect(() =>
+      Object.getOwnPropertyDescriptor(w.HTMLCollection.prototype, "length")?.get?.call(
+        new Proxy(elements, {}),
+      ),
+    ).toThrow("Illegal invocation");
+    expect(elements.length).toBe(2);
+  } finally {
+    w.close();
+  }
+});

@@ -110,29 +110,88 @@ export function createMutationObservers<Node, Nodes>(context: {
 }) {
   const token = Symbol();
 
+  /** Narrows a getter receiver to a record, rejecting foreign receivers as the Web IDL brand check does. */
+  function changeOf(receiver: unknown): MutationRecord {
+    if (!MutationRecord.is(receiver)) throw new TypeError("Illegal invocation");
+    return receiver;
+  }
+
+  // Members are prototype accessors as in jsdom; node lists are built on first read and kept.
   class MutationRecord {
-    readonly type: Change["type"];
-    readonly target: Node;
-    readonly addedNodes: Nodes;
-    readonly removedNodes: Nodes;
-    readonly previousSibling: Node | null;
-    readonly nextSibling: Node | null;
-    readonly attributeName: string | null;
-    readonly attributeNamespace: string | null;
-    readonly oldValue: string | null;
+    readonly #change: Change;
+    readonly #target: Node;
+    readonly #previousSibling: Node | null;
+    readonly #nextSibling: Node | null;
+    readonly #includeOldValue: boolean;
+    #addedNodes: Nodes | undefined;
+    #removedNodes: Nodes | undefined;
     constructor(key: symbol, change: Change, includeOldValue: boolean) {
       if (key !== token) throw new TypeError("Illegal constructor");
-      this.type = change.type;
-      this.target = context.wrap(change.target);
-      this.addedNodes = context.list(change.type === "childList" ? change.added : []);
-      this.removedNodes = context.list(change.type === "childList" ? change.removed : []);
-      this.previousSibling =
+      this.#change = change;
+      this.#target = context.wrap(change.target);
+      this.#previousSibling =
         change.type === "childList" && change.previous ? context.wrap(change.previous) : null;
-      this.nextSibling =
+      this.#nextSibling =
         change.type === "childList" && change.next ? context.wrap(change.next) : null;
-      this.attributeName = change.type === "attributes" ? change.name : null;
-      this.attributeNamespace = change.type === "attributes" ? (change.namespace ?? null) : null;
-      this.oldValue = includeOldValue && change.type !== "childList" ? change.oldValue : null;
+      this.#includeOldValue = includeOldValue;
+    }
+    static is(value: unknown): value is MutationRecord {
+      return typeof value === "object" && value !== null && #change in value;
+    }
+    static {
+      for (const name of [
+        "type",
+        "target",
+        "addedNodes",
+        "removedNodes",
+        "previousSibling",
+        "nextSibling",
+        "attributeName",
+        "attributeNamespace",
+        "oldValue",
+      ])
+        Object.defineProperty(this.prototype, name, { enumerable: true });
+      Object.defineProperty(this.prototype, Symbol.toStringTag, {
+        value: "MutationRecord",
+        configurable: true,
+      });
+    }
+    get type(): Change["type"] {
+      return changeOf(this).#change.type;
+    }
+    get target(): Node {
+      return changeOf(this).#target;
+    }
+    get addedNodes(): Nodes {
+      const record = changeOf(this);
+      const change = record.#change;
+      return (record.#addedNodes ??= context.list(change.type === "childList" ? change.added : []));
+    }
+    get removedNodes(): Nodes {
+      const record = changeOf(this);
+      const change = record.#change;
+      return (record.#removedNodes ??= context.list(
+        change.type === "childList" ? change.removed : [],
+      ));
+    }
+    get previousSibling(): Node | null {
+      return changeOf(this).#previousSibling;
+    }
+    get nextSibling(): Node | null {
+      return changeOf(this).#nextSibling;
+    }
+    get attributeName(): string | null {
+      const change = changeOf(this).#change;
+      return change.type === "attributes" ? change.name : null;
+    }
+    get attributeNamespace(): string | null {
+      const change = changeOf(this).#change;
+      return change.type === "attributes" ? (change.namespace ?? null) : null;
+    }
+    get oldValue(): string | null {
+      const record = changeOf(this);
+      const change = record.#change;
+      return record.#includeOldValue && change.type !== "childList" ? change.oldValue : null;
     }
   }
 
