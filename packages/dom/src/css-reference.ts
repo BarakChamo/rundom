@@ -1,6 +1,8 @@
 // Loads the pinned upstream CSS grammar on demand for declarations outside cssstyle's coverage.
 import { createRequire } from "node:module";
 
+import { canonicalDirectSelector } from "./selector-parser.js";
+
 const require = createRequire(import.meta.url);
 type Property = { initial?: string | null; inherited?: boolean };
 let properties: Record<string, Property> | undefined;
@@ -334,8 +336,23 @@ export function parseContainerConditions(
   return { text: serializeComponentValue(ast), conditions: Object.freeze(conditions) };
 }
 
-const canonicalSelectors = new Map<string, string | null>();
+/**
+ * Returns the reference serialization of a selector list, or undefined when it is invalid.
+ * Lists in the direct grammar are serialized without loading the reference engine.
+ */
 export function canonicalSelectorList(
+  text: string,
+  namespaces?: ReadonlyMap<string, string>,
+): string | undefined {
+  return (
+    (namespaces?.size ? undefined : canonicalDirectSelector(text)) ??
+    referenceSelectorList(text, namespaces)
+  );
+}
+
+const canonicalSelectors = new Map<string, string | null>();
+/** Serializes a selector list through the pinned reference grammar. */
+export function referenceSelectorList(
   text: string,
   namespaces?: ReadonlyMap<string, string>,
 ): string | undefined {
