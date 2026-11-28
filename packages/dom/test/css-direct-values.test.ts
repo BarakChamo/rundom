@@ -7,11 +7,36 @@ import {
   referenceSpecifiedDeclaration,
   specifiedDeclaration,
 } from "../src/css-reference.js";
+import { createRequire } from "node:module";
 import {
+  cssWideKeywords,
   directExpansion,
   directShorthand,
   directSpecifiedValue,
+  genericFamilies,
 } from "../src/css-direct-values.js";
+
+const require = createRequire(import.meta.url);
+const referenceProperties: Record<
+  string,
+  { value: string }
+> = require("rundom-css-reference/lib/generated/css-property-definitions.js");
+const referenceValues: Record<
+  string,
+  string
+> = require("rundom-css-reference/lib/generated/css-value-definitions.js");
+/** The alternatives of a reference grammar made only of `|`-separated keywords. */
+const keywordsOf = (grammar: string) => grammar.split("|").map((word) => word.trim());
+// The reference's own CSS-wide keywords: the complete value grammar of `all`.
+const referenceWideKeywords = keywordsOf(referenceProperties.all!.value);
+/** Every CSS-wide keyword in each position a direct path reads: alone, in a list, quoted, cased. */
+function keywordPlacements(make: (keyword: string) => readonly string[]): string[] {
+  return referenceWideKeywords.flatMap((keyword) => [
+    ...make(keyword),
+    ...make(keyword.toUpperCase()),
+    ...make(keyword[0]!.toUpperCase() + keyword.slice(1)),
+  ]);
+}
 
 const numbers = [
   "0",
@@ -94,6 +119,16 @@ const families = [
   "math",
   "Menlo, Consolas, 'Liberation Mono', monospace",
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"',
+  ...keywordPlacements((keyword) => [
+    keyword,
+    `"${keyword}"`,
+    `'${keyword}'`,
+    `FirstName, LastName, ${keyword}`,
+    `${keyword}, serif`,
+    `"${keyword}", serif`,
+    `Foo ${keyword}`,
+    `${keyword} Foo`,
+  ]),
 ];
 const radii = [
   "4px",
@@ -117,6 +152,7 @@ const radii = [
   "1e2px",
   "9999px",
   "4px 0 0 4px",
+  ...keywordPlacements((keyword) => [keyword, `4px ${keyword}`, `${keyword} 4px`]),
 ];
 const easings = [
   "",
@@ -163,7 +199,39 @@ const transitions = [
   "opacity 1s, transform 2s ease-in",
   "opacity 1s,",
   "opacity 1s, none",
+  ...keywordPlacements((keyword) => [
+    keyword,
+    `${keyword} 1s`,
+    `opacity 1s, ${keyword}`,
+    `${keyword} 1s, opacity 1s`,
+    `opacity ${keyword}`,
+  ]),
 ];
+
+describe("direct tier keyword tables", () => {
+  it("uses the reference engine's CSS-wide keywords and generic family names", () => {
+    // Given: the reference grammar of `all` and of the complete and incomplete generic families
+    const generics = [
+      ...keywordsOf(referenceValues["<generic-font-complete>"]!),
+      ...keywordsOf(referenceValues["<generic-font-incomplete>"]!),
+    ];
+    // When: the direct tier's tables are read
+    // Then: they hold exactly the reference's names
+    expect([...cssWideKeywords].toSorted()).toEqual(referenceWideKeywords.toSorted());
+    expect([...genericFamilies].toSorted()).toEqual(generics.toSorted());
+  });
+
+  it("serializes CSS-wide keywords in every dimension position as the reference does", () => {
+    // Given: each CSS-wide keyword as a whole value of each dimension property
+    for (const name of dimensionProperties)
+      for (const text of keywordPlacements((keyword) => [keyword]))
+        // When: the value is served directly
+        // Then: it declines or equals the reference
+        for (const direct of [directSpecifiedValue(name, text)])
+          if (direct !== undefined)
+            expect(direct, `${name}: ${text}`).toBe(referenceSpecifiedDeclaration(name, text));
+  });
+});
 
 describe("directSpecifiedValue", () => {
   it("serializes every accepted dimension exactly as the pinned reference grammar does", () => {
