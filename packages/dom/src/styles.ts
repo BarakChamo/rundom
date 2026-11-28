@@ -40,6 +40,7 @@ import { InlineDeclaration, parseInlineBlock } from "./inline-declaration.js";
 import { parseSizeDeclaration } from "./css-sizing.js";
 import { acceptsAnchors, anchorComponents } from "./css-anchor.js";
 import { hasContextlessPercentage, serializeCSSMath } from "./css-numeric.js";
+import { cssWideKeywords, directExpansion, directSpecifiedValue } from "./css-direct-values.js";
 import {
   createDeclarationViews,
   type DeclarationImplementation,
@@ -3868,7 +3869,7 @@ function createRuleInterfaces(
     #sheet: Sheet | null = null;
     #parent: RuleParents["parentRule"] = null;
     #declaration: RuleDeclarationFactory | undefined;
-    #cascade?: Declaration | undefined;
+    #cascade?: DeclarationImplementation | undefined;
 
     constructor(
       public selection: { current: RuleSelection },
@@ -3877,7 +3878,7 @@ function createRuleInterfaces(
       this.#declaration = declaration;
     }
 
-    cascadeDeclaration(): Declaration {
+    cascadeDeclaration(): DeclarationImplementation {
       if (this.#view) return ruleDeclaration(this.#view);
       const factory = this.#declaration;
       if (!factory) throw new Error("An unexposed rule must own its declaration factory");
@@ -5141,8 +5142,197 @@ function readStylesheetDeclaration(
   else style.setProperty(entry.property, value, priority);
 }
 
+// Lean blocks: the entries cssstyle would store for declarations whose result is known without it.
+// Each table entry is stored verbatim by the cssstyle path; css-lean-declarations-contracts.test.ts
+// compares every admitted shape with that path, so a cssstyle upgrade that changes one fails there.
+const leanKeywords = new Map<string, ReadonlySet<string>>(
+  Object.entries({
+    display: "block inline inline-block flex inline-flex grid inline-grid none contents flow-root",
+    position: "static relative absolute fixed sticky",
+    "box-sizing": "border-box content-box",
+    "align-items": "flex-start flex-end center baseline stretch",
+    "align-self": "auto flex-start flex-end center baseline stretch",
+    "align-content": "flex-start flex-end center space-between space-around stretch",
+    "justify-content": "flex-start flex-end center space-between space-around space-evenly",
+    "flex-direction": "row row-reverse column column-reverse",
+    "flex-wrap": "nowrap wrap wrap-reverse",
+    overflow: "hidden visible auto scroll",
+    "overflow-x": "hidden visible auto scroll",
+    "overflow-y": "hidden visible auto scroll",
+    visibility: "visible hidden collapse",
+    cursor: "pointer default auto text move not-allowed",
+    "pointer-events": "auto none",
+    "user-select": "none auto text",
+    "font-style": "normal italic",
+    "font-weight": "normal bold 300 400 500 600 700",
+    "text-overflow": "ellipsis clip",
+    "object-fit": "contain cover fill none",
+    "transition-behavior": "normal allow-discrete",
+  }).map(([name, words]) => [name, new Set(words.split(" "))]),
+);
+// Lengths, percentages and (where accepted) unitless numbers in the spelling cssstyle stores as is.
+const leanLength = /^-?(?:0|[1-9]\d{0,3})(?:\.\d{0,4}[1-9])?(?:px|em|rem|%|vh|vw)$/;
+const leanNumber = /^-?(?:0|[1-9]\d{0,3})(?:\.\d{0,4}[1-9])?$/;
+type LeanDimension = { negative: boolean; number: boolean; keyword?: string };
+const leanDimensions = new Map<string, LeanDimension>([
+  ...["width", "height", "min-width", "min-height"].map(
+    (name) => [name, { negative: false, number: false, keyword: "auto" }] as const,
+  ),
+  ...["max-width", "max-height"].map(
+    (name) => [name, { negative: false, number: false, keyword: "none" }] as const,
+  ),
+  ...borderSides.flatMap((side) => [
+    [`margin-${side}`, { negative: true, number: false, keyword: "auto" }] as const,
+    [`padding-${side}`, { negative: false, number: false }] as const,
+    [side, { negative: true, number: false, keyword: "auto" }] as const,
+  ]),
+  ["font-size", { negative: false, number: false }],
+  ["letter-spacing", { negative: true, number: false }],
+  ["line-height", { negative: false, number: true }],
+  ...["top-left", "top-right", "bottom-right", "bottom-left"].map(
+    (corner) => [`border-${corner}-radius`, { negative: false, number: false }] as const,
+  ),
+]);
+const leanTime = /^-?(?:0|[1-9]\d{0,3})(?:\.\d{0,4}[1-9])?m?s$/;
+const leanTransitionProperty = /^[a-z][a-z-]*$/;
+
+function leanDimension(name: string, value: string): string | undefined {
+  const accepts = leanDimensions.get(name);
+  if (!accepts || (!accepts.negative && value.startsWith("-"))) return undefined;
+  if (value === accepts.keyword || leanLength.test(value)) return value;
+  return accepts.number && leanNumber.test(value) ? value : undefined;
+}
+
+/** cssstyle's position-shorthand serialization of one to four edge values. */
+function leanEdges(values: readonly string[]): string {
+  const [top, right = top, bottom = top, left = right] = values;
+  if (values.length === 3 && top === bottom) return top === right ? top! : `${top} ${right}`;
+  if (values.length === 3) return values.join(" ");
+  if (right !== left) return `${top} ${right} ${bottom} ${left}`;
+  if (top !== bottom) return `${top} ${right} ${bottom}`;
+  return top === right ? top! : `${top} ${right}`;
+}
+
+/** The [name, value] entries the cssstyle path stores for one declaration, or undefined to decline. */
+function leanEntries(
+  name: string,
+  value: string,
+): readonly (readonly [string, string])[] | undefined {
+  if (value.length > 256 || value !== value.trim() || /[\\\0\r\f]|\/\*|url\(|var\(/i.test(value))
+    return undefined;
+  if (name.startsWith("--")) return value && !/["'([{]/.test(value) ? [[name, value]] : undefined;
+  if (leanKeywords.get(name)?.has(value)) return [[name, value]];
+  const dimension = leanDimension(name, value);
+  if (dimension !== undefined) return [[name, dimension]];
+  if (
+    (name === "transition-delay" && leanTime.test(value)) ||
+    (name === "transition-duration" && leanTime.test(value) && !value.startsWith("-")) ||
+    (name === "transition-property" &&
+      leanTransitionProperty.test(value) &&
+      !cssWideKeywords.has(value))
+  )
+    return [[name, value]];
+  if (name === "color" || name === "background-color") {
+    const color = value.startsWith("#") ? serializeHexColor(value) : serializeRGB(value);
+    return color === undefined ? undefined : [[name, color]];
+  }
+  if (name === "font-family") {
+    const families = value.includes("(") ? undefined : directSpecifiedValue(name, value);
+    return families === undefined ? undefined : [[name, families]];
+  }
+  if (name === "padding" || name === "margin") {
+    const parts = value.split(" ");
+    if (parts.length > 4) return undefined;
+    const edges: string[] = [];
+    for (const part of parts) {
+      const edge = leanDimension(`${name}-top`, part);
+      if (edge === undefined) return undefined;
+      edges.push(edge);
+    }
+    const [top, right = top, bottom = top, left = right] = edges;
+    return [
+      [`${name}-top`, top!],
+      [`${name}-right`, right!],
+      [`${name}-bottom`, bottom!],
+      [`${name}-left`, left!],
+      [name, leanEdges(edges)],
+    ];
+  }
+  if ((name === "border-radius" && !value.includes("(")) || name === "transition")
+    return directExpansion(name, value)?.entries;
+  return undefined;
+}
+
+/** The text cssstyle stores for a declaration that stores only itself, when known without it. */
+function leanStoredValue(name: string, value: string): string | undefined {
+  const entries = leanEntries(name, value);
+  return entries?.length === 1 && entries[0]![0] === name ? entries[0]![1] : undefined;
+}
+
+/** A block of plain declarations as cssstyle would store it, or undefined when any declaration declines. */
+function leanDeclarationBlock(
+  block: Extract<CssNode, { type: "Block" }>,
+  generate: (typeof import("css-tree"))["generate"],
+): DeclarationBlock | undefined {
+  if (block.children.size > 64) return undefined;
+  const values = new Map<string, string>();
+  for (const child of block.children) {
+    if (child.type !== "Declaration" || child.important) return undefined;
+    const entries = leanEntries(child.property, generate(child.value));
+    if (!entries) return undefined;
+    // A name set twice (directly or through a shorthand) needs cssstyle's replacement rules.
+    for (const [name, value] of entries) {
+      if (values.has(name)) return undefined;
+      values.set(name, value);
+    }
+  }
+  const lean: DeclarationBlock = {
+    values,
+    priorities: new Map(),
+    properties: [...values.keys()],
+    borderOrder: undefined,
+    lastBorderOrder: 0,
+  };
+  leanBlocks.add(lean);
+  return lean;
+}
+const leanBlocks = new WeakSet<DeclarationBlock>();
+const leanViews = new WeakMap<DeclarationBlock, LeanDeclaration>();
+
+/** The cascade's read-only view of a lean block; script gets a cssstyle declaration restored from it. */
+class LeanDeclaration implements DeclarationImplementation {
+  readonly [index: number]: string | undefined;
+  readonly _length: number;
+  readonly parentRule = null;
+  readonly #block: DeclarationBlock;
+  constructor(block: DeclarationBlock) {
+    this.#block = block;
+    this._length = block.properties.length;
+    Object.assign(this, block.properties);
+  }
+  getPropertyValue(name: string): string {
+    return this.#block.values.get(name) ?? "";
+  }
+  getPropertyPriority(name: string): string {
+    return this.#block.priorities.get(name) ?? "";
+  }
+  get cssText(): string {
+    throw new Error("A lean stylesheet declaration is never exposed to script");
+  }
+  setProperty(): void {
+    throw new Error("A lean stylesheet declaration is never exposed to script");
+  }
+  removeProperty(): string {
+    throw new Error("A lean stylesheet declaration is never exposed to script");
+  }
+}
+
 type PrivateDeclarationCache = WeakMap<DeclarationBlock, WeakRef<Declaration>>;
-type RuleDeclarationFactory = (cache?: PrivateDeclarationCache) => Declaration;
+/** Script gets a cssstyle declaration; the private cascade (given its cache) may get a lean view. */
+type RuleDeclarationFactory = {
+  (): Declaration;
+  (cache: PrivateDeclarationCache): DeclarationImplementation;
+};
 
 function deferredDeclaration(
   declaration: () => StylesheetDeclaration,
@@ -5150,8 +5340,15 @@ function deferredDeclaration(
   generate: (typeof import("css-tree"))["generate"],
   retainedSource: boolean,
 ): RuleDeclarationFactory {
-  return (cache) => {
-    function restore(snapshot: DeclarationBlock): Declaration {
+  function factory(): Declaration;
+  function factory(cache: PrivateDeclarationCache): DeclarationImplementation;
+  function factory(cache?: PrivateDeclarationCache): DeclarationImplementation {
+    function restore(snapshot: DeclarationBlock): DeclarationImplementation {
+      if (cache && leanBlocks.has(snapshot)) {
+        let lean = leanViews.get(snapshot);
+        if (!lean) leanViews.set(snapshot, (lean = new LeanDeclaration(snapshot)));
+        return lean;
+      }
       const known = cache?.get(snapshot)?.deref();
       if (known) return known;
       const style = declaration();
@@ -5171,6 +5368,11 @@ function deferredDeclaration(
     }
     const cached = key === undefined ? undefined : declarationBlocks.get(key);
     if (cached) return restore(cached);
+    const lean = leanDeclarationBlock(block, generate);
+    if (lean) {
+      if (key !== undefined) rememberSyntax(declarationBlocks, key, lean, 256);
+      return restore(lean);
+    }
     const style = declaration();
     for (const child of block.children)
       if (child.type === "Declaration") readStylesheetDeclaration(style, child, generate);
@@ -5184,7 +5386,8 @@ function deferredDeclaration(
       }
     }
     return style;
-  };
+  }
+  return factory;
 }
 
 // The pinned generator re-emits every token of raw text and only appends a newline after a
@@ -8371,6 +8574,9 @@ export function createStyles(input: {
         style.setProperty(name, value);
         return;
       }
+      stored = leanStoredValue(name, value);
+    }
+    if (stored === undefined) {
       const probe = declaration();
       probe.setProperty(name, value);
       const text = probe._values.get(name);
