@@ -37,7 +37,9 @@ describe("direct CSS tier", () => {
       for (const [index, easing] of easings.entries()) {
         // When: both computed values are read
         const read = (id: string) =>
-          window.getComputedStyle(window.document.getElementById(id)!).transitionTimingFunction;
+          window
+            .getComputedStyle(window.document.getElementById(id)!)
+            .getPropertyValue("transition-timing-function");
         // Then: the direct declaration computes to the substituted value
         expect(read(`d${index}`), easing).toBe(read(`v${index}`));
       }
@@ -56,12 +58,12 @@ describe("direct CSS tier", () => {
       const style = window.getComputedStyle(window.document.getElementById("x")!);
       // Then: they equal jsdom 31.0.1's computed values
       expect([
-        style.fontFamily,
-        style.fontSize,
-        style.letterSpacing,
-        style.borderRadius,
-        style.borderBottomLeftRadius,
-        style.transitionTimingFunction,
+        style.getPropertyValue("font-family"),
+        style.getPropertyValue("font-size"),
+        style.getPropertyValue("letter-spacing"),
+        style.getPropertyValue("border-radius"),
+        style.getPropertyValue("border-bottom-left-radius"),
+        style.getPropertyValue("transition-timing-function"),
       ]).toEqual([
         "Roboto, Helvetica, Arial, sans-serif",
         "14px",
