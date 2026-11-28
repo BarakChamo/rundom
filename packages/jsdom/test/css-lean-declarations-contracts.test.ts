@@ -1,7 +1,22 @@
 // Pins that stylesheet blocks built without cssstyle store, cascade and expose exactly what the cssstyle path does.
 import { describe, expect, it } from "vitest";
 import { JSDOM } from "@run-dom/jsdom";
-import { JSDOM as ReferenceJSDOM } from "jsdom";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { JSDOM: ReferenceJSDOM }: { JSDOM: typeof JSDOM } = require("jsdom");
+type StyleRule = {
+  readonly cssText: string;
+  readonly style: Iterable<string> & {
+    cssText: string;
+    readonly length: number;
+    item(index: number): string;
+    getPropertyValue(name: string): string;
+    getPropertyPriority(name: string): string;
+    setProperty(name: string, value: string, priority?: string): void;
+    removeProperty(name: string): string;
+  };
+};
 
 // A leading declaration that the lean builder declines and the cssstyle path drops, so the block
 // behind it takes the general path while storing the same entries.
@@ -155,7 +170,7 @@ const blocks = [
 ];
 
 /** Every name a block touches: its declared names plus the longhands the general path indexes. */
-function touchedNames(window: JSDOM["window"], rule: CSSStyleRule, block: string): string[] {
+function touchedNames(window: JSDOM["window"], rule: StyleRule, block: string): string[] {
   const names = new Set(
     block
       .split(";")
@@ -182,8 +197,8 @@ describe("lean stylesheet declarations", () => {
       const reads = computed.map(([lean, general]) => ({ lean, general }));
       const cssRules = window.document.styleSheets[0]!.cssRules;
       for (const [i, block] of blocks.entries()) {
-        const lean = cssRules[2 * i] as CSSStyleRule;
-        const general = cssRules[2 * i + 1] as CSSStyleRule;
+        const lean = cssRules[2 * i] as StyleRule;
+        const general = cssRules[2 * i + 1] as StyleRule;
         // Then: computed values, public text, indices and per-name reads agree
         for (const name of touchedNames(window, general, block)) {
           expect(reads[i]!.lean!.getPropertyValue(name), `${block} computed ${name}`).toBe(
@@ -223,7 +238,7 @@ describe("lean stylesheet declarations", () => {
       };
       const first = computedText();
       const sheet = window.document.styleSheets[0]!;
-      const rule = sheet.cssRules[0] as CSSStyleRule;
+      const rule = sheet.cssRules[0] as StyleRule;
       // When: the rule is edited through every CSSOM entry point
       const steps: string[] = [first];
       const read = () => {
