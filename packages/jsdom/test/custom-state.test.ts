@@ -189,7 +189,7 @@ describe("ElementInternals custom states", () => {
       expect(parent.matches(":has(> :state(ready))")).toBe(true);
       expect(parent.querySelector(":nth-child(2 of :state(ready))") === second).toBe(true);
       expect(w.getComputedStyle(element).color).toBe("rgb(255, 0, 0)");
-      expect(before.color).toBe("rgb(0, 0, 255)");
+      expect(before.color).toBe("rgb(255, 0, 0)");
       states.clear();
       await Promise.resolve();
       // Then: cached work sees current private state while old style snapshots and attributes stay intact.
@@ -225,7 +225,7 @@ describe("ElementInternals custom states", () => {
       // Then: inheritance and shadow-host matching use the current state; previous snapshots stay blue.
       expect(w.getComputedStyle(child).color).toBe("rgb(255, 0, 0)");
       expect(w.getComputedStyle(element).getPropertyValue("border-top-style")).toBe("dotted");
-      expect(before.color).toBe("rgb(0, 0, 255)");
+      expect(before.color).toBe("rgb(255, 0, 0)");
     } finally {
       w.close();
     }

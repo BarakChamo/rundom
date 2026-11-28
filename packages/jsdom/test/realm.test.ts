@@ -12,7 +12,7 @@ const {
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name script realms", ({ Constructor }) => {
   it("uses the Window for bare global event methods", () => {
     // Given: a script realm with a callback registered through the bare global.
@@ -101,7 +101,7 @@ describe("Window lifecycle", () => {
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name HTML event handlers", ({ Constructor }) => {
   it("shares the body and Window hash handler and delivers the old and new URL", async () => {
     // Given: a content handler compiled in the enabled Window realm.
@@ -181,7 +181,7 @@ it("compiles inline handlers with element, form, and document scopes", () => {
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM, Console: VirtualConsole },
-  { name: "jsdom 30.1.3", Constructor: reference, Console: ReferenceConsole },
+  { name: "jsdom 31.0.1", Constructor: reference, Console: ReferenceConsole },
 ])("$name Window host methods", ({ Constructor, Console }) => {
   it("reports unsupported operations to the originating Window's console", () => {
     // Given a Window with a dedicated virtual console.
@@ -237,7 +237,7 @@ describe.each([
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name legacy Window properties", ({ Constructor }) => {
   it("exposes stable constructor aliases and Window-local name and status", () => {
     // Given two independent Window globals.
@@ -361,7 +361,7 @@ it("delivers cloned channel payloads with receiving Window prototypes", async ()
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name historical browser objects", ({ Constructor }) => {
   it("exposes distinct replaceable bars and a legacy external object", () => {
     // Given two separate browsing contexts.
@@ -422,6 +422,22 @@ it("rejects nested DOM nodes and untransferred ports during message serializatio
     })()`);
     // Then the clone fails in the sending realm before ownership changes.
     expect(result).toEqual([true, "DataCloneError", 8, true, "DataCloneError", 8]);
+  } finally {
+    window.close();
+  }
+});
+
+it("defines legacy exception constants on each realm constructor and prototype", () => {
+  const { window } = new JSDOM();
+  try {
+    for (const target of [window.DOMException, window.DOMException.prototype]) {
+      expect(Object.getOwnPropertyDescriptor(target, "INDEX_SIZE_ERR")).toEqual({
+        value: 1,
+        writable: false,
+        enumerable: true,
+        configurable: false,
+      });
+    }
   } finally {
     window.close();
   }

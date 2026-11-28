@@ -28,6 +28,9 @@ for (const extension of ["mts", "cts"]) {
   writeFileSync(new URL(`../dist/window-bindings.d.${extension}`, import.meta.url), bindingType);
   writeFileSync(
     new URL(`../dist/jsdom.d.${extension}`, import.meta.url),
-    facade.replace("./window-bindings.mjs", `./window-bindings.${moduleExtension}`),
+    facade.replace("./window-bindings.mjs", `./window-bindings.${moduleExtension}`) +
+      (extension === "mts"
+        ? "\ndeclare const api: { JSDOM: typeof JSDOM; VirtualConsole: typeof VirtualConsole; CookieJar: typeof CookieJar; toughCookie: typeof import('tough-cookie'); requestInterceptor: typeof requestInterceptor };\nexport default api;\n"
+        : ""),
   );
 }

@@ -56,12 +56,14 @@ type XMLInput = {
   markup: string;
   url: string;
   namespaces?: Record<string, string>;
-  onScript?: (script: Raw.Element) => void;
+  onScript?: (script: Raw.Element) => Promise<void> | undefined;
+  active?: () => boolean;
+  createElement?: typeof tree.createElement;
   DOMException?: typeof globalThis.DOMException;
 };
 
 /** Parses XML into a document or contextual fragment and rejects malformed markup. */
-export function parseXML(input: XMLInput): void {
+export function parseXML(input: XMLInput): Promise<void> | undefined {
   const { SaxesParser }: { SaxesParser: typeof Parser } = require("saxes");
   const parser = new SaxesParser({
     xmlns: true,
@@ -71,6 +73,7 @@ export function parseXML(input: XMLInput): void {
       : { fragment: true, additionalNamespaces: input.namespaces }),
   });
   let parent: Raw.ParentNode = input.document;
+  let blocking: Promise<void> | undefined;
   const stack: Raw.ParentNode[] = [];
 
   function addData(data: string, special?: Special): void {
@@ -83,7 +86,7 @@ export function parseXML(input: XMLInput): void {
   });
   parser.on("opentag", (tag) => {
     // The adapter stores namespace strings verbatim. Its enum only lists HTML parser namespaces.
-    const node = tree.createElement(
+    const node = (input.createElement ?? tree.createElement)(
       tag.name,
       tag.uri as html.NS,
       Object.values(tag.attributes).map((attr) => ({
@@ -112,7 +115,7 @@ export function parseXML(input: XMLInput): void {
       tag.local === "script" &&
       tree.isElementNode(closed)
     )
-      input.onScript(closed);
+      blocking = input.onScript(closed);
   });
   parser.on("text", (value) => {
     if (parent !== input.document || input.namespaces !== undefined) tree.insertText(parent, value);
@@ -134,7 +137,27 @@ export function parseXML(input: XMLInput): void {
       if (name && value !== undefined && !(name in parser.ENTITIES)) parser.ENTITIES[name] = value;
     }
   });
-  parser.write(input.markup).close();
+  if (!input.active) {
+    parser.write(input.markup).close();
+    return;
+  }
+  let offset = 0;
+  function resume(): Promise<void> | undefined {
+    while (input.active?.() && offset < input.markup.length) {
+      const boundary = input.markup.indexOf(">", offset);
+      const end = boundary < 0 ? input.markup.length : boundary + 1;
+      const chunk = input.markup.slice(offset, end);
+      offset = end;
+      parser.write(chunk);
+      if (blocking) {
+        const pending = blocking;
+        blocking = undefined;
+        return pending.then(resume);
+      }
+    }
+    if (input.active?.()) parser.close();
+  }
+  return resume();
 }
 
 /** Parses a fragment with the in-scope namespace declarations of its context. */

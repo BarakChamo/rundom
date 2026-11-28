@@ -1,6 +1,33 @@
-// Pins computed-style snapshot isolation and dependencies under repeated accessibility-style reads.
+// Pins computed-style liveness and dependencies under repeated accessibility-style reads.
 import { expect, it } from "vitest";
 import { JSDOM } from "@run-dom/jsdom";
+
+it("preserves overflow axes and CSS property aliases across snapshot materialization", () => {
+  const { window } = new JSDOM(
+    "<style>main { display: block; max-width: 12px }</style><main></main>",
+  );
+  try {
+    const main = window.document.querySelector("main");
+    if (!(main instanceof window.HTMLElement)) throw new Error("Expected an HTML element");
+    const initial = window.getComputedStyle(main);
+    main.style.setProperty("overflow-x", "hidden");
+    const clipped = window.getComputedStyle(main);
+    main.style.setProperty("overflow-x", "scroll");
+    expect([
+      Reflect.get(initial, "overflow"),
+      Reflect.get(initial, "overflowX"),
+      Reflect.get(initial, "overflowY"),
+    ]).toEqual(["visible", "scroll", "visible"]);
+    expect(Reflect.get(initial, "maxWidth")).toBe("12px");
+    expect(Reflect.get(clipped, "overflowX")).toBe("scroll");
+    expect(clipped.getPropertyValue("overflow-x")).toBe("scroll");
+    expect(clipped.length).toBeGreaterThan(0);
+    expect(Reflect.get(clipped, "overflowX")).toBe("scroll");
+    expect(Reflect.get(window.getComputedStyle(main), "overflowX")).toBe("scroll");
+  } finally {
+    window.close();
+  }
+});
 
 it("keeps computed initial and inherited keywords stable across snapshot enumeration", () => {
   const { window } = new JSDOM(
@@ -13,7 +40,7 @@ it("keeps computed initial and inherited keywords stable across snapshot enumera
     if (!parent || !child) throw new Error("Expected a parent and child");
     const captured = window.getComputedStyle(child);
     parent.style.setProperty("pointer-events", "auto");
-    expect(captured.getPropertyValue("pointer-events")).toBe("none");
+    expect(captured.getPropertyValue("pointer-events")).toBe("auto");
     expect(captured.display).toBe("inline");
     expect(captured.getPropertyValue("float")).toBe("none");
     expect(window.getComputedStyle(child).getPropertyValue("pointer-events")).toBe("auto");
@@ -123,7 +150,7 @@ it("preserves color tokens in computed custom properties until used by a color l
   }
 });
 
-it("returns independent readonly snapshots with stable indexed declarations", () => {
+it("returns distinct readonly declarations with live values", () => {
   // Given: repeated reads must not expose a shared mutable public declaration.
   const { window } = new JSDOM(
     "<style>p{color:red;margin:1px 2px;font:italic 16px serif}</style><p>text</p>",
@@ -146,8 +173,8 @@ it("returns independent readonly snapshots with stable indexed declarations", ()
     const third = window.getComputedStyle(node);
     expect(third.color).toBe("rgb(0, 0, 255)");
     expect(third.getPropertyValue("margin-left")).toBe("4px");
-    expect(first.color).toBe("rgb(255, 0, 0)");
-    expect(second.color).toBe("rgb(255, 0, 0)");
+    expect(first.color).toBe("rgb(0, 0, 255)");
+    expect(second.color).toBe("rgb(0, 0, 255)");
     expect(first.getPropertyPriority("color")).toBe("");
   } finally {
     window.close();
@@ -198,8 +225,8 @@ it("tracks inherited custom properties, ancestor fonts, and scheme changes", () 
     main.setAttribute("style", "--size:3em;font-size:20px;color-scheme:dark;color:CanvasText");
     const next = window.getComputedStyle(child);
     expect(next.getPropertyValue("width")).toBe("60px");
-    expect(next.color).not.toBe(first.color);
-    expect(first.getPropertyValue("width")).toBe("20px");
+    expect(next.color).toBe(first.color);
+    expect(first.getPropertyValue("width")).toBe("60px");
   } finally {
     window.close();
   }
@@ -267,8 +294,8 @@ it("preserves target-dependent SVG currentColor when ancestor styles have been q
   }
 });
 
-it("resolves relative computed URLs against the current document base", () => {
-  // Given: a base change can alter a computed value without changing its declaration.
+it("retains the declaration URL base until the property is assigned again", () => {
+  // Given: the declaration was parsed with the first base URL.
   const { window } = new JSDOM(
     '<base href="/first/"><p style="background-image:url(image.png)">text</p>',
     { url: "https://example.test/" },
@@ -286,17 +313,21 @@ it("resolves relative computed URLs against the current document base", () => {
     );
     base.setAttribute("href", "/second/");
     expect(window.getComputedStyle(node).getPropertyValue("background-image")).toBe(
-      'url("https://example.test/second/image.png")',
+      'url("https://example.test/first/image.png")',
     );
     expect(first.getPropertyValue("background-image")).toBe(
       'url("https://example.test/first/image.png")',
+    );
+    node.style.setProperty("background-image", "url(image.png)");
+    expect(first.getPropertyValue("background-image")).toBe(
+      'url("https://example.test/second/image.png")',
     );
   } finally {
     window.close();
   }
 });
 
-it("keeps an unread relative URL from the snapshot's original document base", () => {
+it("resolves an unread relative URL against the stylesheet base at attachment", () => {
   // Given: the ancestor already needed the document base during cascade construction.
   const { window } = new JSDOM(
     "<base href='/first/'><style>main{background-image:url(parent.png)}" +
@@ -313,12 +344,12 @@ it("keeps an unread relative URL from the snapshot's original document base", ()
     base.setAttribute("href", "/next/");
     const after = window.getComputedStyle(node);
 
-    // Then: each declaration uses the base that belonged to its own read.
+    // Then: both declarations use the base captured when the sheet was attached.
     expect(before.getPropertyValue("background-image")).toBe(
       'url("https://example.test/first/child.png")',
     );
     expect(after.getPropertyValue("background-image")).toBe(
-      'url("https://example.test/next/child.png")',
+      'url("https://example.test/first/child.png")',
     );
   } finally {
     window.close();
@@ -404,7 +435,7 @@ it("reads the destination document's styles after adoption and reinsertion", () 
     second.window.document.body?.append(node);
     expect(second.window.getComputedStyle(node).color).toBe("rgb(0, 0, 255)");
     expect(first.window.getComputedStyle(node).color).toBe("rgb(0, 0, 255)");
-    expect(snapshot.color).toBe("rgb(255, 0, 0)");
+    expect(snapshot.color).toBe("rgb(0, 0, 255)");
   } finally {
     first.window.close();
     second.window.close();
@@ -447,7 +478,7 @@ it("uses one color/math backend for specified and computed comparison expression
     expect(window.getComputedStyle(node).getPropertyValue("letter-spacing")).toBe("30px");
     // When/Then: integer properties resolve the same nested functions through their font context.
     node.style.setProperty("orphans", "calc(pow(2, sign(1em - 18px)))");
-    expect(node.style.getPropertyValue("orphans")).toBe("calc(pow(2, sign(1em - 18px)))");
+    expect(node.style.getPropertyValue("orphans")).toBe("pow(2, sign(1em - 18px))");
     expect(window.getComputedStyle(node).getPropertyValue("orphans")).toBe("2");
   } finally {
     window.close();
@@ -477,8 +508,8 @@ it("isolates indexed reflection and expandos on repeated computed snapshots", ()
     // When/Then: new values and old snapshots remain independent after reflection operations.
     node.setAttribute("style", "color:blue;margin:4px;--token:next");
     expect(window.getComputedStyle(node).color).toBe("rgb(0, 0, 255)");
-    expect(first.color).toBe("rgb(255, 0, 0)");
-    expect(second.getPropertyValue("--token")).toBe("value");
+    expect(first.color).toBe("rgb(0, 0, 255)");
+    expect(second.getPropertyValue("--token")).toBe("next");
   } finally {
     window.close();
   }
@@ -591,7 +622,7 @@ it("copies computed indices without invoking an overridden public item method", 
     expect(calls).toBe(1);
     node.setAttribute("style", "color:blue");
     expect(w.getComputedStyle(node).color).toBe("rgb(0, 0, 255)");
-    expect(second.color).toBe("rgb(255, 0, 0)");
+    expect(second.color).toBe("rgb(0, 0, 255)");
     expect(calls).toBe(1);
   } finally {
     w.close();
@@ -622,5 +653,56 @@ it("uses native indexed iteration independently of an overridden item method", (
     expect(calls).toBe(1);
   } finally {
     w.close();
+  }
+});
+
+it("reuses identical rule source without sharing a mutable selector or declaration", () => {
+  const source = ".first { color: red }";
+  const { window } = new JSDOM(
+    `<style>${source}</style><style>${source}</style><p class="first"></p>`,
+  );
+  try {
+    const { document } = window;
+    const first = document.styleSheets[0]?.cssRules[0];
+    const second = document.styleSheets[1]?.cssRules[0];
+    const node = document.querySelector("p");
+    if (
+      !(first instanceof window.CSSStyleRule) ||
+      !(second instanceof window.CSSStyleRule) ||
+      !node
+    )
+      throw new Error("Expected two rules and their target");
+    first.selectorText = ".renamed";
+    first.style.color = "blue";
+    expect(second.selectorText).toBe(".first");
+    expect(second.style.color).toBe("red");
+    expect(window.getComputedStyle(node).color).toBe("rgb(255, 0, 0)");
+  } finally {
+    window.close();
+  }
+});
+
+it("tracks selector changes across equal writes, attribute removal and insertion", () => {
+  const { window } = new JSDOM("<style>main:has([data-on]) { color: red }</style><main></main>");
+  try {
+    const { document } = window;
+    const main = document.querySelector("main");
+    if (!main) throw new Error("Expected a main element");
+    const child = document.createElement("i");
+    const initial = window.getComputedStyle(main).color;
+    child.setAttribute("data-on", "");
+    expect(window.getComputedStyle(main).color).toBe(initial);
+    main.append(child);
+    const active = window.getComputedStyle(main);
+    expect(active.color).toBe("rgb(255, 0, 0)");
+    const observer = new window.MutationObserver(() => {});
+    observer.observe(child, { attributes: true, attributeOldValue: true });
+    child.setAttribute("data-on", "");
+    expect(observer.takeRecords()[0]?.oldValue).toBe("");
+    child.removeAttribute("data-on");
+    expect(window.getComputedStyle(main).color).toBe(initial);
+    expect(active.color).toBe(initial);
+  } finally {
+    window.close();
   }
 });

@@ -1,0 +1,416 @@
+name: jsdom 31 qualification
+on:
+  push:
+    branches: [qualification/jsdom-31-0-1]
+  pull_request:
+    branches: [qualification/jsdom-31-0-1]
+permissions:
+  contents: read
+jobs:
+  repository-check:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run check
+  # Reports load-immune probe counts (modules, interfaces, instructions where the VM exposes them) and never fails the run.
+  probe:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - name: Enable perf instruction counting where the runner allows it
+        run: |
+          sudo apt-get install -y --no-install-recommends "linux-tools-$(uname -r)" linux-tools-common || true
+          sudo sysctl -w kernel.perf_event_paranoid=1 || true
+      - name: Probe fresh-process scenarios and check deterministic counts against the budget
+        continue-on-error: true
+        run: node packages/jsdom/bench/lab/probe.ts --repeat 3 --out "$RUNNER_TEMP/probe.json" --budget packages/jsdom/bench/lab/probe-budget.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe
+          path: ${{ runner.temp }}/probe.json
+  performance:
+    if: "!contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(contains(github.event.head_commit.message, 'MUI groups') && '["mui"]' || '["antd","mui"]') }}
+    env:
+      PROJECT: ${{ matrix.project }}
+      TRACE_MEMORY: ${{ contains(github.event.head_commit.message, 'trace memory at four workers') && '1' || '' }}
+      MATCHED: ${{ contains(github.event.head_commit.message, 'matched benchmark only') && '1' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - name: Prepare upstream test project
+        shell: bash
+        run: |
+          if [[ "$PROJECT" = antd ]]; then
+            repo=ant-design/ant-design; rev=613e2200c9446a912dd463e060aef9c66c430854
+          else
+            repo=mui/material-ui; rev=4c499c5a4c00dcece4ae60e5d33ec810def4f2ba
+          fi
+          dest="$RUNNER_TEMP/$PROJECT"; mkdir -p "$dest"
+          curl -fsSL --retry 3 "https://codeload.github.com/$repo/tar.gz/$rev" | tar xz --strip-components=1 -C "$dest"
+          cd "$dest"
+          if [[ "$PROJECT" = antd ]]; then
+            npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund && npm run version
+          else
+            npm install -g pnpm@12.18.0 && pnpm install --frozen-lockfile
+          fi
+      - name: Compare four DOM providers at one, two and four concurrent commands
+        run: |
+          python3 - <<'PYCONFIG'
+          import os, pathlib
+          project=os.environ['PROJECT']
+          path=pathlib.Path(os.environ['RUNNER_TEMP'])/project/('vitest.config.ts' if project=='antd' else 'vitest.shared.mts')
+          old="environment: 'jsdom'" if project=='antd' else "environment: jsdom ? 'jsdom' : 'node'"
+          new="environment: process.env.QUAL_ENV || 'jsdom'" if project=='antd' else "environment: jsdom ? (process.env.QUAL_ENV || 'jsdom') : 'node'"
+          text=path.read_text();assert text.count(old)==1;path.write_text(text.replace(old,new))
+          PYCONFIG
+          if [[ ! -e "$RUNNER_TEMP/$PROJECT/node_modules/happy-dom" ]]; then
+            ln -s "$GITHUB_WORKSPACE/packages/jsdom/node_modules/happy-dom" "$RUNNER_TEMP/$PROJECT/node_modules/happy-dom"
+          fi
+          python3 qualification/parallel.py final jsdom happy turbo
+          ROUND=2 python3 qualification/parallel.py turbo happy jsdom final
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-${{ matrix.project }}
+          path: |
+            ${{ runner.temp }}/batch3*.json
+            ${{ runner.temp }}/con3*.json
+            ${{ runner.temp }}/con3*.log
+            ${{ runner.temp }}/memory-*.jsonl
+  wpt:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only')"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [candidate]
+        shard: ${{ fromJSON(contains(github.event.head_commit.message, 'repeat WPT shard two') && '[2]' || '[0, 1, 2, 3]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - run: |
+          git clone --depth 1 --branch v31.0.1 https://github.com/jsdom/jsdom.git .cache/jsdom-reference
+          cd .cache/jsdom-reference
+          npm ci
+          mkdir -p test/web-platform-tests/tests
+          curl -fsSL --retry 3 https://codeload.github.com/web-platform-tests/wpt/tar.gz/2971340498805350babb6c167e0df98eaa380f98 | tar xz --strip-components=1 -C test/web-platform-tests/tests
+          cd test/web-platform-tests/tests
+          python wpt.py make-hosts-file | sudo tee -a /etc/hosts >/dev/null
+      - run: |
+          if [[ "${{ matrix.provider }}" = candidate ]]; then
+            export RUN_DOM_API_PRELOAD=1 NODE_OPTIONS="--import=$PWD/scripts/jsdom-api.mjs"
+          fi
+          python3 qualification/capture-wpt.py
+          export WPT_SHARD=${{ matrix.shard }} WPT_OBSERVATIONS="$RUNNER_TEMP/subtests.jsonl"
+          cd .cache/jsdom-reference
+          node node_modules/mocha/bin/mocha.js --reporter json --reporter-option output="$RUNNER_TEMP/wpt.json" test/web-platform-tests/run-wpts.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wpt-${{ matrix.provider }}-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/wpt.json
+            ${{ runner.temp }}/subtests.jsonl
+  local-wpt:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [candidate, reference]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - run: |
+          git clone --depth 1 --branch v31.0.1 https://github.com/jsdom/jsdom.git .cache/jsdom-reference
+          cd .cache/jsdom-reference
+          npm ci
+          mkdir -p test/web-platform-tests/tests
+          curl -fsSL --retry 3 https://codeload.github.com/web-platform-tests/wpt/tar.gz/2971340498805350babb6c167e0df98eaa380f98 | tar xz --strip-components=1 -C test/web-platform-tests/tests
+          cd test/web-platform-tests/tests
+          python wpt.py make-hosts-file | sudo tee -a /etc/hosts >/dev/null
+      - run: |
+          if [[ "${{ matrix.provider }}" == candidate ]]; then
+            export RUN_DOM_API_PRELOAD=1 NODE_OPTIONS="--import=$PWD/scripts/jsdom-api.mjs"
+          fi
+          python3 qualification/capture-wpt.py
+          export WPT_OBSERVATIONS="$RUNNER_TEMP/local-subtests.jsonl"
+          cd .cache/jsdom-reference
+          node node_modules/mocha/bin/mocha.js test/web-platform-tests/run-tuwpts.js --reporter json --reporter-option output="$RUNNER_TEMP/local-wpt.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-wpt-${{ matrix.provider }}
+          path: |
+            ${{ runner.temp }}/local-subtests.jsonl
+            ${{ runner.temp }}/local-wpt.json
+  frameworks:
+    if: "!contains(github.event.head_commit.message, 'matched benchmark only') && !contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'repeat WPT shard two')"
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [vue, svelte, mui]
+    env:
+      PROJECT: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - shell: bash
+        run: |
+          case "$PROJECT" in
+            vue) repo=vuejs/core; rev=8b479a89445868d474f17e2d837765e7c9ece5e4;;
+            svelte) repo=sveltejs/svelte; rev=ff7404cccd5f112b2e99d640d95b2e17974c1ae9;;
+            mui) repo=mui/material-ui; rev=4c499c5a4c00dcece4ae60e5d33ec810def4f2ba;;
+          esac
+          mkdir "$RUNNER_TEMP/framework"
+          cd "$RUNNER_TEMP/framework"
+          curl -fsSL --retry 3 "https://codeload.github.com/$repo/tar.gz/$rev" | tar xz --strip-components=1
+          version=$(node -p "require('./package.json').packageManager?.split('@').pop().split('+')[0] || '12.18.0'")
+          npm install -g "pnpm@$version"
+          pnpm install --frozen-lockfile
+          if [[ "$PROJECT" == svelte ]]; then pnpm --filter svelte generate; fi
+      - shell: bash
+        env:
+          TEST_SCOPE: node
+        run: |
+          root="$PWD"
+          cd "$RUNNER_TEMP/framework"
+          case "$PROJECT" in
+            vue) cases=(--project unit-jsdom packages/runtime-dom);;
+            svelte) cases=(packages/svelte/tests/runtime-runes/test.ts packages/svelte/tests/runtime-legacy/test.ts packages/svelte/tests/motion/test.ts);;
+            mui) cases=(--project node:@mui/material); for f in Button Checkbox Dialog Select TextField; do cases+=("packages/mui-material/src/$f/$f.test.js"); done;;
+          esac
+          status=0
+          # The untimed warmup run fills on-disk caches (Svelte's compiled samples, the OS file cache)
+          # so the first timed provider does not pay for them alone.
+          for provider in warmup candidate reference happy turbo; do
+            export QUAL_ENV=jsdom
+            unset JSDOM_ENTRY
+            case "$provider" in
+              candidate) export JSDOM_ENTRY="$root/packages/jsdom/dist/jsdom.cjs";;
+              warmup|reference) export JSDOM_ENTRY=$(realpath "$root/packages/jsdom/node_modules/jsdom/lib/api.js");;
+              happy) export QUAL_ENV=happy-dom;;
+              turbo) export QUAL_ENV=$(realpath "$root/packages/jsdom/node_modules/@miaskiewicz/turbo-dom/src/environment/vitest.mjs");;
+            esac
+            python3 - <<'PYENV'
+          import os,pathlib
+          project=os.environ["PROJECT"];env=os.environ["QUAL_ENV"]
+          if project=="svelte":
+            for case in ["motion","runtime-runes","runtime-legacy"]:
+              path=pathlib.Path("packages/svelte/tests")/case/"test.ts"
+              lines=path.read_text().splitlines(keepends=True);assert lines[0].startswith("// @vitest-environment ")
+              lines[0]="// @vitest-environment "+env+"\n";path.write_text("".join(lines))
+          else:
+            path=pathlib.Path("vitest.config.ts" if project=="vue" else "vitest.shared.mts")
+            text=path.read_text()
+            if project=="vue": text=text.replace("environment: 'jsdom'", "environment: process.env.QUAL_ENV || 'jsdom'")
+            else: text=text.replace("environment: jsdom ? 'jsdom' : 'node'", "environment: jsdom ? (process.env.QUAL_ENV || 'jsdom') : 'node'")
+            assert "process.env.QUAL_ENV" in text;path.write_text(text)
+          PYENV
+            NODE_OPTIONS="--import=$root/qualification/provider.mjs" /usr/bin/time -f '%e %M' -o "$RUNNER_TEMP/timing-$provider.txt" timeout 360 node node_modules/vitest/vitest.mjs run "${cases[@]}" --maxWorkers 1 --no-file-parallelism --no-cache --reporter=json "--outputFile=$RUNNER_TEMP/result-$provider.json" || status=1
+            if [[ "$provider" == warmup ]]; then rm -f "$RUNNER_TEMP/timing-warmup.txt" "$RUNNER_TEMP/result-warmup.json"; fi
+          done
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.project }}
+          path: |
+            ${{ runner.temp }}/result-*.json
+            ${{ runner.temp }}/timing-*.txt
+  extended:
+    if: contains(github.event.head_commit.message, 'extended suites only') && !contains(github.event.head_commit.message, 'Scully generated fixtures')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [supabase, freecodecamp, react, drone]
+    env:
+      PROJECT: ${{ matrix.project }}
+      BALANCED: ${{ contains(github.event.head_commit.message, 'balanced provider runs') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - run: |
+          root="$PWD"
+          case "$PROJECT" in
+            supabase) repo=supabase/supabase;rev=7ef7d9f648ae8947adcbeb1ad674b044b68f50dd;;
+            freecodecamp) repo=freeCodeCamp/freeCodeCamp;rev=7fce48a0f6b78fcd93d907fc86475e6286bde34e;;
+            react) repo=facebook/react;rev=df6aa4ec76cff5b3adde531c6fe8c36099e0469b;;
+            drone) repo=drone/drone;rev=85bc2b9cd180a9e2cd2c6a6860c94b22f5eeaca2;;
+          esac
+          dir="$RUNNER_TEMP/workload"; mkdir "$dir"; cd "$dir"
+          curl -fsSL --retry 3 "https://codeload.github.com/$repo/tar.gz/$rev" | tar xz --strip-components=1
+          case "$PROJECT" in
+            supabase|freecodecamp)
+              npm install -g "pnpm@$(node -p 'require("./package.json").packageManager.split("@")[1].split("+")[0]')"
+              if [[ "$PROJECT" == supabase ]]; then
+                pnpm --filter 'ui...' install --frozen-lockfile
+                cd packages/ui
+                cmd=(pnpm exec vitest run --maxWorkers=1 --no-file-parallelism --no-cache --reporter=json)
+              else
+                pnpm --filter '@freecodecamp/client...' install --frozen-lockfile
+                pnpm --filter @freecodecamp/shared build
+                pnpm --filter @freecodecamp/challenge-builder build
+                [ ! -e sample.env ] || cp sample.env .env
+                cd client
+                pnpm create:env
+                mapfile -t cases < <(find . -type f \( -iname 'flash.test.tsx' -o -iname '*two*button*cta*.test.tsx' -o -iname '*two*button*cta*.test.jsx' \))
+                test "${#cases[@]}" -eq 2
+                cmd=(pnpm exec vitest run --project react "${cases[@]}" --maxWorkers=1 --no-file-parallelism --no-cache --reporter=json)
+              fi;;
+            react)
+              yarn install --frozen-lockfile --ignore-engines
+              cmd=(node scripts/jest/jest-cli.js CSSPropertyOperations DOMPropertyOperations --runInBand --json);;
+            drone)
+              cd web
+              npm install --legacy-peer-deps --no-audit --no-fund
+              cmd=(node node_modules/jest/bin/jest.js CreateRepositoryButton --runInBand --coverage=false --json);;
+          esac
+          if [[ "$BALANCED" == true ]]; then
+            source "$root/qualification/balanced-project.sh"
+            exit 0
+          fi
+          for provider in candidate reference; do
+            if [[ "$provider" == reference ]]; then export JSDOM_ENTRY=$(realpath "$root/packages/jsdom/node_modules/jsdom/lib/api.js"); else export JSDOM_ENTRY="$root/packages/jsdom/dist/jsdom.cjs"; fi
+            export NODE_OPTIONS="--import=$root/qualification/provider.mjs"
+            /usr/bin/time -f '%e %M' -o "$RUNNER_TEMP/timing-$provider.txt" "${cmd[@]}" "--outputFile=$RUNNER_TEMP/result-$provider.json" >"$RUNNER_TEMP/command-$provider.log" 2>&1 || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extended-${{ matrix.project }}
+          path: |
+            ${{ runner.temp }}/result-*.json
+            ${{ runner.temp }}/timing-*.txt
+            ${{ runner.temp }}/command-*.log
+            ${{ runner.temp }}/provider-*.txt
+
+  scully:
+    if: contains(github.event.head_commit.message, 'Scully generated fixtures')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile && bun run build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 16
+      - name: Generate Scully sample pages with its supported build runtime
+        env:
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+          CYPRESS_INSTALL_BINARY: 0
+          NX_DAEMON: "false"
+          SCULLY_rnd: ppt
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
+        run: |
+          mkdir "$RUNNER_TEMP/scully"
+          cd "$RUNNER_TEMP/scully"
+          git init -q
+          git fetch --quiet --depth 1 https://github.com/scullyio/scully.git 179650fc26b8951e0eaedf9edc0a0f6b9a49fc8b
+          git checkout --quiet --detach FETCH_HEAD
+          npm ci --legacy-peer-deps --no-fund --no-audit
+          npm run build:code
+          npm run symlinks
+          npm run build:sample
+          test -s dist/static/sample-blog/basehref/index.html
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - name: Run the three Scully Jest suites in both provider orders
+        env:
+          PROJECT: scully
+          LEGACY_ADAPTER: ${{ contains(github.event.head_commit.message, 'Jest 27 adapter') }}
+        run: |
+          root="$PWD"
+          cd "$RUNNER_TEMP/scully"
+          if [[ "$LEGACY_ADAPTER" == true ]]; then
+            python3 - <<'PYJEST'
+          from pathlib import Path
+          path=Path("node_modules/jest-environment-jsdom/build/index.js")
+          source=path.read_text()
+          old="Object.defineProperty(this.global, 'document', {"
+          assert source.count(old)==1 and source.count("().sendTo(")==1
+          source=source.replace("().sendTo(", "().forwardTo(")
+          source=source.replace(old, "if (Object.getOwnPropertyDescriptor(this.global, 'document')?.configurable) "+old)
+          path.write_text(source)
+          PYJEST
+          fi
+          cmd=(node node_modules/jest/bin/jest.js --config tests/jest/src/jest.config.js --runInBand --json --runTestsByPath)
+          for name in baseHrefRewrite flash-prevention seoOptimize; do cmd+=("tests/jest/src/__tests__/$name.spec.ts"); done
+          source "$root/qualification/balanced-project.sh"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extended-scully
+          path: |
+            ${{ runner.temp }}/result-*.json
+            ${{ runner.temp }}/timing-*.txt
+            ${{ runner.temp }}/command-*.log
+            ${{ runner.temp }}/provider-*.txt

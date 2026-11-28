@@ -2,3 +2,4 @@
 import api from "../dist/jsdom.cjs";
 
 export const { JSDOM, VirtualConsole, CookieJar, toughCookie, requestInterceptor } = api;
+export default api;

@@ -1,9 +1,46 @@
 // Parses author stylesheets and resolves declarations against private DOM state.
+import {
+  expandedDeclaration,
+  fontFeatureValues,
+  createDescriptorRuleParser,
+  type PositionTry,
+  bindCSSWrapper,
+  canonicalSelectorList,
+  selectorFeatureSupported,
+  grammarLonghands,
+  importResource,
+  parseContainerConditions,
+  validPseudoSelectorList,
+  type FunctionRuleData,
+  type BoundRule,
+  type FontFaceData,
+  serializeShorthand,
+  serializeDeclarationBlock,
+  type ShorthandSource,
+  defaultMediaQuery,
+  computedPositionArea,
+  computedPseudoTarget,
+  longhandDefinition,
+  registeredProperty,
+  specifiedDeclaration,
+  orderedDeclaration,
+  specifiedMediaQuery,
+  type RegisteredProperty,
+} from "./css-reference.js";
+import {
+  dependsOnWinnersOnly,
+  substitutionFunction,
+  substitutionFrame,
+  type SubstitutionFrame,
+} from "./css-substitution.js";
+import { ownedString } from "./owned-string.js";
 import { createRequire } from "node:module";
 import { serializePhysicalBorder, isPhysicalBorder } from "./css-border-serialization.js";
 import { InlineDeclaration, parseInlineBlock } from "./inline-declaration.js";
 import { parseSizeDeclaration } from "./css-sizing.js";
+import { acceptsAnchors, anchorComponents } from "./css-anchor.js";
 import { hasContextlessPercentage, serializeCSSMath } from "./css-numeric.js";
+import { cssWideKeywords, directExpansion, directSpecifiedValue } from "./css-direct-values.js";
 import {
   createDeclarationViews,
   type DeclarationImplementation,
@@ -19,15 +56,28 @@ import {
 import { defaultTreeAdapter as tree, html, type DefaultTreeAdapterTypes as Raw } from "parse5";
 import type { CssNode, Selector, Value, WalkOptionsNoVisit } from "css-tree";
 import { createCSSNamespace, readSupportsCondition } from "./css-supports.js";
-import { replaceSystemColors, specifiedColorFunction, systemColor } from "./css-colors.js";
-import { parseSelectorList, customStateIdentifier } from "./selector-syntax.js";
+import {
+  functionalColorValue,
+  replaceSystemColors,
+  specifiedColorFunction,
+  systemColor,
+} from "./css-colors.js";
+import {
+  parseSelectorList,
+  customStateIdentifier,
+  validSelectorCompounds,
+  purePseudoSelector,
+} from "./selector-syntax.js";
 import { compileSelector, compileSimpleSubject, compileTreeSelector } from "./selectors.js";
 import { queryDependsOnTreeOrFocus, queryDependsOnlyOnTree } from "./query-index.js";
 import { elementLocalName, xmlSpecial } from "./xml.js";
+import { createSlotTable } from "./slot-table.js";
 
 const require = createRequire(import.meta.url);
 const arrayValues = Array.prototype.values;
 const setParsedOutline = Symbol();
+const storedPropertyValue = Symbol();
+const referenceShorthandValue = Symbol();
 type Declaration = DeclarationFields &
   Iterable<string> & {
     readonly _length: number;
@@ -52,6 +102,9 @@ type DeclarationFields = {
 const stylesheetInstances = new WeakSet<object>();
 
 type SelectorEntry = {
+  part?: { names: string[]; local: boolean; origin: (node: Raw.Element) => boolean };
+  slot?: (node: Raw.Element, root?: Raw.ParentNode) => boolean;
+  pseudo?: { text: string; match: (node: Raw.Element, root?: Raw.ParentNode) => boolean };
   match: (node: Raw.Element, root?: Raw.ParentNode) => boolean;
   specificity: number;
   hostOnly: boolean;
@@ -82,7 +135,12 @@ type ImportRule = {
   set media(value: string | null);
   readonly cssText: string;
 };
-type ImportCondition = { layerName: string | null; supportsText: string | null; media: string };
+type ImportCondition = {
+  resourceText?: string;
+  layerName: string | null;
+  supportsText: string | null;
+  media: string;
+};
 type GroupingRuleView = {
   readonly type: 0 | 1 | 4 | 6 | 12;
   insertRule(rule: string, index?: number): number;
@@ -94,6 +152,20 @@ type ConditionRuleView = GroupingRuleView & {
   readonly conditionText: string;
   readonly matches: boolean;
 };
+type MarginData = {
+  readonly type: 9;
+  readonly name: string;
+  readonly cssText: string;
+  readonly style: PublicDeclaration;
+};
+type PageData = {
+  selectorText: string;
+  readonly cssText: string;
+  readonly style: PublicDeclaration;
+  readonly cssRules: ArrayLike<MarginData>;
+  insertRule(text: string, index?: number): number;
+  deleteRule(index: number): void;
+};
 type PageRule = GroupingRuleView & {
   readonly type: 6;
   selectorText: string;
@@ -104,6 +176,7 @@ type ScopeRule = GroupingRuleView & {
   readonly start: string | null;
   readonly end: string | null;
 };
+type StartingStyleRule = GroupingRuleView & { readonly type: 0 };
 type LayerBlockRule = GroupingRuleView & { readonly type: 0; readonly name: string };
 type MediaRule = ConditionRuleView & {
   readonly type: 4;
@@ -150,6 +223,11 @@ const counterDescriptors = [
   ["fallback", "fallback"],
 ] as const;
 type CounterDescriptor = (typeof counterDescriptors)[number][0];
+type ViewTransitionData = {
+  readonly navigation: string;
+  readonly types: readonly string[];
+  readonly cssText: string;
+};
 type CounterStyleRule = Record<CounterDescriptor, string> & {
   readonly type: 11;
   name: string;
@@ -171,13 +249,57 @@ type NestedDeclarationsRule = {
   readonly style: PublicDeclaration;
   readonly cssText: string;
 };
+type PositionTryRule = {
+  readonly type: 0;
+  readonly name: string;
+  readonly cssText: string;
+  readonly style: ReturnType<ReturnType<typeof createDeclarationViews>["positionDescriptors"]>;
+};
+type FontFeatureValuesRule = { readonly type: 14; fontFamily: string; readonly cssText: string };
+type PropertyRule = {
+  readonly type: 0;
+  readonly names: readonly string[];
+  readonly name: string;
+  readonly syntax: string;
+  readonly inherits: boolean;
+  readonly initialValue: string | null;
+  readonly cssText: string;
+};
+// Inheritance keeps unitless line heights as multipliers. Public snapshots expose their used length.
+// Public CSSOM rounds converted dimensions. Keep their original calculation for
+// the later computed-value stage so intermediate rounding cannot alter its result.
+let calculationSources: WeakMap<object, Map<string, string>> | undefined;
+const inlineBaseReaders = new WeakMap<object, () => string>();
+let declarationBases: WeakMap<object, Map<string, string>> | undefined;
+const urlDependentValue = /(?:url|image-set|var)\(/i;
+const orderedStyles = new WeakMap<object, ReturnType<typeof orderedDeclaration>>();
+const logicalBoxName =
+  /^(?:(?:margin|padding|inset|border)-(?:block|inline)(?:-|$)|border-(?:start|end)-(?:start|end)-radius$)/;
+const computedGapRules = new WeakMap<object, SubstitutionFrame>();
+let shorthandSources: WeakMap<object, Map<string, ShorthandSource>> | undefined;
+function setShorthandSource(owner: object, child: string, value: ShorthandSource): void {
+  shorthandSources ??= new WeakMap();
+  let entries = shorthandSources.get(owner);
+  if (!entries) shorthandSources.set(owner, (entries = new Map()));
+  entries.set(child, value);
+}
+const unitlessLineHeights = new WeakMap<object, string>();
+const publicLineHeights = new WeakMap<object, string>();
 type QualifiedRule = DeclarationRule &
   GroupingRuleView & { readonly type: 1; selectorText: string };
 type NestingMode = "style" | "scope";
 type StyleRule = (
+  | MarginData
+  | StartingStyleRule
   | DeclarationRule
   | NestedDeclarationsRule
   | QualifiedRule
+  | PropertyRule
+  | FontFeatureValuesRule
+  | (ViewTransitionData & { readonly type: 0 })
+  | (FontFaceData & { readonly type: 5 })
+  | (FunctionRuleData<RuleList> & { readonly type: 0 })
+  | PositionTryRule
   | ImportRule
   | MediaRule
   | SupportsRule
@@ -213,9 +335,24 @@ type Rule =
   | { kind: "namespace"; view: NamespaceRule & RuleParents }
   | { kind: "keyframe"; view: KeyframeRule & RuleParents }
   | { kind: "keyframes"; view: KeyframesRule & RuleParents; rules: KeyframeEntry[] }
+  | { kind: "margin"; view: MarginData & RuleParents }
   | { kind: "page"; view: PageRule & RuleParents; rules: Rule[] }
+  | { kind: "property"; view: PropertyRule & RuleParents }
+  | { kind: "function"; view: FunctionRuleData<RuleList> & { readonly type: 0 } & RuleParents }
+  | { kind: "font-face"; view: FontFaceData & { readonly type: 5 } & RuleParents }
+  | { kind: "position-try"; view: PositionTryRule & RuleParents }
+  | { kind: "view-transition"; view: ViewTransitionData & { readonly type: 0 } & RuleParents }
   | { kind: "counter-style"; view: CounterStyleRule & RuleParents }
+  | {
+      kind: "font-feature-values";
+      view: FontFeatureValuesRule & RuleParents;
+    }
   | { kind: "layer-statement"; view: LayerStatementRule & RuleParents }
+  | {
+      kind: "starting-style";
+      view: StartingStyleRule & RuleParents;
+      rules: Rule[];
+    }
   | { kind: "layer-block"; view: LayerBlockRule & RuleParents; rules: Rule[] }
   | { kind: "media"; view: MediaRule & RuleParents; rules: Rule[] }
   | {
@@ -540,7 +677,6 @@ function declarationProperties(): readonly StyleProperty[] {
   const names = new Set([...overrides, "size", ...vendorNames]);
   return (publicDeclarationProperties = Array.from(names, (name) => ({
     name,
-    readKey: name === "contentVisibility" ? "content-visibility" : name,
     property:
       name === "cssFloat"
         ? "float"
@@ -553,6 +689,22 @@ const deferredShorthandLonghands = new Map<string, readonly string[]>([
   ["margin", borderSides.map((side) => `margin-${side}`)],
   ["padding", borderSides.map((side) => `padding-${side}`)],
   ["flex", flexLonghands],
+  [
+    "background",
+    [
+      "background-image",
+      "background-position-x",
+      "background-position-y",
+      "background-size",
+      "background-repeat-x",
+      "background-repeat-y",
+      "background-attachment",
+      "background-origin",
+      "background-clip",
+      "background-color",
+      "background-blend-mode",
+    ],
+  ],
   ["background-position", backgroundPositionAxes],
   ["outline", outlineLonghands],
   [
@@ -642,18 +794,19 @@ function computePositionAxis(value: string): string {
 const computedInitialValues = new Map([
   ["background-color", "rgba(0, 0, 0, 0)"],
   ["display", "inline"],
+  ["continue", "normal"],
   ["content-visibility", "visible"],
   ["border-image", "none"],
   ["background-image", "none"],
   ["background-position-x", "0%"],
   ["background-position-y", "0%"],
-  ["box-shadow", "none"],
+  ["box-shadow", "currentcolor none"],
   ["color-scheme", "normal"],
   ["fill", "rgb(0, 0, 0)"],
   ["flex-basis", "auto"],
   ["flex-grow", "0"],
   ["flex-shrink", "1"],
-  ["font-family", "depends on user agent"],
+  ["font-family", "monospace"],
   ["font-size", "16px"],
   ["font-style", "normal"],
   ["font-variant", "normal"],
@@ -673,7 +826,7 @@ const computedInitialValues = new Map([
   ["outline-color", "currentcolor"],
   ["stroke", "none"],
   ["visibility", "visible"],
-  ...[...boxLonghands].map((name): [string, string] => [name, "0"]),
+  ...[...boxLonghands].map((name): [string, string] => [name, "0px"]),
 ]);
 
 function splitOutline(value: string): ReadonlyMap<string, string> | undefined {
@@ -726,6 +879,24 @@ function splitOutline(value: string): ReadonlyMap<string, string> | undefined {
   return components;
 }
 
+/** A CSS-wide keyword is one identifier token, including escaped spellings. */
+function canonicalWideKeyword(value: string): string {
+  if (!value.includes("/*") && !value.includes("\\")) return value;
+  const css: typeof import("css-tree") & CSSTokenizer = require("./css-runtime.cjs").cssTree;
+  let identifier: string | undefined;
+  let other = false;
+  css.tokenize(value, (type, start, end) => {
+    if (type === css.tokenTypes.WhiteSpace || type === css.tokenTypes.Comment) return;
+    if (type !== css.tokenTypes.Ident || identifier !== undefined) other = true;
+    else identifier = css.ident.decode(value.slice(start, end)).toLowerCase();
+  });
+  return !other &&
+    identifier &&
+    /^(?:inherit|initial|unset|revert(?:-layer|-rule)?)$/.test(identifier)
+    ? identifier
+    : value;
+}
+
 function normalizeFontLineHeight(value: string): string {
   if (!/\b\d{1,4}\s/.test(value)) return value;
   const {
@@ -763,6 +934,77 @@ function normalizeFontLineHeight(value: string): string {
     if (!(error instanceof SyntaxError)) throw error;
     return value;
   }
+}
+
+// The color parser validates each whole gradient and resolves its color stops.
+// CSSOM orders the interpolation method after the shape or direction.
+function serializeGradientImages(
+  value: string,
+  context?: { currentColor: string; colorScheme: string },
+): string {
+  const { resolveGradient, utils }: typeof import("@asamuzakjp/css-color") =
+    require("./css-runtime.cjs").cssColor;
+  return utils
+    .splitValue(value, { delimiter: "," })
+    .map((layer) => {
+      const match = /^(?:repeating-)?(?:linear|radial|conic)-gradient\(/i.exec(layer);
+      if (!match) return layer;
+      const options = { format: context ? "computedValue" : "specifiedValue", ...context };
+      const args = utils.splitValue(layer.slice(match[0].length, -1), { delimiter: "," });
+      let source = layer;
+      if (args[0]?.startsWith("in ")) {
+        const header = utils.splitValue(args[0]);
+        const method = header.splice(0, header[3] === "hue" ? 4 : 2);
+        if (header.length) {
+          const { lexer }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+          if (lexer.matchProperty("background-image", layer).error) return layer;
+          args[0] = [...header, ...method].join(" ");
+          source = match[0] + args.join(", ") + ")";
+        }
+      }
+      const gradient = resolveGradient(source, options);
+      if (!gradient || gradient === "none") return layer;
+      const open = gradient.indexOf("(");
+      const parts = utils.splitValue(gradient.slice(open + 1, -1), { delimiter: "," });
+      const first = parts[0];
+      if (!first) return gradient;
+      const words = utils.splitValue(first);
+      const index = words.indexOf("in");
+      if (index >= 0 && words[index + 1]) {
+        const hasHue = words[index + 3] === "hue";
+        const [, space, hue] = words.splice(index, hasHue ? 4 : 2);
+        const sourceStops = args.slice(1);
+        const modern = sourceStops.some((stop) => /^(?:color|lab|lch|oklab|oklch)\(/i.test(stop));
+        const legacy = sourceStops.every((stop) => {
+          const token = utils.splitValue(stop)[0] ?? "";
+          return (
+            /^#|^[+.\-\d]|^(?:rgb|hsl)a?\([^)]*,/i.test(token) ||
+            (/^[a-z]+$/i.test(token) &&
+              token.toLowerCase() !== "currentcolor" &&
+              !systemColor(token, "normal"))
+          );
+        });
+        if (
+          (hue && hue !== "shorter") ||
+          !((space === "srgb" && legacy) || (space === "oklab" && modern))
+        ) {
+          words.push("in", space === "xyz" ? "xyz-d65" : space!);
+          if (hue && hue !== "shorter") words.push(hue, "hue");
+        }
+      }
+      if (context) {
+        const at = words.indexOf("at");
+        if (at >= 0) {
+          const end = words.indexOf("in", at);
+          const position = words.slice(at + 1, end < 0 ? words.length : end);
+          const axes = splitBackgroundPosition(canonicalBackgroundPosition(position.join(" ")));
+          if (axes) words.splice(at + 1, position.length, ...axes.map(computePositionAxis));
+        }
+      }
+      parts[0] = words.join(" ");
+      return gradient.slice(0, open + 1) + parts.filter(Boolean).join(", ") + ")";
+    })
+    .join(", ");
 }
 
 function canonicalBackgroundPosition(value: string): string {
@@ -870,28 +1112,33 @@ function writePublicStyleProperty(
   ) {
     writeStyleProperty(style, property, value === null ? "" : `${value}`);
   } else {
-    writeStyleProperty(style, property, cssInput(value));
+    writeStyleProperty(style, property, cssInput(value, false));
   }
 }
 
 const requestedStyleWrites = new WeakMap<object, { property: string; priority: string }>();
 
-function cssInput(value: unknown): string {
+function cssInput(value: unknown, replaceEscapedEOF = true): string {
   if (value === null) return "";
   if (typeof value === "symbol") throw new TypeError("Cannot convert a Symbol to a string");
   const text = String(value).toWellFormed();
   const normalized = /[\0\r\f]/.test(text)
     ? text.replace(/\r\n?|\f/g, "\n").replace(/\0/g, "\uFFFD")
     : text;
-  return normalized.endsWith("\\") ? normalized.slice(0, -1) + "\uFFFD" : normalized;
+  return replaceEscapedEOF && normalized.endsWith("\\")
+    ? normalized.slice(0, -1) + "\uFFFD"
+    : normalized;
 }
 
 const cssNumericToken = /^[+-]?(?:\d*\.\d+|\d+)(?:e[+-]?\d+)?$/i;
+const alphaValueProperty = /^(?:(?:fill-|stroke-|flood-|stop-)?opacity|shape-image-threshold)$/;
 
 function normalizePropertyInput(property: string, value: string): string {
   if (property.startsWith("--") || /var\(/i.test(value)) return value;
   const name = property.toLowerCase();
   const text = value.trim();
+  if (name === "background-image" && /-gradient\(/i.test(text))
+    return serializeGradientImages(text);
   if (name === "aspect-ratio" && cssNumericToken.test(text) && Number(text) >= 0)
     return `${Number(text)} / 1`;
   if (cssNumericToken.test(text) && Number(text) === 0) return "0";
@@ -934,6 +1181,45 @@ function normalizePropertyInput(property: string, value: string): string {
   }
 }
 
+let shorthandNames: ReadonlyMap<string, readonly (readonly string[])[]> | undefined;
+let shorthandMembers: ReadonlySet<string> | undefined;
+/** Every longhand that some jsdom shorthand other than `all` covers. */
+function coveredLonghands(): ReadonlySet<string> {
+  return (shorthandMembers ??= new Set(
+    [...referenceShorthands()].flatMap(([name, groups]) => (name === "all" ? [] : groups.flat())),
+  ));
+}
+let shorthandsByLonghand: ReadonlyMap<string, readonly (readonly string[])[]> | undefined;
+/** For each longhand, the flattened members of every jsdom shorthand other than `all` covering it. */
+function containingShorthands(): ReadonlyMap<string, readonly (readonly string[])[]> {
+  if (shorthandsByLonghand) return shorthandsByLonghand;
+  const result = new Map<string, (readonly string[])[]>();
+  for (const [name, groups] of referenceShorthands()) {
+    if (name === "all") continue;
+    const members = groups.flat();
+    for (const member of members) {
+      const lists = result.get(member);
+      if (lists) lists.push(members);
+      else result.set(member, [members]);
+    }
+  }
+  return (shorthandsByLonghand = result);
+}
+/** jsdom's shorthand table: each shorthand's longhand groups. */
+function referenceShorthands(): ReadonlyMap<string, readonly (readonly string[])[]> {
+  return (shorthandNames ??= require("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js"));
+}
+// jsdom's block serializer rewrites these declarations; a block without them is serialized as is.
+const blockSerializedDeclaration =
+  /(?:^|; )(?:(?:column|row)-rule-(?:width|style|color|inset)|grid-(?:template|auto)|corner-|border-(?:top|bottom)-(?:left|right)-radius|animation-range-)/;
+// Name classes for direct block serialization: not plain at all, read through
+// getPropertyValue's general path, or needing the block serializer.
+const plainShorthand = 4;
+const plainGeneral = 1;
+const plainRescan = 2;
+// Longhands whose shorthand cssstyle stores without separate longhand entries.
+const unstoredLonghand = /^(?:overflow-[xy]|border-image-|background-(?:position|repeat)-[xy]$)/;
+
 const flattenedCSSLonghands = new Map<string, readonly string[]>();
 function shorthandLonghands(
   name: string,
@@ -953,6 +1239,7 @@ function shorthandLonghands(
     const nested = definitions.get(child)?.longhands;
     if (nested) pending.push(...nested);
   }
+  if (name === "background") visited.add("background-blend-mode");
   const result = [...visited];
   flattenedCSSLonghands.set(name, result);
   return result;
@@ -981,6 +1268,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     _updating: boolean;
     _onChange: ((text: string) => void) | undefined;
     _setProperty(property: string, value: string, priority: string): void;
+    _removeIndexedProperty(index: number): void;
+    _clearIndexedProperties(): void;
     _borderSetter(property: string, value: unknown, priority: string | undefined): void;
     _positionLonghandSetter(
       property: string,
@@ -1016,8 +1305,51 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
   Object.defineProperty(Base, "name", { value: "CSSStyleDeclaration", configurable: true });
   initializeDeclarationMetadata(propertyDefinitions);
 
+  // Classifies a stored declaration name once for direct block serialization (plain* bits).
+  const plainNames = new Map<string, number>();
+  function plainNameKind(name: string): number {
+    let kind = plainNames.get(name);
+    if (kind !== undefined) return kind;
+    if (name.startsWith("border") || propertyDefinitions.get(name)?.longhands)
+      kind = plainShorthand;
+    else
+      kind =
+        (canonicalProperty(name) !== name || name === "size" || grammarLonghands(name)
+          ? plainGeneral
+          : 0) | (blockSerializedDeclaration.test(name) ? plainRescan : 0);
+    plainNames.set(name, kind);
+    return kind;
+  }
+
+  // cssstyle's verdict depends only on the property and value text; its own LRU key and
+  // lookup cost more than this bounded map. Throwing parses are not remembered.
+  const acceptedValues = new Map<string, boolean>();
+  function acceptsPropertyValue(name: string, value: string): boolean {
+    const key = `${name.length}:${name}${value}`;
+    let accepted = acceptedValues.get(key);
+    if (accepted !== undefined) return accepted;
+    accepted = parsePropertyValue(name, value) !== undefined;
+    if (acceptedValues.size >= 4096)
+      for (const oldest of acceptedValues.keys()) {
+        acceptedValues.delete(oldest);
+        break;
+      }
+    acceptedValues.set(key, accepted);
+    return accepted;
+  }
+
   function canonicalProperty(name: string): string {
     return propertyDefinitions.get(name)?.legacyAliasOf ?? name;
+  }
+  // jsdom shorthands whose cssstyle metadata lists no longhands.
+  const metadataLonghandless = new Set(
+    "rule-inset-cap rule-inset-junction animation-delay background-repeat column-rule-inset-cap column-rule-inset-junction max-size min-size row-rule-inset-cap row-rule-inset-junction size text-box timeline-trigger-activation-range timeline-trigger-active-range glyph-orientation-vertical page-break-after page-break-before page-break-inside".split(
+      " ",
+    ),
+  );
+  /** Cheap filter before consulting jsdom's shorthand table, which loads lazily. */
+  function mayBeReferenceShorthand(name: string): boolean {
+    return !!propertyDefinitions.get(name)?.longhands || metadataLonghandless.has(name);
   }
 
   function unresolvedMathValue(property: string, value: string): string | undefined {
@@ -1085,10 +1417,41 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       styleMutationOwners.set(this, mutationOperations);
     }
     #writeRevision = 0;
+    #precisionRevision = 0;
+    // The block's serialization after the last published write; every mutation clears it.
+    #serialized: string | undefined;
+
     override _setProperty(property: string, value: string, priority?: string): void {
+      this.#serialized = undefined;
+      this.#indexRevision++;
+      if (calculationSources?.get(this)?.delete(property)) this.#precisionRevision++;
+      shorthandSources?.get(this)?.delete(property);
+      if (value && urlDependentValue.test(value)) {
+        const reader = inlineBaseReaders.get(this);
+        if (reader && !(property.startsWith("--") && this._values.get(property) === value)) {
+          declarationBases ??= new WeakMap();
+          let bases = declarationBases.get(this);
+          if (!bases) declarationBases.set(this, (bases = new Map()));
+          const base = reader();
+          if (bases.get(property) !== base) this.#precisionRevision++;
+          bases.set(property, base);
+        }
+      } else declarationBases?.get(this)?.delete(property);
       const requested = requestedStyleWrites.get(this);
       if (requested?.property === property) priority = requested.priority;
       else priority ??= requested?.priority ?? "";
+      if (
+        !this._readonly &&
+        this._values.has("font") &&
+        (property.startsWith("font-") || property === "line-height")
+      )
+        super.removeProperty("font");
+      if (
+        !this._readonly &&
+        property.startsWith("text-decoration-") &&
+        this._values.has("text-decoration")
+      )
+        super.removeProperty("text-decoration");
       if (typeof value === "string" && value !== "") this.#writeRevision++;
       if (
         value &&
@@ -1144,6 +1507,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
     #borderColorOrder = 0;
     snapshotBlock(limit = 96, characterLimit = 8192): DeclarationBlock | undefined {
+      if (shorthandSources?.get(this)?.size || calculationSources?.get(this)?.size) return;
       if (this._values.size > limit || this._length > limit || this._priorities.size > limit)
         return;
       let characters = 0;
@@ -1159,6 +1523,8 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
     }
 
     restoreBlock(block: DeclarationBlock): void {
+      this.#serialized = undefined;
+      this.#indexRevision++;
       this._values = new Map(block.values);
       this._priorities = new Map(block.priorities);
       this._length = block.properties.length;
@@ -1170,7 +1536,51 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (block.borderOrder) borderColorSourceOrder.set(this, new Map(block.borderOrder));
     }
     override get cssText(): string {
-      let text = super.cssText;
+      // Only a published write fills this, after the mutation and with change reporting
+      // restored; every mutation path (`_setProperty`, `removeProperty`, the setters)
+      // clears it first, so cssstyle's own before/after comparison never sees it.
+      if (this.#serialized !== undefined) return this.#serialized;
+      const ordered = orderedStyles.get(this);
+      if (ordered) return ordered.cssText;
+      const plain = this.#plainBlockText();
+      let text = plain ?? super.cssText;
+      const pending = shorthandSources?.get(this)?.size;
+      if (pending || this.#completesShorthand()) {
+        // CSSOM deliberately hides the value of a longhand with a pending shorthand.
+        // Feed its specified source into the serializer while preserving original order.
+        const declarations: string[] = [];
+        for (let i = 0; i < this._length; i++) {
+          const name = this[i];
+          if (!name) continue;
+          // cssstyle appends the shorthands it stores; CSSOM declares only their longhands.
+          if (
+            !pending &&
+            referenceShorthands()
+              .get(name)
+              ?.every((group) => group.every((member) => this._values.has(member)))
+          )
+            continue;
+          const value = shorthandSources?.get(this)?.has(name)
+            ? "initial"
+            : super.getPropertyValue(name);
+          declarations.push(
+            name + ": " + value + (super.getPropertyPriority(name) ? " !important;" : ";"),
+          );
+        }
+        text = serializeDeclarationBlock(declarations.join(" "), shorthandSources?.get(this));
+      } else if (plain === undefined ? blockSerializedDeclaration.test(text) : this.#plainRescan)
+        text = serializeDeclarationBlock(text);
+      if (
+        this._values.has("background") &&
+        this._values.get("background-blend-mode") === "normal" &&
+        super.getPropertyPriority("background") ===
+          super.getPropertyPriority("background-blend-mode")
+      )
+        text = text
+          .replace(/(?:^|; )background-blend-mode: normal(?: !important)?;(?= |$)/, (match) =>
+            match.startsWith(";") ? ";" : "",
+          )
+          .trim();
       if (!text) return text;
       // Only a serialized physical border can be replaced in the declaration list below.
       const border = text.includes("border")
@@ -1212,7 +1622,11 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
               emitted = true;
             } else output.push(text.slice(node.loc.start.offset, node.loc.end.offset) + ";");
           }
-          if (emitted) text = output.join(" ");
+          if (emitted) {
+            text = output.join(" ");
+            if (this._values.has("border-image") && /(?:^|; )border-image-source:/.test(text))
+              text = serializeDeclarationBlock(text);
+          }
         }
       }
       if (!super.getPropertyValue("outline-width") || super.getPropertyValue("outline"))
@@ -1222,10 +1636,89 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         ? serializeOutline(text, shorthand, this.getPropertyPriority("outline"))
         : text;
     }
+    // Advances whenever the stored index list changes.
+    #indexRevision = 0;
+    #publicNames: { revision: number; names: readonly string[] | undefined } | undefined;
+    override _removeIndexedProperty(index: number): void {
+      this.#indexRevision++;
+      super._removeIndexedProperty(index);
+    }
+    override _clearIndexedProperties(): void {
+      this.#indexRevision++;
+      super._clearIndexedProperties();
+    }
+    /**
+     * CSSOM indexes only longhands; cssstyle also indexes the shorthands it stores. A stored
+     * shorthand whose longhands are all stored is hidden, and any other expands in place into
+     * jsdom's longhand order. Undefined when the stored list is already public.
+     */
+    publicNames(): readonly string[] | undefined {
+      if (this._computed) return;
+      if (this.#publicNames?.revision === this.#indexRevision) return this.#publicNames.names;
+      let names: string[] | undefined;
+      for (let i = 0; i < this._length && !names; i++)
+        if (mayBeReferenceShorthand(this[i] ?? "") && referenceShorthands().has(this[i] ?? ""))
+          names = [];
+      if (names) {
+        const shorthands = referenceShorthands();
+        const listed = new Set<string>();
+        for (let i = 0; i < this._length; i++) {
+          const name = this[i] ?? "";
+          const members = shorthands.get(name)?.flat();
+          if (members?.every((member) => this._values.has(member))) continue;
+          for (const member of members ?? [name]) listed.add(member);
+        }
+        names = [...listed];
+      }
+      this.#publicNames = { revision: this.#indexRevision, names };
+      return names;
+    }
+    // CSSOM serializes a shorthand in place of its longhands once all of them are declared.
+    #completesShorthand(): boolean {
+      if (this._computed) return false;
+      const containing = containingShorthands();
+      for (let i = 0; i < this._length; i++) {
+        const lists = containing.get(this[i] ?? "");
+        if (lists?.some((members) => members.every((member) => this._values.has(member))))
+          return true;
+      }
+      return false;
+    }
+    // cssstyle's block serializer only rewrites shorthands and border declarations; a block
+    // without them is its declarations in order, which skips its per-call normalization.
+    // It also records in #plainRescan whether the text needs jsdom's block serializer, which
+    // matches blockSerializedDeclaration at a declaration start: at a listed name, or inside a
+    // value containing "; ".
+    #plainBlockText(): string | undefined {
+      if (this._computed) return;
+      const direct = !shorthandSources?.get(this)?.size;
+      let rescan = false;
+      let text = "";
+      for (let i = 0; i < this._length; i++) {
+        const name = this[i];
+        if (name === undefined) return;
+        const kind = plainNameKind(name);
+        if (kind & plainShorthand) return;
+        // A stored, canonical, grammar-free longhand of a specified block reads as its stored
+        // value; getPropertyValue reaches the same value through its general checks.
+        const value =
+          (direct && !(kind & plainGeneral) && super.getPropertyValue(name)) ||
+          this.getPropertyValue(name);
+        rescan ||= !!(kind & plainRescan) || value.includes("; ");
+        const priority = this._priorities.get(name);
+        text += `${text ? " " : ""}${name}: ${value}${priority ? ` !${priority}` : ""};`;
+      }
+      if (rescan) rescan = blockSerializedDeclaration.test(text);
+      this.#plainRescan = rescan;
+      return text;
+    }
+    #plainRescan = false;
     #updateStyle<T>(write: () => T, publish: "changed" | "always" = "changed"): T {
       const changed = this._onChange;
       if (!changed || this._updating) return write();
-      const before = this.cssText;
+      const before = this.#serialized ?? this.cssText;
+      const precisionRevision = this.#precisionRevision;
+      this.#serialized = undefined;
       this._onChange = undefined;
       let result: T;
       try {
@@ -1234,7 +1727,9 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         this._onChange = changed;
       }
       const after = this.cssText;
-      if (publish === "always" || after !== before) changed(after);
+      this.#serialized = after;
+      if (publish === "always" || after !== before || precisionRevision !== this.#precisionRevision)
+        changed(after);
       return result;
     }
     override removeProperty(property: string): string {
@@ -1244,11 +1739,19 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return owner.removeProperty.call(this, property);
       }
       const name = canonicalProperty(cssInput(property));
-      if (this._readonly) return super.removeProperty(name);
+      if (this._readonly)
+        throw new this._global.DOMException(
+          `Cannot remove property "${property}" from a read-only style declaration.`,
+          "NoModificationAllowedError",
+        );
+      this.#serialized = undefined;
       // Native shorthand setters remove their serialized entry while rebuilding
       // longhands. Only a public removal expands to the complete declaration.
       if (requestedStyleWrites.has(this)) return super.removeProperty(name);
-      return this.#updateStyle(() => this.#removeProperty(name));
+      return this.#updateStyle(() => {
+        orderedStyles.get(this)?.removeProperty(name);
+        return this.#removeProperty(name);
+      });
     }
     override set cssText(text: string) {
       const owner = styleMutationOwners.get(this);
@@ -1259,11 +1762,21 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
       const value = cssInput(text);
       if (this._readonly) {
-        super.cssText = value;
-        return;
+        throw new this._global.DOMException(
+          "Cannot set cssText on a read-only style declaration.",
+          "NoModificationAllowedError",
+        );
       }
+      this.#serialized = undefined;
+      const trackOrder =
+        this._onChange &&
+        /(?:margin|inset|border|padding)-(?:block|inline|start|end)-?/i.test(value);
       this.#updateStyle(() => {
+        orderedStyles.delete(this);
+        declarationBases?.delete(this);
+        calculationSources?.delete(this);
         this.#setCSSText(value);
+        if (trackOrder) orderedStyles.set(this, orderedDeclaration(value));
         // Priorities must refer to entries in the finite parsed declaration block.
         for (const name of this._priorities.keys())
           if (!this._values.has(name)) this._priorities.delete(name);
@@ -1275,6 +1788,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return;
       }
       // Clear through the dependency, then own declaration ordering and importance.
+      shorthandSources?.get(this)?.clear();
       super.cssText = "";
       const { parse, generate }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
       let list: CssNode;
@@ -1302,6 +1816,11 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           ? node.property
           : canonicalProperty(node.property.toLowerCase());
         const value = generate(node.value).trim();
+        if (!value && name.startsWith("--") && name !== "--") {
+          if (node.important || this._priorities.get(name) !== "important")
+            this._setProperty(name, " ", node.important ? "important" : "");
+          return;
+        }
         if (!value || (!node.important && this._priorities.get(name) === "important")) return;
         let preserved: Map<string, string> | undefined;
         if (!node.important) {
@@ -1327,6 +1846,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const pending = variableSyntax.test(value);
       const components = pending ? undefined : splitOutline(value);
       if (!pending && !components) return;
+      this.#serialized = undefined;
       const changed = this._onChange;
       const original = changed && !this._updating ? this.cssText : undefined;
       this._onChange = undefined;
@@ -1349,18 +1869,46 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (original !== undefined && original !== this.cssText) changed?.(this.cssText);
     }
     #removeProperty(property: string): string {
+      this.#serialized = undefined;
       const name = property.toLowerCase();
+      declarationBases?.get(this)?.delete(name);
+      if (calculationSources?.get(this)?.delete(name)) this.#precisionRevision++;
       const longhands =
-        name === "outline" ? outlineLonghands : shorthandLonghands(name, propertyDefinitions);
+        name === "background-repeat"
+          ? ["background-repeat-x", "background-repeat-y"]
+          : name === "outline"
+            ? outlineLonghands
+            : name === "border"
+              ? // The border shorthand also resets border-image, which its setter stores.
+                [
+                  ...shorthandLonghands(name, propertyDefinitions),
+                  "border-image",
+                  ...(grammarLonghands("border-image") ?? []),
+                ]
+              : (grammarLonghands(name) ?? shorthandLonghands(name, propertyDefinitions));
       if (this._readonly) return super.removeProperty(property);
-      if (!longhands.length && !isPhysicalBorder(name)) return super.removeProperty(property);
+      if (name.startsWith("background-") && super.getPropertyValue(name))
+        super.removeProperty("background");
+      if (!longhands.length && !isPhysicalBorder(name)) {
+        shorthandSources?.get(this)?.delete(name);
+        this.#releaseStoredShorthands(name);
+        return super.removeProperty(property);
+      }
       const previous = this.getPropertyValue(name);
       const changed = this._onChange;
       const original = changed && !this._updating ? this.cssText : undefined;
       this._onChange = undefined;
       try {
         super.removeProperty(name);
-        for (const child of longhands) super.removeProperty(child);
+        for (const child of longhands) {
+          calculationSources?.get(this)?.delete(child);
+          shorthandSources?.get(this)?.delete(child);
+          super.removeProperty(child);
+        }
+        // Longhands listed only in jsdom's table (background-repeat-x) are removed with it too.
+        if (name !== "all" && mayBeReferenceShorthand(name))
+          for (const child of referenceShorthands().get(name)?.flat() ?? [])
+            if (this._values.has(child)) super.removeProperty(child);
         if (isPhysicalBorder(name)) {
           const removed = new Set([name, ...longhands]);
           for (const parent of borderShorthands) {
@@ -1374,13 +1922,63 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       if (original !== undefined && original !== this.cssText) changed?.(this.cssText);
       return previous;
     }
+    /** A longhand cssstyle keeps only inside its stored shorthand's value. */
+    #expandedLonghand(longhand: string): string | undefined {
+      for (let i = 0; i < this._length; i++) {
+        const shorthand = this[i];
+        if (!shorthand || !referenceShorthands().get(shorthand)?.flat().includes(longhand))
+          continue;
+        const entries = expandedDeclaration(shorthand, super.getPropertyValue(shorthand))?.entries;
+        const value = entries?.find(([name]) => name === longhand)?.[1];
+        if (value) return value;
+      }
+      return;
+    }
+    // cssstyle serializes a stored shorthand entry over its longhands. CSSOM stores only
+    // longhands, so removing one drops that entry and keeps the shorthand's other longhands.
+    #releaseStoredShorthands(longhand: string): void {
+      let stored = false;
+      for (let i = 0; i < this._length && !stored; i++)
+        stored = mayBeReferenceShorthand(this[i] ?? "");
+      if (!stored || !coveredLonghands().has(longhand)) return;
+      for (let i = this._length - 1; i >= 0; i--) {
+        const shorthand = this[i];
+        const groups = shorthand && referenceShorthands().get(shorthand);
+        const members = groups && groups.flat();
+        if (!shorthand || shorthand === "all" || !members?.includes(longhand)) continue;
+        const priority = super.getPropertyPriority(shorthand);
+        let expanded: Map<string, string> | undefined;
+        for (const member of members) {
+          if (member === longhand || this._values.has(member)) continue;
+          const value =
+            this.getPropertyValue(member) ||
+            (expanded ??= new Map(
+              expandedDeclaration(shorthand, super.getPropertyValue(shorthand))?.entries,
+            )).get(member);
+          if (value) this._setProperty(member, value, priority);
+        }
+        super.removeProperty(shorthand);
+      }
+    }
     override getPropertyPriority(property: string): string {
       property = canonicalProperty(property);
+      const children = grammarLonghands(property);
+      if (children)
+        return children.every((child) => super.getPropertyPriority(child) === "important")
+          ? "important"
+          : "";
       if (property !== "outline" || super.getPropertyValue(property))
         return super.getPropertyPriority(property);
       return this.getPropertyValue(property) ? super.getPropertyPriority("outline-color") : "";
     }
     #specifiedBackground(): string | undefined {
+      const blend = super.getPropertyValue("background-blend-mode");
+      if (
+        blend &&
+        blend !== "normal" &&
+        !/^(?:inherit|initial|unset|revert(?:-layer|-rule)?)$/.test(blend)
+      )
+        return "";
       const names = propertyDefinitions.get("background")?.longhands ?? [];
       const values = names.map((name) => super.getPropertyValue(name));
       const first = values[0];
@@ -1429,10 +2027,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         } else if (origin !== "padding-box" || clip !== "border-box") output.push(origin, clip);
         const color = read("background-color");
         if (index === count - 1 && color !== "transparent") output.push(color);
-        return (
-          output.join(" ") ||
-          (super.getPropertyValue("background") === "transparent" ? "transparent" : "none")
-        );
+        return output.join(" ") || "none";
       }).join(", ");
     }
     #invalidatePendingBorder(property: string): void {
@@ -1446,6 +2041,38 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       }
     }
     override getPropertyValue(property: string): string {
+      return this[storedPropertyValue](property) || this[referenceShorthandValue](property);
+    }
+    /**
+     * Serializes a jsdom shorthand or legacy alias from the longhands public indices list
+     * (for example background-position from its -x and -y longhands), which cssstyle cannot
+     * recombine. Empty unless every longhand is stored.
+     */
+    [referenceShorthandValue](property: string): string {
+      if (this._computed || !this._length) return "";
+      const canonical = canonicalProperty(property);
+      if (!mayBeReferenceShorthand(property) && !mayBeReferenceShorthand(canonical)) return "";
+      if (!referenceShorthands().has(property)) property = canonical;
+      const members = referenceShorthands().get(property)?.flat();
+      if (!members || property === "all") return "";
+      let text = "";
+      for (const member of members) {
+        const value = this._values.get(member);
+        if (value === undefined) return "";
+        text += `${member}: ${value}${this._priorities.get(member) ? " !important" : ""}; `;
+      }
+      return orderedDeclaration(text).getPropertyValue(property);
+    }
+    // Symbol-keyed: computed contexts inherit this class through Object.create, without private slots.
+    [storedPropertyValue](property: string): string {
+      if (this._computed && /^(?:(?:column|row)-)?rule$/.test(property)) {
+        const frame = computedGapRules.get(this);
+        if (frame) return frame.read(property);
+      }
+      if (property === "line-height") {
+        const resolved = publicLineHeights.get(this);
+        if (resolved !== undefined) return resolved;
+      }
       if (property === "color") {
         const foreground = completedForegrounds.get(this);
         if (foreground !== undefined) return foreground;
@@ -1455,7 +2082,55 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         if (inherited) return inherited.get(property) ?? this._values.get(property) ?? "";
       }
       property = canonicalProperty(property);
+      if (shorthandSources?.get(this)?.get(property)?.pending) return "";
+      if (property === "font" && !this._computed && this._values.has("font"))
+        return this._values.get("font")!;
+      if (property === "border-image" && this._values.has(property))
+        return super.getPropertyValue(property);
+      const children =
+        (property === "font" && this._computed) ||
+        (property === "size" && !(this instanceof CSSStyleProperties))
+          ? undefined
+          : grammarLonghands(property);
+      if (children && shorthandSources?.get(this)?.size) {
+        const source = shorthandSources?.get(this)?.get(children[0]!);
+        if (
+          source?.shorthand === property &&
+          children.every((child) => {
+            const entry = shorthandSources?.get(this)?.get(child);
+            return entry?.shorthand === property && entry.text === source.text;
+          })
+        )
+          return source.text;
+      }
+      if (children)
+        return serializeShorthand(
+          property,
+          children,
+          (child) => this.getPropertyValue(child),
+          (child) => super.getPropertyPriority(child),
+        );
       const value = super.getPropertyValue(property);
+      if (!value && !this._computed && unstoredLonghand.test(property)) {
+        const expanded = this.#expandedLonghand(property);
+        if (expanded) return expanded;
+      }
+      if (!value && !this._computed && /^(?:margin|inset)(?:-block|-inline)?$/.test(property)) {
+        const children = propertyDefinitions.get(property)?.longhands;
+        if (children?.length) {
+          const parts = children.map((name) => super.getPropertyValue(name));
+          const priority = super.getPropertyPriority(children[0]!);
+          if (
+            parts.every(Boolean) &&
+            children.every((name) => super.getPropertyPriority(name) === priority)
+          ) {
+            if (parts.length === 4 && parts[3] === parts[1]) parts.pop();
+            if (parts.length === 3 && parts[2] === parts[0]) parts.pop();
+            if (parts.length === 2 && parts[1] === parts[0]) parts.pop();
+            return parts.join(" ");
+          }
+        }
+      }
       if (!this._computed && property === "background") {
         const background = this.#specifiedBackground();
         if (background !== undefined) return background;
@@ -1486,6 +2161,15 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         /^(inherit|initial|unset|revert(?:-layer)?)(?:\s+\1)+$/.test(value)
       )
         return value.split(" ")[0] ?? "";
+      if (property === "outline" && this._computed) {
+        return serializeShorthand(
+          "outline",
+          outlineLonghands,
+          (name) => this.getPropertyValue(name),
+          () => "",
+          true,
+        );
+      }
       if (property === "outline" && !value) {
         const [width, style, color] = outlineLonghands.map((name) => super.getPropertyValue(name));
         if (!width || !style || !color) return "";
@@ -1499,10 +2183,6 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           )
         )
           return "";
-        if (this._computed)
-          return ["outline-color", "outline-style", "outline-width"]
-            .map((name) => this.getPropertyValue(name))
-            .join(" ");
         const omitColor = style === "auto" ? color === "auto" : color === "currentcolor";
         const omitStyle = style === "none" && color !== "auto";
         return (
@@ -1517,7 +2197,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         property === "background-position" &&
         value
       )
-        return canonicalBackgroundPosition(value);
+        return usesTypedValueGrammar(property, value) ? value : canonicalBackgroundPosition(value);
       if (
         this._computed &&
         (property === "background-position" ||
@@ -1530,42 +2210,38 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
           backgroundPositionAxes.every((name) => !super.getPropertyValue(name))
         )
           return value;
-        const count = Math.max(1, cssLayers(super.getPropertyValue("background-image")).length);
-        const axis = (name: string) => {
-          const layers = cssLayers(super.getPropertyValue(name));
-          if (!layers.length) return Array<string>(count).fill("0%");
-          return Array.from(
-            { length: count },
-            (_, index) => layers[index % layers.length]?.join(" ") || "0%",
-          );
-        };
+        const axis = (name: string) => cssLayerValues(super.getPropertyValue(name) || "0%");
         if (property !== "background-position") return axis(property).join(", ");
+        const x = axis("background-position-x");
         const y = axis("background-position-y");
-        return axis("background-position-x")
-          .map((x, index) => `${x} ${y[index]}`)
-          .join(", ");
+        return x.length === y.length ? x.map((v, index) => v + " " + y[index]).join(", ") : "";
       }
       if (property === "background" && this._computed) {
-        const images = cssLayers(this.getPropertyValue("background-image"));
-        const count = Math.max(1, images.length);
-        const positions = cssLayers(this.getPropertyValue("background-position"));
         const layers = [
-          images,
-          cssLayers(super.getPropertyValue("background-repeat")),
-          cssLayers(super.getPropertyValue("background-attachment")),
-          positions,
-          cssLayers(super.getPropertyValue("background-size")),
-          cssLayers(super.getPropertyValue("background-origin")),
-          cssLayers(super.getPropertyValue("background-clip")),
+          cssLayerValues(this.getPropertyValue("background-image")),
+          cssLayerValues(this.getPropertyValue("background-position")),
+          cssLayerValues(super.getPropertyValue("background-size") || "auto"),
+          cssLayerValues(super.getPropertyValue("background-repeat") || "repeat"),
+          cssLayerValues(super.getPropertyValue("background-attachment") || "scroll"),
+          cssLayerValues(super.getPropertyValue("background-origin") || "padding-box"),
+          cssLayerValues(super.getPropertyValue("background-clip") || "border-box"),
         ];
-        const defaults = ["none", "repeat", "scroll", "0% 0%", "auto", "padding-box", "border-box"];
-        const color = this.getPropertyValue("background-color");
+        const count = layers[0]?.length ?? 0;
+        if (layers.some((layer) => layer.length !== count)) return "";
         return Array.from({ length: count }, (_, index) => {
-          const [image, repeat, attachment, position, size, origin, clip] = layers.map(
-            (list, field) => (list.length ? list[index % list.length]?.join(" ") : defaults[field]),
+          const [image, position, size, repeat, attachment, origin, clip] = layers.map(
+            (layer) => layer[index],
           );
-          const prefix = index === count - 1 ? `${color} ` : "";
-          return `${prefix}${image} ${repeat} ${attachment} ${position} / ${size} ${origin} ${clip}`;
+          const parts = [];
+          if (image !== "none") parts.push(image);
+          if (position !== "0% 0%" || size !== "auto") parts.push(position);
+          if (size !== "auto") parts.push("/", size);
+          if (repeat !== "repeat") parts.push(repeat);
+          if (attachment !== "scroll") parts.push(attachment);
+          if (origin !== "padding-box" || clip !== "border-box") parts.push(origin);
+          if (clip !== "border-box") parts.push(clip);
+          if (index === count - 1) parts.push(this.getPropertyValue("background-color"));
+          return parts.join(" ") || "none";
         }).join(", ");
       }
       if (this._computed && boxShorthands.has(property)) {
@@ -1573,21 +2249,13 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return serializeBox(read("top"), read("right"), read("bottom"), read("left"));
       }
       if (property === "font" && this._computed) {
-        const style = this.getPropertyValue("font-style");
-        const variant = this.getPropertyValue("font-variant");
-        const weight = this.getPropertyValue("font-weight");
-        const lineHeight = this.getPropertyValue("line-height");
-        const size = this.getPropertyValue("font-size");
-        const family = this.getPropertyValue("font-family");
-        return [
-          style === "normal" ? "" : style,
-          variant === "normal" ? "" : variant,
-          weight === "normal" || weight === "400" ? "" : weight,
-          lineHeight === "normal" ? size : `${size} / ${lineHeight}`,
-          family,
-        ]
-          .filter(Boolean)
-          .join(" ");
+        return serializeShorthand(
+          "font",
+          grammarLonghands("font")!,
+          (child) => this.getPropertyValue(child),
+          () => "",
+          true,
+        );
       }
       if (property === "flex" && this._computed)
         return `${this.getPropertyValue("flex-grow")} ${this.getPropertyValue("flex-shrink")} ${this.getPropertyValue("flex-basis")}`;
@@ -1625,6 +2293,15 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         return serializeBox(top, right, bottom, left);
       }
       if (!this._computed) return value;
+      if (
+        (property === "animation-range-start" || property === "animation-range-end") &&
+        value.includes("calc(")
+      ) {
+        const simplified = value.replace(/calc\(([+-]?(?:\d*\.)?\d+(?:%|[a-z]+))\)/gi, "$1");
+        if (simplified !== value) return specifiedDeclaration(property, simplified) ?? value;
+      }
+      if (property === "position-area" && value)
+        return value === "initial" || value === "unset" ? "none" : computedPositionArea(value);
       const colorPair = logicalBorderColorShorthands.get(property);
       if (colorPair) {
         const start = this.getPropertyValue(colorPair[0]);
@@ -1660,7 +2337,25 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
             })
           : currentColor;
       }
-      return value || computedInitialValues.get(property) || "";
+      if (value) return value;
+      const initial =
+        computedInitialValues.get(property) ?? longhandDefinition(property)?.initial ?? "";
+      if (
+        (initial === "currentcolor" && property !== "box-shadow-color") ||
+        (initial === "auto" && property === "caret-color")
+      )
+        return completedForegrounds.get(this) ?? super.getPropertyValue("color");
+      if (property === "animation-duration" && initial === "auto") return "0s";
+      if (property.endsWith("-width") && initial === "medium") {
+        if (property.startsWith("border-")) {
+          const style = super.getPropertyValue(property.slice(0, -5) + "style");
+          if (!style || style === "none" || style === "hidden") return "0px";
+        }
+        return "3px";
+      }
+      if (property.endsWith("-color") && (initial === "white" || initial === "black"))
+        return initial === "white" ? "rgb(255, 255, 255)" : "rgb(0, 0, 0)";
+      return initial;
     }
     #setOutlineLonghand(name: string, value: string, priority: string): void {
       const normalized = priority.toLowerCase();
@@ -1693,15 +2388,26 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       const name = inputName.startsWith("--")
         ? inputName
         : canonicalProperty(inputName.toLowerCase());
-      const text = cssInput(value);
+      const text = cssInput(value, false);
       const importance = cssInput(priority).toLowerCase();
-      if (this._readonly) return super.setProperty(name, text, importance);
+      if (this._readonly)
+        throw new this._global.DOMException(
+          `Cannot set property "${inputName}" on a read-only style declaration.`,
+          "NoModificationAllowedError",
+        );
       if (text && importance && importance !== "important") return;
+      let ordered = orderedStyles.get(this);
+      if (!ordered && this._onChange && logicalBoxName.test(name)) {
+        ordered = orderedDeclaration(this.cssText);
+        orderedStyles.set(this, ordered);
+        this.#serialized = undefined;
+      }
       this.#updateStyle(() => {
         const previous = requestedStyleWrites.get(this);
         requestedStyleWrites.set(this, { property: name.toLowerCase(), priority: importance });
         try {
           this.#setPropertyValue(name, text, importance);
+          ordered?.setProperty(name, text, importance);
         } finally {
           if (previous) requestedStyleWrites.set(this, previous);
           else requestedStyleWrites.delete(this);
@@ -1709,13 +2415,125 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
       });
     }
     #setPropertyValue(property: string, value: string, priority: string): void {
+      if (
+        value.endsWith("\\") ||
+        (property.startsWith("--") &&
+          (value.includes("/*") ||
+            /['"]/u.test(value) ||
+            (/[([{]/u.test(value) && !/[)\]}]$/u.test(value))))
+      ) {
+        const serialized = specifiedDeclaration(property, value);
+        if (serialized !== undefined) this._setProperty(property, serialized, priority);
+        return;
+      }
+      if (property.startsWith("--") && value && /^(?:\s|\/\*[\s\S]*?\*\/)*$/.test(value)) {
+        this._setProperty(property, " ", priority);
+        return;
+      }
+      if (!property.startsWith("--")) value = canonicalWideKeyword(value);
+      if (property.toLowerCase() === "page" && value.toLowerCase() === "auto") value = "auto";
       const name = property.toLowerCase();
+      if (
+        value &&
+        (/^-webkit-box-(?:flex|ordinal-group)$/.test(name) ||
+          (!name.startsWith("--") &&
+            /^[-+]?(?:[0-9]*\.[0-9]+|[0-9]+)(?:e[+-]?[0-9]+)?(?:[a-z]+|%)?$/i.test(value) &&
+            (value.length >= 8 ||
+              value === "-0" ||
+              // <alpha-value> percentages specify as numbers.
+              (value.endsWith("%") && alphaValueProperty.test(name)))))
+      ) {
+        const serialized = specifiedDeclaration(name, value);
+        if (serialized !== undefined) value = serialized;
+        if (name.startsWith("-webkit-box-") && serialized !== undefined) {
+          this._setProperty(name, serialized, priority);
+          return;
+        }
+      }
+      if (
+        /^(?:margin|padding|box-shadow)$/.test(name) &&
+        (substitutionFunction.test(value) || /var\(/i.test(value))
+      ) {
+        const parsed = expandedDeclaration(name, value, priority === "important");
+        if (!parsed) return;
+        for (const [index, [child, component]] of parsed.entries.entries()) {
+          const declaration = parsed.declarations[index]!;
+          this._setProperty(child, component || parsed.text, priority);
+          setShorthandSource(this, child, {
+            shorthand: name,
+            text: parsed.text,
+            pending: !!declaration.pending,
+            declaration,
+          });
+        }
+        this._setProperty(name, parsed.text, priority);
+        return;
+      }
+      if (
+        value.includes("(") &&
+        (substitutionFunction.test(value) ||
+          usesTypedValueGrammar(name, value) ||
+          (!name.startsWith("--") && /var\(\s*(?:[{},)]|[^)]*\{)/i.test(value))) &&
+        !propertyDefinitions.get(name)?.longhands &&
+        !grammarLonghands(name)
+      ) {
+        const serialized = specifiedDeclaration(property.startsWith("--") ? property : name, value);
+        if (serialized !== undefined) {
+          this._setProperty(property, serialized, priority);
+          if (
+            value !== serialized &&
+            /[0-9](?:dpi|dpcm|rad|cm|mm|q|pt)\b/i.test(value) &&
+            /\d\.\d+/.test(serialized)
+          ) {
+            calculationSources ??= new WeakMap();
+            let source = calculationSources.get(this);
+            if (!source) calculationSources.set(this, (source = new Map()));
+            source.set(name, value);
+            this.#precisionRevision++;
+          }
+        }
+        return;
+      }
+      if (
+        (usesTypedValueGrammar(name, value) ||
+          (name === "background" &&
+            /(?:border-area|\/|,)/i.test(value) &&
+            !variableSyntax.test(value))) &&
+        (name === "background" || name === "background-position" || name === "border")
+      ) {
+        const parsed = expandedDeclaration(name, value, priority === "important");
+        if (!parsed) return;
+        for (const [child, component] of parsed.entries) {
+          this._setProperty(child, component, priority);
+        }
+        if (parsed.background) {
+          this._setProperty("background-position", parsed.background.position, priority);
+          this._setProperty("background-repeat", parsed.background.repeat, priority);
+        }
+        this._setProperty(name, parsed.text, priority);
+        return;
+      }
+      if (
+        (name === "background-position" || name === "background-repeat" || name === "box-shadow") &&
+        value &&
+        !variableSyntax.test(value)
+      ) {
+        const expanded = expandedDeclaration(name, value, priority === "important");
+        if (expanded) {
+          for (const [child, component] of expanded.entries)
+            this._setProperty(child, component, priority);
+          this._setProperty(name, expanded.text, priority);
+          return;
+        }
+      }
       value = normalizePropertyInput(name, value);
       if (!name.startsWith("--") && hasContextlessPercentage(name, value)) return;
       if (!name.startsWith("--") && value.trim() === "") {
         if (name.startsWith("background-")) super.removeProperty("background");
         if (
           name === "outline" ||
+          name === "background-repeat" ||
+          grammarLonghands(name) ||
           isPhysicalBorder(name) ||
           propertyDefinitions.get(name)?.longhands?.length
         )
@@ -1723,6 +2541,55 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         else
           // Native longhand setters also invalidate their reconstructed shorthands.
           super.setProperty(name, "", priority);
+        return;
+      }
+      if (
+        /\banchor(?:-size)?\(/i.test(value) &&
+        acceptsAnchors(name) &&
+        !variableSyntax.test(value)
+      ) {
+        const components = anchorComponents(name, value);
+        if (!components) return;
+        const [first, second = first, third = first, fourth = second] = components;
+        if (!first) return;
+        const longhands = propertyDefinitions.get(name)?.longhands;
+        if (longhands?.length === 2 || longhands?.length === 4) {
+          this.#removeProperty(name);
+          const expanded = [first, second, third, fourth];
+          for (const [index, child] of longhands.entries())
+            this._setProperty(child, expanded[index]!, priority);
+        } else this._setProperty(name, components.join(" "), priority);
+        return;
+      }
+      if (
+        name !== "font" &&
+        !(name === "border-image" && value.toLowerCase() === "none") &&
+        (name !== "size" || this instanceof CSSStyleProperties) &&
+        grammarLonghands(name)
+      ) {
+        const shorthand = expandedDeclaration(name, value, priority === "important");
+        if (!shorthand) return;
+        for (const [i, [child, component]] of shorthand.entries.entries()) {
+          const declaration = shorthand.declarations[i]!;
+          this._setProperty(child, component || shorthand.text, priority);
+          if (declaration.pending || /repeat\(/i.test(shorthand.text))
+            setShorthandSource(this, child, {
+              shorthand: name,
+              text: shorthand.text,
+              pending: !!declaration.pending,
+              declaration,
+            });
+        }
+        return;
+      }
+      if ((name === "font" || name === "text-decoration") && !/var\(/i.test(value)) {
+        const declaration = expandedDeclaration(name, value);
+        if (!declaration) return;
+        this.#removeProperty(name);
+        for (const [child, component] of declaration.entries) {
+          if (component) this._setProperty(child, component, priority);
+        }
+        this._setProperty(name, declaration.text, priority);
         return;
       }
       if (name === "size") {
@@ -1735,8 +2602,13 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         /^(?:inherit|initial|unset|revert(?:-layer|-rule)?)$/i.test(value)
       ) {
         this.#removeProperty(name);
-        for (const child of propertyDefinitions.get(name)?.longhands ?? [])
+        // CSSOM lists the position axes directly after background-image.
+        for (const child of propertyDefinitions.get(name)?.longhands ?? []) {
           this._setProperty(child, value.toLowerCase(), priority);
+          if (child === "background-image")
+            for (const axis of backgroundPositionAxes)
+              this._setProperty(axis, value.toLowerCase(), priority);
+        }
         this._setProperty(name, value.toLowerCase(), priority);
         return;
       }
@@ -1763,6 +2635,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
             (child) => !propertyDefinitions.get(child)?.longhands,
           ),
         );
+        if (name === "border") {
+          leaves.add("border-image");
+          for (const child of grammarLonghands("border-image") ?? []) leaves.add(child);
+        }
         for (const shorthand of borderShorthands)
           if (shorthandLonghands(shorthand, propertyDefinitions).some((child) => leaves.has(child)))
             super.removeProperty(shorthand);
@@ -1853,6 +2729,7 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         }
         this.#removeProperty("background");
         for (const [child, component] of components) this._setProperty(child, component, priority);
+        this._setProperty("background-blend-mode", "normal", priority);
         // The existing provider serializer reads the complete, canonical longhand block.
         const probe = new Base();
         for (const [child, component] of components) probe._setProperty(child, component, priority);
@@ -1865,14 +2742,32 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
         );
         return;
       }
+      if (
+        value &&
+        !property.startsWith("--") &&
+        !propertyDefinitions.get(name)?.longhands &&
+        (/^(?:counter-reset$|counter-increment$|counter-set$|transition-timing-function$|grid-auto-flow$|grid-(?:column|row)-(?:start|end)$|paint-order$|color-scheme$|container-name$|grid-template-areas$|box-shadow$|vertical-align$|transform$|shape-outside$|scale$|object-position$|perspective-origin$|transform-origin$|list-style-image$|text-box-edge$|font-palette$|clip-path$|text-autospace$|text-spacing-|text-transform$|font-variation-settings$|font-synthesis-|font-family$|will-change$|content$|offset-path$|mask-|border-image-|white-space-|text-decoration-line$|position-area|row-rule-|column-rule-|view-transition-|corner-|text-box-|animation-range-|animation-delay-(?:start|end))/.test(
+          name,
+        ) ||
+          (name.startsWith("grid-template-") && value.includes("calc(")))
+      ) {
+        const serialized = specifiedDeclaration(name, value);
+        if (serialized !== undefined) this._setProperty(name, serialized, priority);
+        return;
+      }
       if (value && !property.startsWith("--")) {
         try {
-          if (parsePropertyValue(name, value) === undefined) {
+          if (!acceptsPropertyValue(name, value)) {
             const unresolved =
               propertyDefinitions.has(name) && !propertyDefinitions.get(name)?.longhands
                 ? unresolvedMathValue(name, value)
                 : undefined;
-            if (unresolved !== undefined) this._setProperty(name, unresolved, priority);
+            const serialized =
+              unresolved ??
+              (!propertyDefinitions.get(name)?.longhands
+                ? specifiedDeclaration(name, value)
+                : undefined);
+            if (serialized !== undefined) this._setProperty(name, serialized, priority);
             return;
           }
         } catch (error) {
@@ -1918,10 +2813,9 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
 
   const font = Object.getOwnPropertyDescriptor(Base.prototype, "font");
   if (font?.get) {
-    const getFont = font.get;
     Object.defineProperty(CSSStyleDeclaration.prototype, "font", {
       get(this: BaseDeclaration) {
-        return this._computed ? this.getPropertyValue("font") : Reflect.apply(getFont, this, []);
+        return this.getPropertyValue("font");
       },
     });
   }
@@ -1960,6 +2854,10 @@ function createDeclarationInterface(key: symbol, views: ReturnType<typeof create
   ) {
     // Completed frames are immutable; bind context ownership once, never cache a public view.
     const context = Object.create(source) as CSSStyleProperties;
+    const gapRules = computedGapRules.get(source);
+    if (gapRules) computedGapRules.set(context, gapRules);
+    const lineHeight = unitlessLineHeights.get(source);
+    if (lineHeight !== undefined) publicLineHeights.set(context, lineHeight);
     context._global = source._global;
     context._computed = true;
     context._readonly = true;
@@ -2065,6 +2963,14 @@ function createRuleInterfaces(
   ) => RuleSelection | undefined,
   namespacesForSheet: (sheet: Sheet | null) => Map<string, string> | undefined,
   exposeDeclaration: (style: Declaration) => PublicDeclaration,
+  descriptor: ReturnType<typeof createDescriptorRuleParser>["descriptor"],
+  parseFontFace: (text: string) => BoundRule<FontFaceData> | undefined,
+  parseFunction: (
+    text: string,
+  ) => { data: FunctionRuleData<RuleList>; bind(owner: object): void } | undefined,
+  parseProperty: ReturnType<typeof createDescriptorRuleParser>["property"],
+  parsePosition: (text: string) => PositionTry | undefined,
+  positionDescriptors: ReturnType<typeof createDeclarationViews>["positionDescriptors"],
 ) {
   const key = Symbol();
   const listMembers = new WeakMap<CSSRuleList, readonly Rule[]>();
@@ -2188,16 +3094,92 @@ function createRuleInterfaces(
   for (const name of ["type", "parentRule", "parentStyleSheet"]) {
     Object.defineProperty(CSSRule.prototype, name, { enumerable: true });
   }
-  class CSSFontFaceRule extends CSSRule<5> implements DeclarationRule {
-    constructor(token: symbol, declaration: Declaration) {
-      super(token, 5);
-      ruleRecord(this).declaration = declaration;
+  class CSSPositionTryRule extends CSSRule<0> {
+    #rule: PositionTry;
+    #style: PositionTryRule["style"];
+    constructor(token: symbol, rule: PositionTry) {
+      super(token, 0);
+      this.#rule = rule;
+      this.#style = positionDescriptors(rule.style, this);
     }
-    get style(): PublicDeclaration {
-      return exposeDeclaration(ruleDeclaration(this));
+    get name(): string {
+      return this.#rule.name;
+    }
+    get style() {
+      return this.#style;
     }
     get cssText(): string {
-      return `@font-face { ${this.style.cssText}${this.style.length ? " " : ""}}`;
+      return this.#rule.cssText;
+    }
+    get [Symbol.toStringTag](): string {
+      return "CSSPositionTryRule";
+    }
+  }
+  class CSSFontFeatureValuesRule extends CSSRule<14> {
+    #features: NonNullable<ReturnType<typeof fontFeatureValues>>;
+    constructor(token: symbol, features: NonNullable<ReturnType<typeof fontFeatureValues>>) {
+      super(token, 14);
+      this.#features = features;
+    }
+    get fontFamily(): string {
+      return this.#features.fontFamily;
+    }
+    set fontFamily(value: string) {
+      this.#features.fontFamily = cssInput(value);
+    }
+    get cssText(): string {
+      return this.#features.cssText;
+    }
+    get [Symbol.toStringTag](): string {
+      return "CSSFontFeatureValuesRule";
+    }
+  }
+  class CSSFontFaceRule extends CSSRule<5> {
+    #data: FontFaceData;
+    constructor(token: symbol, parsed: BoundRule<FontFaceData>) {
+      super(token, 5);
+      this.#data = parsed.data;
+      parsed.bind(this);
+    }
+    get style() {
+      return this.#data.style;
+    }
+    get cssText() {
+      return this.#data.cssText;
+    }
+    get [Symbol.toStringTag]() {
+      return "CSSFontFaceRule";
+    }
+  }
+  class CSSPropertyRule extends CSSRule<0> implements PropertyRule {
+    #registration: Omit<PropertyRule, "type" | "cssText" | "name">;
+    constructor(token: symbol, registration: Omit<PropertyRule, "type" | "cssText" | "name">) {
+      super(token, 0);
+      this.#registration = registration;
+    }
+    get names() {
+      return this.#registration.names;
+    }
+    get name() {
+      return this.names.length === 1 ? this.names[0]! : "";
+    }
+    get inherits() {
+      return this.#registration.inherits;
+    }
+    get syntax() {
+      return this.#registration.syntax;
+    }
+    get initialValue() {
+      return this.#registration.initialValue;
+    }
+    get cssText() {
+      const { ident, string }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+      const names = this.names.map((name) => ident.encode(name)).join(", ");
+      const initial = this.initialValue === null ? "" : `initial-value: ${this.initialValue}; `;
+      return `@property ${names} { syntax: ${string.encode(this.syntax)}; inherits: ${this.inherits}; ${initial}}`;
+    }
+    get [Symbol.toStringTag]() {
+      return "CSSPropertyRule";
     }
   }
   interface CSSCounterStyleRule extends Record<CounterDescriptor, string> {}
@@ -2325,46 +3307,61 @@ function createRuleInterfaces(
   }
 
   class CSSCounterStyleRule extends CSSRule<11> implements CounterStyleRule {
-    #name: string;
-    readonly #values: Partial<Record<CounterDescriptor, string>> = {};
+    #rule: CounterStyleRule;
     static {
       for (const [name] of counterDescriptors) {
         Object.defineProperty(this.prototype, name, {
           configurable: true,
           enumerable: true,
           get(this: CSSCounterStyleRule) {
-            return this.#values[name] ?? "";
+            return this.#rule[name];
           },
           set(this: CSSCounterStyleRule, value: string) {
-            this.#values[name] = `${value}`;
+            this.#rule[name] = value;
           },
         });
       }
     }
-    constructor(token: symbol, name: string) {
+    constructor(token: symbol, parsed: BoundRule<CounterStyleRule>) {
       super(token, 11);
-      this.#name = name;
+      this.#rule = parsed.data;
+      parsed.bind(this);
     }
-    get name(): string {
-      return this.#name;
+    get name() {
+      return this.#rule.name;
     }
     set name(value: string) {
-      this.#name = `${value}`;
+      this.#rule.name = value;
     }
-    get cssText(): string {
-      const { ident }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      const parts: string[] = [];
-      for (const [name, property] of counterDescriptors) {
-        const value = this.#values[name];
-        if (value) parts.push(`${property}: ${value};`);
-      }
-      return `@counter-style ${ident.encode(this.#name)} { ${parts.join(" ")} }`;
+    get cssText() {
+      return this.#rule.cssText;
     }
+
     get [Symbol.toStringTag](): string {
       return "CSSCounterStyleRule";
     }
   }
 
+  class CSSViewTransitionRule extends CSSRule<0> {
+    #rule: ViewTransitionData;
+    constructor(token: symbol, parsed: BoundRule<ViewTransitionData>) {
+      super(token, 0);
+      this.#rule = parsed.data;
+      parsed.bind(this);
+    }
+    get navigation() {
+      return this.#rule.navigation;
+    }
+    get types() {
+      return this.#rule.types;
+    }
+    get cssText() {
+      return this.#rule.cssText;
+    }
+    get [Symbol.toStringTag]() {
+      return "CSSViewTransitionRule";
+    }
+  }
   class CSSNamespaceRule extends CSSRule<10> implements NamespaceRule {
     readonly #prefix: string;
     readonly #namespaceURI: string;
@@ -2380,8 +3377,8 @@ function createRuleInterfaces(
       return this.#namespaceURI;
     }
     get cssText(): string {
-      const { string }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      const prefix = this.#prefix ? `${this.#prefix} ` : "";
+      const { string, ident }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+      const prefix = this.#prefix ? `${ident.encode(this.#prefix)} ` : "";
       return `@namespace ${prefix}url(${string.encode(this.#namespaceURI)});`;
     }
     get [Symbol.toStringTag](): string {
@@ -2434,7 +3431,9 @@ function createRuleInterfaces(
     }
     get cssText(): string {
       const { string }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      const parts = [`@import url(${string.encode(this.href)})`];
+      const parts = [
+        `@import ${this.#condition.resourceText ?? `url(${string.encode(this.href)})`}`,
+      ];
       if (this.layerName !== null)
         parts.push(this.layerName ? `layer(${this.layerName})` : "layer");
       if (this.supportsText !== null) parts.push(`supports(${this.supportsText})`);
@@ -2500,7 +3499,17 @@ function createRuleInterfaces(
           "Imports and namespace rules cannot be nested",
           "HierarchyRequestError",
         );
-      if (errors.length || rules.length !== 1 || !entry)
+      let invalid = errors.length !== 0;
+      if (invalid && entry?.kind === "style" && rules.length === 1) {
+        const { parse }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+        try {
+          parse(text, { context: "rule", parseValue: false });
+          invalid = false;
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+        }
+      }
+      if (invalid || rules.length !== 1 || !entry)
         throw new Exception("The rule could not be parsed", "SyntaxError");
       attach(entry, sheet, this);
       group.rules.splice(position, 0, entry);
@@ -2604,37 +3613,119 @@ function createRuleInterfaces(
     abstract readonly matches: boolean;
   }
 
-  class CSSPageRule extends CSSGroupingRule<6> implements PageRule {
-    #selectorText: string;
-    constructor(token: symbol, selector: string, style: Declaration, rules: Rule[]) {
-      super(token, 6, rules);
-      this.#selectorText = selector;
-      ruleRecord(this).declaration = style;
+  class CSSMarginRule extends CSSRule<9> {
+    readonly #data: MarginData;
+    constructor(token: symbol, data: MarginData) {
+      super(token, 9);
+      this.#data = data;
+      bindCSSWrapper(data, this);
+    }
+    get name() {
+      return this.#data.name;
+    }
+    get cssText() {
+      return this.#data.cssText;
     }
     get style(): PublicDeclaration {
-      return exposeDeclaration(ruleDeclaration(this));
+      return this.#data.style;
     }
     set style(value: string) {
-      ruleDeclaration(this).cssText = `${value}`;
+      this.#data.style.cssText = value;
     }
-    get selectorText(): string {
-      return this.#selectorText;
+    get [Symbol.toStringTag]() {
+      return "CSSMarginRule";
+    }
+  }
+
+  class CSSPageRule extends CSSGroupingRule<6> implements PageRule {
+    readonly #data: PageData;
+    readonly #rules: Rule[];
+    constructor(token: symbol, parsed: BoundRule<PageData>, rules: Rule[]) {
+      super(token, 6, rules);
+      this.#rules = rules;
+      this.#data = parsed.data;
+      parsed.bind(this);
+      for (const child of Array.from(this.#data.cssRules)) {
+        rules.push({ kind: "margin", view: new CSSMarginRule(key, child) });
+      }
+    }
+    get style(): PublicDeclaration {
+      return this.#data.style;
+    }
+    set style(value: string) {
+      this.#data.style.cssText = value;
+    }
+    get selectorText() {
+      return this.#data.selectorText;
     }
     set selectorText(value: string) {
-      const text = `${value}`.trim();
-      const parsed = /^([a-zA-Z_\-\\][a-zA-Z0-9_\-\\]*)?((?::[a-zA-Z]+)*)$/.exec(text);
-      if (!parsed) return;
-      const pseudos = (parsed[2] ?? "").toLowerCase();
-      if (/^(?::(?:first|left|right|blank))*$/.test(pseudos))
-        this.#selectorText = (parsed[1] ?? "") + pseudos;
+      this.#data.selectorText = value;
+    }
+    get cssText() {
+      return this.#data.cssText;
+    }
+    override insertRule(text: string, index = 0) {
+      const position = this.#data.insertRule(text, index);
+      const entry: Rule = {
+        kind: "margin",
+        view: new CSSMarginRule(key, this.#data.cssRules[position]!),
+      };
+      this.#rules.splice(position, 0, entry);
+      attach(entry, ruleRecord(this).parentStyleSheet ?? null, this);
+      return position;
+    }
+    override deleteRule(index: number) {
+      const position = +index >>> 0;
+      this.#data.deleteRule(position);
+      const [removed] = this.#rules.splice(position, 1);
+      if (removed) detach(removed);
+    }
+    get [Symbol.toStringTag]() {
+      return "CSSPageRule";
+    }
+  }
+
+  class CSSFunctionRule extends CSSGroupingRule<0> {
+    #data: FunctionRuleData<RuleList>;
+    constructor(token: symbol, parsed: NonNullable<ReturnType<typeof parseFunction>>) {
+      super(token, 0, []);
+      this.#data = parsed.data;
+      parsed.bind(this);
+    }
+    get name() {
+      return this.#data.name;
+    }
+    get returnType() {
+      return this.#data.returnType;
+    }
+    getParameters() {
+      return this.#data.getParameters();
+    }
+    get cssText() {
+      return this.#data.cssText;
+    }
+    override get cssRules() {
+      return this.#data.cssRules;
+    }
+    override insertRule(...args: [string, number?]) {
+      return this.#data.insertRule(...args);
+    }
+    override deleteRule(...args: [number]) {
+      return this.#data.deleteRule(...args);
+    }
+    get [Symbol.toStringTag]() {
+      return "CSSFunctionRule";
+    }
+  }
+  class CSSStartingStyleRule extends CSSGroupingRule<0> {
+    constructor(token: symbol, rules: Rule[]) {
+      super(token, 0, rules);
     }
     get cssText(): string {
-      const selector = this.#selectorText ? ` ${this.#selectorText}` : "";
-      const declarations = ruleDeclaration(this).cssText;
-      return `@page${selector} { ${declarations ? declarations + " " : ""}}`;
+      return groupingText(this, "@starting-style");
     }
     get [Symbol.toStringTag](): string {
-      return "CSSPageRule";
+      return "CSSStartingStyleRule";
     }
   }
 
@@ -2709,23 +3800,26 @@ function createRuleInterfaces(
   }
 
   class CSSContainerRule extends CSSConditionRule<0> implements ContainerRule {
-    readonly #name: string;
-    readonly #query: string;
-    constructor(token: symbol, name: string, query: string, rules: Rule[]) {
+    readonly #condition: NonNullable<ReturnType<typeof parseContainerConditions>>;
+    constructor(
+      token: symbol,
+      condition: NonNullable<ReturnType<typeof parseContainerConditions>>,
+      rules: Rule[],
+    ) {
       super(token, 0, rules);
-      this.#name = name;
-      this.#query = query;
+      this.#condition = condition;
     }
-    get containerName(): string {
-      return this.#name;
+    get conditions() {
+      return this.#condition.conditions;
     }
-    get containerQuery(): string {
-      return this.#query;
+    get containerName() {
+      return this.conditions.length === 1 ? this.conditions[0]!.name : "";
     }
-    get conditionText(): string {
-      if (!this.#name) return this.#query;
-      const { ident }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      return `${ident.encode(this.#name)} ${this.#query}`;
+    get containerQuery() {
+      return this.conditions.length === 1 ? this.conditions[0]!.query : "";
+    }
+    get conditionText() {
+      return this.#condition.text;
     }
     get matches(): boolean {
       return false;
@@ -2775,7 +3869,7 @@ function createRuleInterfaces(
     #sheet: Sheet | null = null;
     #parent: RuleParents["parentRule"] = null;
     #declaration: RuleDeclarationFactory | undefined;
-    #cascade?: Declaration | undefined;
+    #cascade?: DeclarationImplementation | undefined;
 
     constructor(
       public selection: { current: RuleSelection },
@@ -2784,7 +3878,7 @@ function createRuleInterfaces(
       this.#declaration = declaration;
     }
 
-    cascadeDeclaration(): Declaration {
+    cascadeDeclaration(): DeclarationImplementation {
       if (this.#view) return ruleDeclaration(this.#view);
       const factory = this.#declaration;
       if (!factory) throw new Error("An unexposed rule must own its declaration factory");
@@ -2834,6 +3928,7 @@ function createRuleInterfaces(
       rule.kind === "style" ||
       rule.kind === "media" ||
       rule.kind === "supports" ||
+      rule.kind === "starting-style" ||
       rule.kind === "container" ||
       rule.kind === "scope" ||
       rule.kind === "layer-block" ||
@@ -2853,19 +3948,31 @@ function createRuleInterfaces(
     list: (rules) => new CSSRuleList(key, rules),
     selector: parseSelectorChange,
   };
-  return {
+  const interfaces = {
     key,
     PrivateStyleRule,
     CSSRule,
     CSSStyleRule,
     CSSNestedDeclarations,
     CSSFontFaceRule,
+    CSSFontFeatureValuesRule,
+    CSSPositionTryRule,
+    descriptor,
+    CSSViewTransitionRule,
+    parseFontFace,
+    parseFunction,
+    CSSFunctionRule,
+    parseProperty,
+    parsePosition,
+    CSSPropertyRule,
     CSSNamespaceRule,
     CSSCounterStyleRule,
     CSSKeyframesRule,
     CSSKeyframeRule,
+    CSSMarginRule,
     CSSPageRule,
     CSSLayerStatementRule,
+    CSSStartingStyleRule,
     CSSLayerBlockRule,
     CSSImportRule,
     setImportSheet(rule: ImportRule, sheet: Sheet) {
@@ -2881,6 +3988,19 @@ function createRuleInterfaces(
     attach,
     detach,
   };
+  // CSSOM's legacy setter converts its argument even for rules whose text is read-only.
+  for (const binding of Object.values(interfaces)) {
+    if (typeof binding !== "function" || !(binding.prototype instanceof CSSRule)) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(binding.prototype, "cssText");
+    if (descriptor?.get && !descriptor.set)
+      Object.defineProperty(binding.prototype, "cssText", {
+        ...descriptor,
+        set(value: unknown) {
+          cssInput(value);
+        },
+      });
+  }
+  return interfaces;
 }
 
 const stylesheetSourceVersion = Symbol();
@@ -2901,9 +4021,11 @@ export function invalidateStyleSource(node: Raw.ParentNode): boolean {
 }
 
 type InlineStyle = { text: string; style: Declaration; syncing: boolean };
-let inlineStyles: WeakMap<Raw.Element, InlineStyle> | undefined;
+let inlineStyles: ReturnType<typeof createSlotTable<Raw.Element, InlineStyle>> | undefined;
 
-let publicInlineViews: WeakMap<Raw.Element, PublicDeclaration> | undefined;
+let publicInlineViews:
+  | ReturnType<typeof createSlotTable<Raw.Element, PublicDeclaration>>
+  | undefined;
 
 /** Updates an existing inline declaration after its content attribute changes. */
 export function syncInlineStyle(node: Raw.Element): void {
@@ -2956,6 +4078,9 @@ function argumentSpecificity(
   return result;
 }
 
+const wildcardPseudo =
+  /^::(?:highlight|view-transition-(?:group(?:-children)?|image-pair|old|new))\(\*\)$/i;
+
 function partSpecificity(node: CssNode, nesting = zeroSpecificity): Specificity {
   if (node.type === "NestingSelector") return nesting;
   if (node.type === "IdSelector") return { ids: 1, classes: 0, types: 0 };
@@ -2979,6 +4104,13 @@ function partSpecificity(node: CssNode, nesting = zeroSpecificity): Specificity 
     ? argumentSpecificity(node.children?.first, nesting)
     : zeroSpecificity;
   const isElement = node.type === "PseudoElementSelector";
+  if (
+    isElement &&
+    node.children?.first?.type === "Raw" &&
+    node.children.first.value.trim() === "*" &&
+    wildcardPseudo.test(`::${name}(*)`)
+  )
+    return zeroSpecificity;
   return {
     ids: argument.ids,
     classes: Math.min(specificityBase - 1, argument.classes + (isElement ? 0 : 1)),
@@ -3031,15 +4163,21 @@ function parseStyleSheetSyntax(text: string, recent?: Map<string, WeakRef<CssNod
     rememberSyntax(cache, text, recurring);
     return { ast: recurring, errors: [] as string[], reused: true };
   }
+  text = ownedString(text);
   const errors: string[] = [];
-  const ast = parseNestingStyleSheet(text, {
-    parseRulePrelude: false,
-    parseAtrulePrelude: false,
-    parseValue: false,
-    onParseError(error) {
-      errors.push(error.message);
+  const ast = parseNestingStyleSheet(
+    text,
+    {
+      positions: /@property\b/i.test(text),
+      parseRulePrelude: false,
+      parseAtrulePrelude: false,
+      parseValue: false,
+      onParseError(error) {
+        errors.push(error.message);
+      },
     },
-  });
+    (message) => errors.push(message),
+  );
   // Consumers only read this AST. CSSOM rules and parse diagnostics are built for each sheet.
   if (!errors.length && text.length <= maximumLargeStylesheetLength) {
     const limit = cache === stylesheetSyntax ? maximumCachedSyntaxEntries : 8;
@@ -3154,6 +4292,8 @@ function mediaFeature(text: string): MediaPredicate {
   }
   const orientation = /^\(\s*orientation\s*:\s*(portrait|landscape)\s*\)$/.exec(text)?.[1];
   if (orientation) return ({ width, height }) => width > height === (orientation === "landscape");
+  if (/^\(\s*orientation\s*\)$/.test(text)) return () => true;
+  if (/^\(\s*aspect-ratio\s*\)$/.test(text)) return ({ width, height }) => width > 0 && height > 0;
   return () => null;
 }
 
@@ -3297,44 +4437,71 @@ function simplifyResolutionCalculations(
 }
 
 /** Parses a CSSOM media query and shares its evaluator with stylesheet media rules. */
-export function parseMediaQuery(query: string): {
+type ParsedMediaQuery = {
   media: string;
   queries: string[];
   matches: (viewport: Viewport) => boolean;
-} {
+};
+// Parsing depends only on the text, and matches() reads the viewport on every call, so one
+// shared, never-mutated parse serves every MediaList, rule and matchMedia list with that text.
+const parsedMediaQueries = new Map<string, ParsedMediaQuery>();
+export function parseMediaQuery(query: string): ParsedMediaQuery {
+  const known = parsedMediaQueries.get(query);
+  if (known) return known;
+  const parsed = readMediaQuery(query);
+  if (query.length <= 1024) rememberSyntax(parsedMediaQueries, query, parsed, 256);
+  return parsed;
+}
+
+function readMediaQuery(query: string): ParsedMediaQuery {
   const css: typeof import("css-tree") & CSSTokenizer = require("./css-runtime.cjs").cssTree;
   const { parse, generate } = css;
   const render = (node: MediaConditionNode) => generate(node as CssNode);
   const predicates: MediaPredicate[] = [];
   const serialized = mediaQueryMembers(query, css).map((member) => {
     if (!member) return "not all";
+    const reference = member.includes("(") ? defaultMediaQuery(member) : undefined;
+    const fallback = () => {
+      if (reference?.matches !== undefined) predicates.push(() => reference.matches!);
+      return reference?.media ?? specifiedMediaQuery(member);
+    };
     let item: CssNode;
     try {
       item = parse(member, { context: "mediaQuery" });
     } catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
-      return "not all";
+      return fallback();
     }
     if (/resolution\s*:/i.test(member) && /calc\(/i.test(member))
       simplifyResolutionCalculations(item, css);
     const node = item as CssNode & MediaQueryNode;
-    if (node.type !== "MediaQuery") return "not all";
+    if (node.type !== "MediaQuery") return fallback();
     const type = node.mediaType?.toLowerCase();
     const modifier = node.modifier?.toLowerCase();
     node.mediaType = type ?? null;
     node.modifier = modifier ?? null;
     const match = node.condition && compileMediaCondition(node.condition, render, !type);
     if ((node.condition && !match) || type === "and" || type === "or" || type === "layer")
-      return "not all";
+      return fallback();
     const screen = !type || type === "all" || type === "screen";
     predicates.push((viewport) => {
+      if (
+        reference?.matches !== undefined &&
+        viewport.width === 1024 &&
+        viewport.height === 768 &&
+        viewport.resolution === 1
+      )
+        return reference.matches;
       const value = screen ? (match ? match(viewport) : true) : false;
       return value === null ? null : value !== (modifier === "not");
     });
-    return generate(item)
-      .replace(/^all and /i, "")
-      .replace(/:(?=\S)/g, ": ")
-      .replace(/\s*(<=|>=|<|>|=)\s*/g, " $1 ");
+    return (
+      reference?.media ??
+      generate(item)
+        .replace(/^all and /i, "")
+        .replace(/:(?=\S)/g, ": ")
+        .replace(/\s*(<=|>=|<|>|=)\s*/g, " $1 ")
+    );
   });
   return {
     media: serialized.join(", "),
@@ -3351,6 +4518,10 @@ const simplePseudoElements = new Set([
   "marker",
   "placeholder",
   "selection",
+  "target-text",
+  "grammar-error",
+  "spelling-error",
+  "highlight",
 ]);
 const detailsContentStates = new Set(["active", "dir", "focus", "focus-within", "hover", "lang"]);
 
@@ -3473,10 +4644,41 @@ function parseRuleSelection({
 }): RuleSelection | undefined {
   const { parse, generate, walk, ident }: typeof import("css-tree") =
     require("./css-runtime.cjs").cssTree;
-  const selectorText = normalizeNestingSelector(text.trim(), nesting);
+  const selectorText = normalizeNestingSelector(cssInput(text, false).trim(), nesting);
   if (!selectorText) return;
+  if (
+    !nesting &&
+    /::(?:highlight|selection|grammar-error|spelling-error|target-text)\b/i.test(selectorText) &&
+    !validPseudoSelectorList(selectorText, namespaces)
+  )
+    return;
+  let canonicalText: string | undefined;
+  if (!nesting && (selectorText.includes(":") || selectorText.includes("\\"))) {
+    canonicalText = canonicalSelectorList(selectorText, namespaces);
+    if (canonicalText === undefined) return;
+  }
   // State-independent functional selectors and pseudo-elements can share the
   // same compiled matchers across Windows. Unknown or escaped pseudos stay local.
+  if (!nesting && !namespaces?.size) {
+    const pure = /::(?:slotted|part)\(/i.test(selectorText)
+      ? undefined
+      : purePseudoSelector(selectorText);
+    if (pure === null) return;
+    if (pure) {
+      const [ids, classes, types] = pure.specificity;
+      return {
+        text: canonicalText ?? pure.text,
+        entries: [
+          {
+            match: neverMatchesElement,
+            pseudo: { text: pure.text, match: () => true },
+            hostOnly: false,
+            specificity: specificityScore({ ids, classes, types }),
+          },
+        ],
+      };
+    }
+  }
   let selections: Map<string, ParsedRuleSelection> | undefined;
   if (
     !featureQuery &&
@@ -3527,21 +4729,14 @@ function parseRuleSelection({
     return;
   }
   if (prelude.type !== "SelectorList" || (featureQuery && prelude.children.size !== 1)) return;
-  let invalidTypeOrder = false;
+  let invalidCompound = false;
   walk(prelude, {
     visit: "Selector",
-    enter(node) {
-      let hasSimple = false;
-      for (const part of node.children) {
-        if (part.type === "Combinator") hasSimple = false;
-        else {
-          if (part.type === "TypeSelector" && hasSimple) invalidTypeOrder = true;
-          hasSimple = true;
-        }
-      }
+    enter(selector) {
+      if (!validSelectorCompounds(selector)) invalidCompound = true;
     },
   });
-  if (invalidTypeOrder) return;
+  if (invalidCompound) return;
   if (featureQuery) {
     let logicalDepth = 0;
     let invalid = false;
@@ -3608,8 +4803,131 @@ function parseRuleSelection({
   prelude.children.forEach((selector) => {
     if (selector.type !== "Selector") return;
     const parts = selector.children.toArray();
+    const partIndex = parts.findIndex(
+      (n) => n.type === "PseudoElementSelector" && n.name.toLowerCase() === "part",
+    );
+    if (partIndex !== -1) {
+      const part = parts[partIndex];
+      if (part?.type !== "PseudoElementSelector" || !part.children?.first) return;
+      const syntax = parse(generate(part.children.first), { context: "value" });
+      if (
+        syntax.type !== "Value" ||
+        syntax.children.isEmpty ||
+        syntax.children.some((n) => n.type !== "Identifier")
+      )
+        return;
+      const names = syntax.children
+        .toArray()
+        .map((n) => ident.decode((n as { name: string }).name));
+      const head = parts.slice(0, partIndex);
+      if (head.some((n) => n.type === "PseudoElementSelector")) return;
+      const single = head.length === 1 ? head[0] : undefined;
+      const host =
+        single?.type === "PseudoClassSelector" && single.name.toLowerCase() === "host"
+          ? single
+          : undefined;
+      const nested =
+        single?.type === "NestingSelector" && parentSelection?.entries.some((e) => e.hostOnly);
+      const from = host
+        ? host.children?.first
+          ? generate(host.children.first)
+          : "*"
+        : head.map((n) => generate(n)).join("") || "*";
+      const origin = nested
+        ? (node: Raw.Element) => parentSelection!.entries.some((e) => e.hostOnly && e.match(node))
+        : compileSelector({ selector: from, ...compileOptions });
+      const suffix = parts.slice(partIndex + 1);
+      const last = suffix.at(-1);
+      const pseudo =
+        last?.type === "PseudoElementSelector" ? computedPseudoTarget(generate(last)) : undefined;
+      if (pseudo) suffix.pop();
+      if (suffix.some((n) => n.type !== "PseudoClassSelector")) return;
+      const match = compileSelector({
+        selector:
+          "*" +
+          suffix
+            .map((n) =>
+              generate(n, {
+                decorator: (handlers) => ({
+                  ...handlers,
+                  node(child) {
+                    if (
+                      child.type === "PseudoClassSelector" &&
+                      /^(?:empty|root|scope|has|host|host-context|(?:first|last|only|nth|nth-last)-(?:child|of-type))$/i.test(
+                        ident.decode(child.name),
+                      )
+                    )
+                      handlers.node({ type: "Raw", value: ":not(*)" });
+                    else handlers.node(child);
+                  },
+                }),
+              }),
+            )
+            .join(""),
+        ...compileOptions,
+      });
+      selectors.push({
+        part: { names, local: !!host || !!nested, origin },
+        match: pseudo ? neverMatchesElement : match,
+        ...(pseudo && { pseudo: { text: pseudo, match } }),
+        specificity: specificity(selector, nestingSpecificity),
+        hostOnly: false,
+      });
+      serializedSelectors.push(serializeSelectorPart(selector));
+      treeOnly = false;
+      return;
+    }
+    const slotIndex = parts.findIndex(
+      (n) => n.type === "PseudoElementSelector" && n.name.toLowerCase() === "slotted",
+    );
+    const slotted = parts[slotIndex];
+    if (slotted?.type === "PseudoElementSelector") {
+      const suffix = parts.slice(slotIndex + 1);
+      const pseudo =
+        suffix.length === 1 && suffix[0]?.type === "PseudoElementSelector"
+          ? computedPseudoTarget(generate(suffix[0]))
+          : undefined;
+      if (suffix.length && !pseudo) return;
+      const argument = slotted.children?.first;
+      if (
+        argument?.type !== "Selector" ||
+        slotted.children?.size !== 1 ||
+        argument.children.some(
+          (part) => part.type === "Combinator" || part.type === "PseudoElementSelector",
+        )
+      )
+        return;
+      try {
+        const origin = parts
+          .slice(0, slotIndex)
+          .map((part) => generate(part))
+          .join("");
+        const match = compileSelector({ selector: generate(argument), ...compileOptions });
+        const slot = compileSelector({ selector: origin || "*", ...compileOptions });
+        selectors.push({
+          match: pseudo ? neverMatchesElement : match,
+          ...(pseudo && { pseudo: { text: pseudo, match } }),
+          slot,
+          hostOnly: true,
+          specificity: specificity(selector, nestingSpecificity),
+        });
+        serializedSelectors.push(serializeSelectorPart(selector));
+        treeOnly = false;
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+      }
+      return;
+    }
     const detailsIndex = detailsContentIndex(parts);
-    const trailingPseudo = pseudoElementName(parts.at(-1));
+    const tail = parts.at(-1);
+    const trailingPseudo =
+      pseudoElementName(tail) ??
+      (tail?.type === "PseudoElementSelector"
+        ? (wildcardPseudo.test(generate(tail))
+            ? generate(tail).toLowerCase()
+            : computedPseudoTarget(generate(tail))
+          )?.slice(2)
+        : undefined);
     let pseudoText = "";
     let detailsStates = "";
     let validPseudo = true;
@@ -3635,18 +4953,40 @@ function parseRuleSelection({
     } else if (trailingPseudo) {
       parts.pop();
       pseudoText = `::${trailingPseudo}`;
+      if (trailingPseudo === "marker") {
+        const parent = pseudoElementName(parts.at(-1));
+        if (parent === "before" || parent === "after") {
+          parts.pop();
+          pseudoText = `::${parent}::marker`;
+        }
+      }
     }
     let serialized = parts
-      .map((part) => {
-        if (part.type === "TypeSelector" && part.name.startsWith("*|"))
-          return generate({ ...part, name: part.name.slice(2) });
+      .map((part, index) => {
+        if (part.type === "TypeSelector") {
+          const separator = part.name.indexOf("|");
+          const prefix = separator < 0 ? undefined : part.name.slice(0, separator);
+          const local = part.name.slice(separator + 1);
+          const hasDefault = namespaces?.has("") === true;
+          const redundant =
+            prefix === undefined ||
+            (prefix === "*"
+              ? !hasDefault
+              : !!prefix &&
+                namespaces?.has(prefix) &&
+                namespaces.get(prefix) === namespaces.get(""));
+          if (redundant) {
+            const next = parts[index + 1];
+            if (local === "*" && (next ? next.type !== "Combinator" : !!pseudoText)) return "";
+            return generate({ ...part, name: local });
+          }
+        }
         if (part.type === "AttributeSelector" && part.name.name.startsWith("|"))
           return generate({ ...part, name: { ...part.name, name: part.name.name.slice(1) } });
         const text = serializeSelectorPart(part);
         return text;
       })
       .join("");
-    if (pseudoText && parts.at(-1)?.type === "Combinator") serialized += "*";
     serializedSelectors.push((serialized + pseudoText).trim());
     if (!validPseudo) return;
     try {
@@ -3654,10 +4994,11 @@ function parseRuleSelection({
         // Validate the originating selector while keeping pseudo-elements out of element matching.
         const origin = parts.map((part) => generate(part)).join("");
         const subject = parts.at(-1)?.type === "Combinator" ? `${origin}*` : origin || "*";
-        compileSelector({ selector: subject, ...compileOptions });
+        const originMatches = compileSelector({ selector: subject, ...compileOptions });
         if (detailsStates) compileSelector({ selector: `*${detailsStates}`, ...compileOptions });
         selectors.push({
           match: neverMatchesElement,
+          pseudo: { text: pseudoText, match: originMatches },
           specificity: specificity(selector, nestingSpecificity),
           hostOnly: false,
         });
@@ -3773,7 +5114,7 @@ function parseRuleSelection({
     }
   }
   const selection = {
-    text: serializedText,
+    text: canonicalText ?? serializedText,
     entries: selectors,
     containsNesting,
     ...(treeOnly && !containsNesting && { treeDependent: true }),
@@ -3801,8 +5142,197 @@ function readStylesheetDeclaration(
   else style.setProperty(entry.property, value, priority);
 }
 
+// Lean blocks: the entries cssstyle would store for declarations whose result is known without it.
+// Each table entry is stored verbatim by the cssstyle path; css-lean-declarations-contracts.test.ts
+// compares every admitted shape with that path, so a cssstyle upgrade that changes one fails there.
+const leanKeywords = new Map<string, ReadonlySet<string>>(
+  Object.entries({
+    display: "block inline inline-block flex inline-flex grid inline-grid none contents flow-root",
+    position: "static relative absolute fixed sticky",
+    "box-sizing": "border-box content-box",
+    "align-items": "flex-start flex-end center baseline stretch",
+    "align-self": "auto flex-start flex-end center baseline stretch",
+    "align-content": "flex-start flex-end center space-between space-around stretch",
+    "justify-content": "flex-start flex-end center space-between space-around space-evenly",
+    "flex-direction": "row row-reverse column column-reverse",
+    "flex-wrap": "nowrap wrap wrap-reverse",
+    overflow: "hidden visible auto scroll",
+    "overflow-x": "hidden visible auto scroll",
+    "overflow-y": "hidden visible auto scroll",
+    visibility: "visible hidden collapse",
+    cursor: "pointer default auto text move not-allowed",
+    "pointer-events": "auto none",
+    "user-select": "none auto text",
+    "font-style": "normal italic",
+    "font-weight": "normal bold 300 400 500 600 700",
+    "text-overflow": "ellipsis clip",
+    "object-fit": "contain cover fill none",
+    "transition-behavior": "normal allow-discrete",
+  }).map(([name, words]) => [name, new Set(words.split(" "))]),
+);
+// Lengths, percentages and (where accepted) unitless numbers in the spelling cssstyle stores as is.
+const leanLength = /^-?(?:0|[1-9]\d{0,3})(?:\.\d{0,4}[1-9])?(?:px|em|rem|%|vh|vw)$/;
+const leanNumber = /^-?(?:0|[1-9]\d{0,3})(?:\.\d{0,4}[1-9])?$/;
+type LeanDimension = { negative: boolean; number: boolean; keyword?: string };
+const leanDimensions = new Map<string, LeanDimension>([
+  ...["width", "height", "min-width", "min-height"].map(
+    (name) => [name, { negative: false, number: false, keyword: "auto" }] as const,
+  ),
+  ...["max-width", "max-height"].map(
+    (name) => [name, { negative: false, number: false, keyword: "none" }] as const,
+  ),
+  ...borderSides.flatMap((side) => [
+    [`margin-${side}`, { negative: true, number: false, keyword: "auto" }] as const,
+    [`padding-${side}`, { negative: false, number: false }] as const,
+    [side, { negative: true, number: false, keyword: "auto" }] as const,
+  ]),
+  ["font-size", { negative: false, number: false }],
+  ["letter-spacing", { negative: true, number: false }],
+  ["line-height", { negative: false, number: true }],
+  ...["top-left", "top-right", "bottom-right", "bottom-left"].map(
+    (corner) => [`border-${corner}-radius`, { negative: false, number: false }] as const,
+  ),
+]);
+const leanTime = /^-?(?:0|[1-9]\d{0,3})(?:\.\d{0,4}[1-9])?m?s$/;
+const leanTransitionProperty = /^[a-z][a-z-]*$/;
+
+function leanDimension(name: string, value: string): string | undefined {
+  const accepts = leanDimensions.get(name);
+  if (!accepts || (!accepts.negative && value.startsWith("-"))) return undefined;
+  if (value === accepts.keyword || leanLength.test(value)) return value;
+  return accepts.number && leanNumber.test(value) ? value : undefined;
+}
+
+/** cssstyle's position-shorthand serialization of one to four edge values. */
+function leanEdges(values: readonly string[]): string {
+  const [top, right = top, bottom = top, left = right] = values;
+  if (values.length === 3 && top === bottom) return top === right ? top! : `${top} ${right}`;
+  if (values.length === 3) return values.join(" ");
+  if (right !== left) return `${top} ${right} ${bottom} ${left}`;
+  if (top !== bottom) return `${top} ${right} ${bottom}`;
+  return top === right ? top! : `${top} ${right}`;
+}
+
+/** The [name, value] entries the cssstyle path stores for one declaration, or undefined to decline. */
+function leanEntries(
+  name: string,
+  value: string,
+): readonly (readonly [string, string])[] | undefined {
+  if (value.length > 256 || value !== value.trim() || /[\\\0\r\f]|\/\*|url\(|var\(/i.test(value))
+    return undefined;
+  if (name.startsWith("--")) return value && !/["'([{]/.test(value) ? [[name, value]] : undefined;
+  if (leanKeywords.get(name)?.has(value)) return [[name, value]];
+  const dimension = leanDimension(name, value);
+  if (dimension !== undefined) return [[name, dimension]];
+  if (
+    (name === "transition-delay" && leanTime.test(value)) ||
+    (name === "transition-duration" && leanTime.test(value) && !value.startsWith("-")) ||
+    (name === "transition-property" &&
+      leanTransitionProperty.test(value) &&
+      !cssWideKeywords.has(value))
+  )
+    return [[name, value]];
+  if (name === "color" || name === "background-color") {
+    const color = value.startsWith("#") ? serializeHexColor(value) : serializeRGB(value);
+    return color === undefined ? undefined : [[name, color]];
+  }
+  if (name === "font-family") {
+    const families = value.includes("(") ? undefined : directSpecifiedValue(name, value);
+    return families === undefined ? undefined : [[name, families]];
+  }
+  if (name === "padding" || name === "margin") {
+    const parts = value.split(" ");
+    if (parts.length > 4) return undefined;
+    const edges: string[] = [];
+    for (const part of parts) {
+      const edge = leanDimension(`${name}-top`, part);
+      if (edge === undefined) return undefined;
+      edges.push(edge);
+    }
+    const [top, right = top, bottom = top, left = right] = edges;
+    return [
+      [`${name}-top`, top!],
+      [`${name}-right`, right!],
+      [`${name}-bottom`, bottom!],
+      [`${name}-left`, left!],
+      [name, leanEdges(edges)],
+    ];
+  }
+  if ((name === "border-radius" && !value.includes("(")) || name === "transition")
+    return directExpansion(name, value)?.entries;
+  return undefined;
+}
+
+/** The text cssstyle stores for a declaration that stores only itself, when known without it. */
+function leanStoredValue(name: string, value: string): string | undefined {
+  const entries = leanEntries(name, value);
+  return entries?.length === 1 && entries[0]![0] === name ? entries[0]![1] : undefined;
+}
+
+/** A block of plain declarations as cssstyle would store it, or undefined when any declaration declines. */
+function leanDeclarationBlock(
+  block: Extract<CssNode, { type: "Block" }>,
+  generate: (typeof import("css-tree"))["generate"],
+): DeclarationBlock | undefined {
+  if (block.children.size > 64) return undefined;
+  const values = new Map<string, string>();
+  for (const child of block.children) {
+    if (child.type !== "Declaration" || child.important) return undefined;
+    const entries = leanEntries(child.property, generate(child.value));
+    if (!entries) return undefined;
+    // A name set twice (directly or through a shorthand) needs cssstyle's replacement rules.
+    for (const [name, value] of entries) {
+      if (values.has(name)) return undefined;
+      values.set(name, value);
+    }
+  }
+  const lean: DeclarationBlock = {
+    values,
+    priorities: new Map(),
+    properties: [...values.keys()],
+    borderOrder: undefined,
+    lastBorderOrder: 0,
+  };
+  leanBlocks.add(lean);
+  return lean;
+}
+const leanBlocks = new WeakSet<DeclarationBlock>();
+const leanViews = new WeakMap<DeclarationBlock, LeanDeclaration>();
+
+/** The cascade's read-only view of a lean block; script gets a cssstyle declaration restored from it. */
+class LeanDeclaration implements DeclarationImplementation {
+  readonly [index: number]: string | undefined;
+  readonly _length: number;
+  readonly parentRule = null;
+  readonly #block: DeclarationBlock;
+  constructor(block: DeclarationBlock) {
+    this.#block = block;
+    this._length = block.properties.length;
+    Object.assign(this, block.properties);
+  }
+  getPropertyValue(name: string): string {
+    return this.#block.values.get(name) ?? "";
+  }
+  getPropertyPriority(name: string): string {
+    return this.#block.priorities.get(name) ?? "";
+  }
+  get cssText(): string {
+    throw new Error("A lean stylesheet declaration is never exposed to script");
+  }
+  setProperty(): void {
+    throw new Error("A lean stylesheet declaration is never exposed to script");
+  }
+  removeProperty(): string {
+    throw new Error("A lean stylesheet declaration is never exposed to script");
+  }
+}
+
 type PrivateDeclarationCache = WeakMap<DeclarationBlock, WeakRef<Declaration>>;
-type RuleDeclarationFactory = (cache?: PrivateDeclarationCache) => Declaration;
+/** Script gets a cssstyle declaration; the private cascade (given its cache) may get a lean view. */
+type RuleDeclarationFactory = {
+  (): Declaration;
+  (cache: PrivateDeclarationCache): DeclarationImplementation;
+};
 
 function deferredDeclaration(
   declaration: () => StylesheetDeclaration,
@@ -3810,8 +5340,15 @@ function deferredDeclaration(
   generate: (typeof import("css-tree"))["generate"],
   retainedSource: boolean,
 ): RuleDeclarationFactory {
-  return (cache) => {
-    function restore(snapshot: DeclarationBlock): Declaration {
+  function factory(): Declaration;
+  function factory(cache: PrivateDeclarationCache): DeclarationImplementation;
+  function factory(cache?: PrivateDeclarationCache): DeclarationImplementation {
+    function restore(snapshot: DeclarationBlock): DeclarationImplementation {
+      if (cache && leanBlocks.has(snapshot)) {
+        let lean = leanViews.get(snapshot);
+        if (!lean) leanViews.set(snapshot, (lean = new LeanDeclaration(snapshot)));
+        return lean;
+      }
       const known = cache?.get(snapshot)?.deref();
       if (known) return known;
       const style = declaration();
@@ -3831,6 +5368,11 @@ function deferredDeclaration(
     }
     const cached = key === undefined ? undefined : declarationBlocks.get(key);
     if (cached) return restore(cached);
+    const lean = leanDeclarationBlock(block, generate);
+    if (lean) {
+      if (key !== undefined) rememberSyntax(declarationBlocks, key, lean, 256);
+      return restore(lean);
+    }
     const style = declaration();
     for (const child of block.children)
       if (child.type === "Declaration") readStylesheetDeclaration(style, child, generate);
@@ -3844,7 +5386,16 @@ function deferredDeclaration(
       }
     }
     return style;
-  };
+  }
+  return factory;
+}
+
+// The pinned generator re-emits every token of raw text and only appends a newline after a
+// backslash delimiter, so backslash-free raw text is already its own serialization.
+function preludeText(prelude: CssNode, generate: (typeof import("css-tree"))["generate"]): string {
+  return prelude.type === "Raw" && !prelude.value.includes("\\")
+    ? prelude.value
+    : generate(prelude);
 }
 
 type FlatStyleRule = {
@@ -3869,7 +5420,7 @@ function prepareFlatRules(input: {
   for (const node of ast.children) {
     if (node.type !== "Rule") continue;
     const selection = parseRuleSelection({
-      text: generate(node.prelude),
+      text: preludeText(node.prelude, generate),
       isXML,
       statePseudos,
       requireMatchable: false,
@@ -3890,7 +5441,6 @@ function parseSheet(
   statePseudos: Parameters<typeof compileSelector>[0]["statePseudos"],
   interfaces: ReturnType<typeof createRuleInterfaces>,
   declaration: () => StylesheetDeclaration,
-  pageDeclaration: () => Declaration,
   supports: (condition: string) => ReturnType<typeof readSupportsCondition>,
   flatPlans: WeakMap<CssNode, readonly FlatStyleRule[] | null>,
   recentSyntax: Map<string, WeakRef<CssNode>>,
@@ -3898,7 +5448,7 @@ function parseSheet(
   nesting?: NestingMode,
   syntax?: ReturnType<typeof parseStyleSheetSyntax>,
 ): Omit<SheetRecord, "sheet"> {
-  const { parse, generate } = (sheetSyntaxEngine ??= require("./css-runtime.cjs")
+  const { parse, generate, ident } = (sheetSyntaxEngine ??= require("./css-runtime.cjs")
     .cssTree as typeof import("css-tree"));
   // The parser retains its latest recovery callback. That callback captures only the error list.
   const { ast, errors, reused } =
@@ -3906,7 +5456,14 @@ function parseSheet(
   const rules: Rule[] = [];
   if (ast.type !== "StyleSheet") return { text, rules, errors };
 
-  if (reused && !namespaces?.size && nesting === undefined) {
+  // A cacheable one-rule sheet can publish its first compilation directly into the
+  // per-Window plan. Its next owner only needs independent mutable CSSOM slots.
+  const cacheSingleRule =
+    ast.children.size === 1 &&
+    ast.children.first?.type === "Rule" &&
+    errors.length === 0 &&
+    text.length <= maximumLargeStylesheetLength;
+  if ((reused || cacheSingleRule) && !namespaces?.size && nesting === undefined) {
     let plan = flatPlans.get(ast);
     if (plan === undefined) {
       plan = prepareFlatRules({ ast, generate, declaration, isXML, statePseudos });
@@ -3970,9 +5527,20 @@ function parseSheet(
   }
 
   function readRule(node: CssNode, target: Rule[], mode?: NestingMode): void {
+    if (node.type === "Atrule" && node.name === "starting-style" && !node.prelude && node.block) {
+      const rules: Rule[] = [];
+      readContents(node.block, rules, mode);
+      target.push({
+        kind: "starting-style",
+        rules,
+        view: new interfaces.CSSStartingStyleRule(interfaces.key, rules),
+      });
+      return;
+    }
     if (
       mode &&
       node.type === "Atrule" &&
+      !(mode === "scope" && node.name === "property") &&
       !["media", "supports", "container", "layer", "scope", "import", "namespace"].includes(
         node.name,
       )
@@ -4023,26 +5591,14 @@ function parseSheet(
       return;
     }
     if (node.type === "Atrule" && node.name === "container" && node.prelude && node.block) {
-      const { ident }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      const text = generate(node.prelude).trim();
-      let prelude: CssNode;
-      try {
-        prelude = parse(text, { context: "atrulePrelude", atrule: "container" });
-      } catch (error) {
-        if (!(error instanceof SyntaxError)) throw error;
-        return;
-      }
-      if (prelude.type !== "AtrulePrelude") return;
-      const first = prelude.children.first;
-      const rawName = first?.type === "Identifier" ? first.name : "";
-      const query = text.slice(rawName.length).trim();
-      if (!query) return;
+      const condition = parseContainerConditions(generate(node.prelude));
+      if (!condition) return;
       const nested: Rule[] = [];
       readContents(node.block, nested, mode);
       target.push({
         kind: "container",
         rules: nested,
-        view: new interfaces.CSSContainerRule(interfaces.key, ident.decode(rawName), query, nested),
+        view: new interfaces.CSSContainerRule(interfaces.key, condition, nested),
       });
       return;
     }
@@ -4072,35 +5628,36 @@ function parseSheet(
       return;
     }
     if (node.type === "Atrule" && node.name === "page" && node.block) {
-      const style = pageDeclaration();
-      for (const child of node.block.children) {
-        if (child.type === "Declaration")
-          style.setProperty(
-            child.property,
-            generate(child.value),
-            child.important ? "important" : "",
-          );
+      const page = interfaces.descriptor<PageData>("CSSPageRule", generate(node));
+      if (page) {
+        const nested: Rule[] = [];
+        target.push({
+          kind: "page",
+          rules: nested,
+          view: new interfaces.CSSPageRule(interfaces.key, page, nested),
+        });
       }
-      const selector = node.prelude ? generate(node.prelude).trim() : "";
-      const nested: Rule[] = [];
-      target.push({
-        kind: "page",
-        rules: nested,
-        view: new interfaces.CSSPageRule(interfaces.key, selector, style, nested),
-      });
       return;
     }
-    if (node.type === "Atrule" && node.name === "counter-style" && node.prelude && node.block) {
-      const view = new interfaces.CSSCounterStyleRule(
-        interfaces.key,
-        generate(node.prelude).trim(),
+    if (node.type === "Atrule" && node.name === "counter-style" && node.block) {
+      const rule = interfaces.descriptor<CounterStyleRule>("CSSCounterStyleRule", generate(node));
+      if (rule)
+        target.push({
+          kind: "counter-style",
+          view: new interfaces.CSSCounterStyleRule(interfaces.key, rule),
+        });
+      return;
+    }
+    if (node.type === "Atrule" && node.name === "view-transition" && node.block) {
+      const rule = interfaces.descriptor<ViewTransitionData>(
+        "CSSViewTransitionRule",
+        generate(node),
       );
-      for (const child of node.block.children) {
-        if (child.type !== "Declaration") continue;
-        const descriptor = counterDescriptors.find(([, property]) => child.property === property);
-        if (descriptor) view[descriptor[0]] = generate(child.value).trim();
-      }
-      target.push({ kind: "counter-style", view });
+      if (rule)
+        target.push({
+          kind: "view-transition",
+          view: new interfaces.CSSViewTransitionRule(interfaces.key, rule),
+        });
       return;
     }
     if (node.type === "Atrule" && node.name === "namespace" && node.prelude && !node.block) {
@@ -4114,7 +5671,7 @@ function parseSheet(
       }
       if (prelude.type !== "AtrulePrelude") return;
       const [first, second] = prelude.children.toArray();
-      const prefix = first?.type === "Identifier" ? first.name : "";
+      const prefix = first?.type === "Identifier" ? ident.decode(first.name) : "";
       const uri = prefix ? second : first;
       if (uri?.type === "String" || uri?.type === "Url") {
         (namespaces ??= new Map()).set(prefix, uri.value);
@@ -4203,7 +5760,16 @@ function parseSheet(
     }
     if (node.type === "Atrule" && node.name === "import" && node.prelude) {
       if (target !== rules) return;
-      const source = generate(node.prelude);
+      let source = generate(node.prelude);
+      let resourceText: string | undefined;
+      if (node.prelude.type === "Raw" && /^url\(\s*["']/i.test(source)) {
+        const resource = importResource(source);
+        if (resource) {
+          const { string }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+          resourceText = resource.cssText;
+          source = string.encode(resource.href) + source.slice(resource.end);
+        }
+      }
       let prelude: CssNode;
       try {
         prelude = parse(source, { context: "atrulePrelude", atrule: "import", positions: true });
@@ -4216,6 +5782,7 @@ function parseSheet(
       const resource = prelude.children.first;
       if (resource?.type !== "String" && resource?.type !== "Url") return;
       const condition: ImportCondition = { layerName: null, supportsText: null, media: "" };
+      if (resourceText) condition.resourceText = resourceText;
       // Native parsing owns modifier position and recovery. Invalid layer() remains
       // the beginning of the media tail; later functions cannot become modifiers.
       for (const item of prelude.children) {
@@ -4235,8 +5802,7 @@ function parseSheet(
             condition.layerName = layer.name;
           } else {
             const tail = item.loc ? source.slice(item.loc.start.offset) : generate(item);
-            const queries = parseMediaQuery(tail).queries;
-            condition.media = ["not all", ...queries.slice(1)].join(", ");
+            condition.media = specifiedMediaQuery(tail);
             break;
           }
         }
@@ -4254,21 +5820,69 @@ function parseSheet(
       });
       return;
     }
-    if (node.type === "Atrule" && node.name === "font-face" && node.block) {
-      const style = declaration();
-      for (const child of node.block.children) {
-        if (child.type === "Declaration") style.setProperty(child.property, generate(child.value));
+    if (
+      node.type === "Atrule" &&
+      node.name.toLowerCase() === "property" &&
+      node.block &&
+      node.prelude
+    ) {
+      const registration = interfaces.parseProperty(
+        node.loc
+          ? (nesting ? `x { ${text} }` : text).slice(node.loc.start.offset, node.loc.end.offset)
+          : generate(node),
+      );
+      if (registration) {
+        target.push({
+          kind: "property",
+          view: new interfaces.CSSPropertyRule(interfaces.key, {
+            names: Object.freeze([...registration.names]),
+            syntax: registration.syntax,
+            inherits: registration.inherits,
+            initialValue: registration.initialValue,
+          }),
+        });
       }
-      target.push({
-        kind: "declaration",
-        selectors: [],
-        view: new interfaces.CSSFontFaceRule(interfaces.key, style),
-      });
+      return;
+    }
+    if (node.type === "Atrule" && node.name === "position-try" && node.block) {
+      const rule = interfaces.parsePosition(generate(node));
+      if (rule)
+        target.push({
+          kind: "position-try",
+          view: new interfaces.CSSPositionTryRule(interfaces.key, rule),
+        });
+      return;
+    }
+    if (node.type === "Atrule" && node.name === "function" && node.block) {
+      const parsed = interfaces.parseFunction(generate(node));
+      if (parsed)
+        target.push({
+          kind: "function",
+          view: new interfaces.CSSFunctionRule(interfaces.key, parsed),
+        });
+      return;
+    }
+    if (node.type === "Atrule" && node.name === "font-feature-values" && node.block) {
+      const features = fontFeatureValues(generate(node));
+      if (features)
+        target.push({
+          kind: "font-feature-values",
+          view: new interfaces.CSSFontFeatureValuesRule(interfaces.key, features),
+        });
+      return;
+    }
+    if (node.type === "Atrule" && node.name === "font-face" && node.block) {
+      const parsed = interfaces.parseFontFace(generate(node));
+      if (parsed)
+        target.push({
+          kind: "font-face",
+          view: new interfaces.CSSFontFaceRule(interfaces.key, parsed),
+        });
       return;
     }
     if (node.type !== "Rule") return;
     const parsed = parseRuleSelection({
-      text: generate(node.prelude),
+      text: preludeText(node.prelude, generate),
       isXML,
       statePseudos,
       requireMatchable: false,
@@ -4309,6 +5923,12 @@ const blockElements = new Set(
     " ",
   ),
 );
+const uaBlockMargins = new Set("blockquote figure listing p plaintext pre xmp".split(" "));
+const uaIsolates = new Set(
+  "address blockquote center div figure figcaption footer form header hr legend listing main p plaintext pre summary xmp article aside h1 h2 h3 h4 h5 h6 hgroup nav search section table caption colgroup col thead tbody tfoot tr td th dir dd dl dt menu ol ul li bdi output".split(
+    " ",
+  ),
+);
 const nonRenderedElements = new Set(
   "area base basefont datalist head link meta noembed noframes param rp script style template title".split(
     " ",
@@ -4331,6 +5951,9 @@ function defaultDisplay(tag: string): string {
   if (nonRenderedElements.has(tag)) return "none";
   if (blockElements.has(tag)) return "block";
   if (tag === "li" || tag === "summary") return "list-item";
+  // jsdom's default stylesheet: "input, button", "marquee" and "select" are inline-block.
+  if (tag === "input" || tag === "button" || tag === "select" || tag === "marquee")
+    return "inline-block";
   return tableDisplay.get(tag) ?? "inline";
 }
 
@@ -4402,22 +6025,24 @@ function userAgentStyle(element: Raw.Element) {
 }
 
 function resolveCSSURLs(value: string, base: string): string {
-  const { parse, walk, generate }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+  const { parse, walk, string }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
   try {
-    const ast = parse(value, { context: "value" });
-    let changed = false;
+    const ast = parse(value, { context: "value", positions: true });
+    let result = "";
+    let offset = 0;
     walk(ast, {
       visit: "Url",
       enter(node) {
-        if (node.value.startsWith("#")) return;
-        const resolved = URL.parse(node.value, base);
-        if (resolved && resolved.href !== node.value) {
-          node.value = resolved.href;
-          changed = true;
-        }
+        if (!node.loc) return;
+        const href =
+          node.value && !node.value.startsWith("#")
+            ? (URL.parse(node.value, base)?.href ?? node.value)
+            : node.value;
+        result += value.slice(offset, node.loc.start.offset) + "url(" + string.encode(href) + ")";
+        offset = node.loc.end.offset;
       },
     });
-    return changed ? generate(ast) : value;
+    return result + value.slice(offset);
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
     return value;
@@ -4443,7 +6068,43 @@ function simplifyCSSCalculation(value: string): string {
   return serializeCSSMath(utils.cssCalc(value));
 }
 
+// These dimensions need font metrics or a writing mode from the element's cascade.
+// These longhands normalize lists, coordinates or ratios using the element's style context.
+const contextualLonghand =
+  /^(?:box-shadow(?:-(?:blur|color|spread|position|offset))?|(?:column|row)-rule-(?:style|color|width)|aspect-ratio|translate|transition-timing-function|counter-reset|counter-increment|counter-set|border-spacing|grid-auto-flow|font-style|rotate|background-size|grid-auto-rows|grid-auto-columns|zoom|scale|shape-outside|object-position|perspective-origin|transform-origin|offset-(?:anchor|path|position|rotate)|list-style-image|overflow-clip-margin(?:-|$)|text-box-edge|background-position-[xy])$/;
+// The pinned evaluator has a fixed viewport. RunDOM resolves physical viewport
+// math against the dimensions captured for the declaration, including var() input.
+function usesDynamicViewportMath(value: string): boolean {
+  return /calc\(/i.test(value) && /[0-9](?:[sld])?v(?:w|h|min|max)\b/i.test(value);
+}
+
+function usesTypedValueGrammar(name: string, text: string): boolean {
+  return (
+    !name.startsWith("--") &&
+    text.includes("(") &&
+    (/url\(\s*["'][^"']*["']\s+[-_a-z]/i.test(text) ||
+      /(?:linear|radial|conic)-gradient\(/i.test(text) ||
+      (name === "cursor" && /(?:var|url)\(/i.test(text)) ||
+      name === "clip-path" ||
+      name === "opacity" ||
+      /\bcalc\(/i.test(text) ||
+      name === "mask-image" ||
+      name === "filter" ||
+      name === "backdrop-filter" ||
+      (name === "transform" && /[0-9](?:grad|rad|turn)\b/i.test(text)) ||
+      /(?:^|[^\w-])(?:src|alpha|palette-mix|light-dark|random-item|calc-size|sibling-count|sibling-index|image|image-set|min|max|clamp|acos|asin|atan2?|cos|sin|tan|hypot|pow|sqrt|log|exp|round|mod|rem|abs|sign|progress)\(/i.test(
+        text,
+      ) ||
+      ((name === "transform" || /[/*]|\b(?:nan|infinity)\b/i.test(text)) && /calc\(/i.test(text)))
+  );
+}
+
+const elementDimension =
+  /^[+-]?(?:\d*\.)?\d+(?:e[+-]?\d+)?(?:r?(?:ex|cap|ch|ic|lh)|[sld]?v[ib]|cq(?:w|h|i|b|min|max)|grad|rad|turn|dpi|dpcm|dppx)$/i;
+
 function computeNumericValue(value: string, readViewport: () => Viewport): string {
+  if (value.endsWith("ms") && /^[+-]?(?:\d*\.)?\d+(?:e[+-]?\d+)?ms$/i.test(value))
+    return `${Number((Number.parseFloat(value) / 1000).toPrecision(12))}s`;
   const math = /^(?:calc|min|max|clamp)\(/i.test(value);
   const viewportToken = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[sld])?v(?:w|h|min|max)$/i.test(value);
   if ((math || viewportToken) && /[0-9](?:[sld])?v(?:w|h|min|max)\b/i.test(value)) {
@@ -4645,8 +6306,15 @@ function serializeRGB(value: string): string | undefined {
   return alpha === 1 ? `rgb(${channels})` : `rgba(${channels}, ${alpha})`;
 }
 
+// Warm computed reads ask about the same frame color on every call; the check is pure.
+let lastRGBValue: string | undefined;
+let lastRGBSerialized = false;
 function isSerializedRGB(value: string): boolean {
-  return serializeRGB(value) === value;
+  if (value !== lastRGBValue) {
+    lastRGBSerialized = serializeRGB(value) === value;
+    lastRGBValue = value;
+  }
+  return lastRGBSerialized;
 }
 
 // CSSOM serializes an eight-bit alpha with two decimals when that round-trips,
@@ -4674,15 +6342,37 @@ function serializeHexColor(value: string): string | undefined {
   return `rgba(${channels}, ${alpha})`;
 }
 
+// Color resolution is a pure function of its inputs; a restyled frame re-resolves the same
+// foreground on every rebuild. Values that may draw random numbers are never kept.
+const resolvedColors = new Map<string, string>();
 function resolveColor(
   value: string,
   options: { currentColor: string; colorScheme: string; fallback?: string | undefined },
 ): string {
   const { currentColor, colorScheme, fallback } = options;
+  if (value.length > 256 || /random/i.test(value))
+    return resolveColorValue(value, currentColor, colorScheme, fallback);
+  const key = `${value}\0${currentColor}\0${colorScheme}\0${fallback ?? "\u0001"}`;
+  const known = resolvedColors.get(key);
+  if (known !== undefined) return known;
+  const resolved = resolveColorValue(value, currentColor, colorScheme, fallback);
+  if (resolvedColors.size >= 4096) resolvedColors.clear();
+  resolvedColors.set(key, resolved);
+  return resolved;
+}
+
+function resolveColorValue(
+  value: string,
+  currentColor: string,
+  colorScheme: string,
+  fallback: string | undefined,
+): string {
   const system = systemColor(value, colorScheme);
   if (system) return system;
   const rgb = value.startsWith("#") ? serializeHexColor(value) : serializeRGB(value);
   if (rgb !== undefined) return rgb;
+  const functional = functionalColorValue(value, currentColor, colorScheme);
+  if (functional !== undefined) return functional;
   const { resolve }: typeof import("@asamuzakjp/css-color") = require("./css-runtime.cjs").cssColor;
   return (
     resolve(replaceSystemColors(value, colorScheme), {
@@ -4905,11 +6595,19 @@ const fontWidths = new Map([
   ["ultra-expanded", "200%"],
 ]);
 
+const fontWidthKeywords = new Map([...fontWidths].map(([keyword, width]) => [width, keyword]));
+
+// Defined outside the cascade so the reader's closure context holds only the captured map.
+function capturedParentValues(captured: ReadonlyMap<string, string>) {
+  return { getPropertyValue: (name: string) => captured.get(name) ?? "" };
+}
+
 /** Owns stylesheets and declarations for a single document. */
 export function createStyles(input: {
   document: Raw.Document;
   ownerDocument: (root: Raw.ParentNode) => Raw.Document;
   wrapOwner: (node: Raw.Element) => object;
+  assignedSlot: (node: Raw.Element) => Raw.Element | undefined;
   shadowRoot: (node: Raw.Element) => Raw.DocumentFragment | undefined;
   shadowHost: (root: Raw.ParentNode) => Raw.Element | undefined;
   isConnected: (node: Raw.Element) => boolean;
@@ -4940,10 +6638,14 @@ export function createStyles(input: {
   >;
   track: (pending: Promise<void>, owner: Raw.Element) => void;
   resourcesEnabled: boolean;
+  queueInlineLoad: (owner: Raw.Element) => void;
   importCompleted: (owner: Raw.Element, type: "load" | "error") => void;
   writeInlineStyle: (node: Raw.Element, text: string) => void;
+  exposeInterface: <T extends Function>(name: string, real: T) => T;
 }) {
   function supportsSelector(selector: string): boolean {
+    if (selector.includes(":") && !selector.includes("::details-content"))
+      return selectorFeatureSupported(selector);
     return (
       parseRuleSelection({
         text: selector,
@@ -4956,10 +6658,24 @@ export function createStyles(input: {
   }
 
   let cssNamespace: ReturnType<typeof createCSSNamespace> | undefined;
+  let scriptRegistrations: Map<string, RegisteredProperty> | undefined;
   function css() {
-    return (cssNamespace ??= createCSSNamespace(supportsSelector));
+    return (cssNamespace ??= createCSSNamespace(supportsSelector, (inputValue) => {
+      const result = registeredProperty(inputValue, scriptRegistrations, input.DOMException);
+      (scriptRegistrations ??= new Map()).set(result.name, result);
+      linkedSheetChanged();
+    }));
   }
 
+  let descriptorParser: ReturnType<typeof createDescriptorRuleParser> | undefined;
+  function descriptorRules() {
+    return (descriptorParser ??= createDescriptorRuleParser(
+      input.baseURL,
+      linkedSheetChanged,
+      () => views().CSSStyleDeclaration.prototype,
+      input.exposeInterface,
+    ));
+  }
   const ruleInterfaces = createRuleInterfaces(
     parseRules,
     input.DOMException,
@@ -4976,16 +6692,29 @@ export function createStyles(input: {
       }),
     namespacesForSheet,
     (style) => views().expose(style),
+    (binding, text) => descriptorRules().descriptor(binding, text),
+    (text) => descriptorRules().fontFace(text),
+    (text) => descriptorRules().functionRule<RuleList>(text),
+    (text) => descriptorRules().property(text),
+    (text) => descriptorRules().position(text),
+    (style, parent) => views().positionDescriptors(style, parent),
   );
   const declarationKey = Symbol();
   let declarationViews: ReturnType<typeof createDeclarationViews> | undefined;
-  function views() {
+  function views(): ReturnType<typeof createDeclarationViews> {
     return (declarationViews ??= createDeclarationViews({
+      emptyComputed: () => {
+        const empty = declaration();
+        empty._readonly = true;
+        empty._global = declarationGlobals;
+        return empty;
+      },
       styleProperties: declarationProperties,
       write: writePublicStyleProperty,
       objectPrototype: input.objectPrototype,
       functionPrototype: input.functionPrototype,
       arrayValues: input.arrayValues,
+      exposeInterface: input.exposeInterface,
     }));
   }
   let declarationClass: ReturnType<typeof createDeclarationInterface> | undefined;
@@ -5012,7 +6741,6 @@ export function createStyles(input: {
       input.statePseudos,
       ruleInterfaces,
       declaration,
-      () => new (declarationInterface().CSSStyleDeclaration)(declarationKey),
       (condition) => readSupportsCondition(condition, supportsSelector),
       flatPlans,
       recentSyntax,
@@ -5164,7 +6892,7 @@ export function createStyles(input: {
       if (!entry || extra) return;
       if (!state.queries.includes(entry))
         throw new input.DOMException(
-          `"${medium}" was not found in the media list.`,
+          `Cannot delete a medium that is not in the media list.`,
           "NotFoundError",
         );
       this.mediaText = state.queries.filter((query) => query !== entry).join(", ");
@@ -5268,11 +6996,36 @@ export function createStyles(input: {
       const position = Number(index) >>> 0;
       if (position > state.rules.length)
         throw new input.DOMException("Rule index out of bounds", "IndexSizeError");
-      const parsed = parseRules(String(rule), namespacesForSheet(this));
+      const text = String(rule);
+      const featureRule = /^\s*@font-feature-values\b/i.test(text);
+      const features = featureRule && descriptorRules().font(text);
+      const parsed = featureRule
+        ? {
+            rules: features
+              ? [
+                  {
+                    kind: "font-feature-values" as const,
+                    view: new ruleInterfaces.CSSFontFeatureValuesRule(ruleInterfaces.key, features),
+                  },
+                ]
+              : [],
+            errors: features ? [] : ["Invalid font feature values rule"],
+          }
+        : parseRules(text, namespacesForSheet(this));
       const { rules } = parsed;
       const errors = parsed.errors.filter((message) => message !== "Colon is expected");
       const entry = rules[0];
-      if (errors.length || rules.length !== 1 || !entry)
+      let invalid = errors.length !== 0;
+      if (invalid && entry?.kind === "style" && rules.length === 1) {
+        const { parse }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+        try {
+          parse(text, { context: "rule", parseValue: false });
+          invalid = false;
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+        }
+      }
+      if (invalid || rules.length !== 1 || !entry)
         throw new input.DOMException("The rule could not be parsed", "SyntaxError");
       if (entry.kind === "import") {
         if (!state.attached)
@@ -5315,12 +7068,15 @@ export function createStyles(input: {
       const sourceOwner = state.owner ?? state.sourceOwner;
       if (entry.kind === "import" && sourceOwner) {
         const base = state.href ?? input.baseURL();
-        loadImportRule(
+        trackImportTree(
           sourceOwner,
-          entry,
-          base,
-          new Set([base]),
-          state.encoding ?? input.documentEncoding(sourceOwner),
+          loadImportRule(
+            sourceOwner,
+            entry,
+            base,
+            new Set([base]),
+            state.encoding ?? input.documentEncoding(sourceOwner),
+          ),
         );
       }
       return position;
@@ -5455,10 +7211,14 @@ export function createStyles(input: {
     base: string,
     ancestors: ReadonlySet<string>,
     encoding: string,
-  ): void {
+  ): Promise<boolean> | undefined {
+    let pending: Promise<boolean>[] | undefined;
     for (const rule of record.rules) {
-      if (rule.kind === "import") loadImportRule(owner, rule, base, ancestors, encoding);
+      if (rule.kind !== "import") continue;
+      const load = loadImportRule(owner, rule, base, ancestors, encoding);
+      if (load) (pending ??= []).push(load);
     }
+    return pending && Promise.all(pending).then((outcomes) => outcomes.every(Boolean));
   }
 
   function loadImportRule(
@@ -5467,7 +7227,9 @@ export function createStyles(input: {
     base: string,
     ancestors: ReadonlySet<string>,
     encoding: string,
-  ): void {
+  ): Promise<boolean> | undefined {
+    const condition = rule.view.supportsText;
+    if (condition !== null && !css().supports(condition)) return Promise.resolve(true);
     const url = URL.parse(rule.view.href, base);
     const importedSheet = createAttachedSheet({
       sourceOwner: owner,
@@ -5482,36 +7244,33 @@ export function createStyles(input: {
     }
     if (ancestors.size >= 20 || ancestors.has(url.href)) return;
     if (!input.resourcesEnabled) return;
-    const condition = rule.view.supportsText;
-    if (condition !== null && !css().supports(condition)) {
-      input.track(
-        Promise.resolve().then(() => input.importCompleted(owner, "load")),
-        owner,
-      );
-      return;
-    }
-    const pending = input.loadImport(owner, url.href, encoding).then((resource) => {
-      if (resource.status === "aborted") return;
-      if (resource.status === "failed") {
-        input.importCompleted(owner, "error");
-        return;
-      }
-      if (resource.status !== "loaded") return;
+    return input.loadImport(owner, url.href, encoding).then((resource) => {
+      if (resource.status !== "loaded") return resource.status !== "aborted";
       sheetState(importedSheet).href = resource.url;
       sheetState(importedSheet).encoding = resource.encoding ?? encoding;
       const imported = populateSheet(importedSheet, resource.code);
       rule.imported = imported;
       reportErrors(imported);
-      loadImports(
-        owner,
-        imported,
-        resource.url,
-        new Set([...ancestors, url.href, resource.url]),
-        resource.encoding ?? encoding,
+      return (
+        loadImports(
+          owner,
+          imported,
+          resource.url,
+          new Set([...ancestors, url.href, resource.url]),
+          resource.encoding ?? encoding,
+        ) ?? true
       );
-      input.importCompleted(owner, "load");
     });
-    input.track(pending, owner);
+  }
+
+  function trackImportTree(owner: Raw.Element, loading: Promise<boolean> | undefined): void {
+    if (loading)
+      input.track(
+        loading.then((completed) => {
+          if (completed && owner.tagName === "style") input.importCompleted(owner, "load");
+        }),
+        owner,
+      );
   }
 
   function applySheet(node: StyleOwner, text: string, base?: string, encoding?: string): Sheet {
@@ -5527,6 +7286,8 @@ export function createStyles(input: {
     if (existing) delete sheetState(existing.sheet).owner;
     if (elementLocalName(node) === "style") node[stylesheetSourceVersion] = sourceVersion;
     const sheet = createAttachedSheet(href === undefined ? { owner: node } : { owner: node, href });
+    if (href === undefined)
+      sheetState(sheet).base = base ?? input.baseURL(input.ownerDocument(node));
     encoding ??= input.documentEncoding(node);
     sheetState(sheet).encoding = encoding;
     // Parse diagnostics and import requests are observable at attachment. For a large
@@ -5548,7 +7309,8 @@ export function createStyles(input: {
         : undefined;
     reportErrors(record);
     if (importBase !== undefined)
-      loadImports(node, record, importBase, new Set([importBase]), encoding);
+      trackImportTree(node, loadImports(node, record, importBase, new Set([importBase]), encoding));
+    else if (node.tagName === "style") input.queueInlineLoad(node);
     return record.sheet;
   }
 
@@ -5560,8 +7322,9 @@ export function createStyles(input: {
     if (state.media || media) record.sheet.media = media;
   }
 
-  function inlineStyle(node: Raw.Element): Declaration {
-    const inline = (inlineStyles ??= new WeakMap());
+  /** `base` resolves the attribute's initial URLs; later writes read the live document base. */
+  function inlineStyle(node: Raw.Element, base?: string): Declaration {
+    const inline = (inlineStyles ??= createSlotTable());
     const existing = inline.get(node);
     if (existing) return existing.style;
     const state = {
@@ -5569,11 +7332,13 @@ export function createStyles(input: {
       style: declaration((text) => {
         if (state.syncing) return;
         state.text = text;
-        input.writeInlineStyle(node, text);
+        writeInlineAttribute(node, text);
       }),
       syncing: false,
     };
     inline.set(node, state);
+    const liveBase = () => input.baseURL(input.ownerDocument(node));
+    inlineBaseReaders.set(state.style, base === undefined ? liveBase : () => base);
     const text = node.attrs.find((attr) => !attr.namespace && attr.name === "style")?.value;
     if (text) {
       const block = parseInlineBlock(text);
@@ -5589,6 +7354,7 @@ export function createStyles(input: {
         }
       } else syncInlineStyle(node);
     }
+    if (base !== undefined) inlineBaseReaders.set(state.style, liveBase);
     const view = publicInlineViews?.get(node);
     if (view) views().materializedInline(view, state.style);
     return state.style;
@@ -5596,23 +7362,23 @@ export function createStyles(input: {
 
   const inlineAccess = {
     source(node: Raw.Element) {
-      if (inlineStyles?.has(node)) return;
+      if (inlineStyles?.get(node)) return;
       return node.attrs.find((attr) => !attr.namespace && attr.name === "style")?.value ?? "";
     },
-    update: input.writeInlineStyle,
+    update: writeInlineAttribute,
     materialize: inlineStyle,
   };
   function publicInlineStyle(node: Raw.Element): PublicDeclaration {
     const pending = publicInlineViews?.get(node);
     if (pending) return pending;
-    const view = inlineStyles?.has(node)
+    const view = inlineStyles?.get(node)
       ? views().expose(inlineStyle(node))
       : views().inlineView(new InlineDeclaration(node, inlineAccess));
-    (publicInlineViews ??= new WeakMap()).set(node, view);
+    (publicInlineViews ??= createSlotTable()).set(node, view);
     return view;
   }
 
-  function applyInline(node: Raw.Element): Sheet | null {
+  function applyInline(node: Raw.Element, base?: string): Sheet | null {
     const type = node.attrs.find((attr) => !attr.namespace && attr.name === "type")?.value;
     if (node.namespaceURI !== html.NS.HTML || (type && type.toLowerCase() !== "text/css")) {
       return null;
@@ -5622,7 +7388,7 @@ export function createStyles(input: {
       if (tree.isTextNode(child)) text += child.value;
       else if (tree.isCommentNode(child) && xmlSpecial(child)?.kind === "cdata") text += child.data;
     }
-    return applySheet(node, text);
+    return applySheet(node, text, base);
   }
 
   type CollectionSnapshot = {
@@ -5908,6 +7674,7 @@ export function createStyles(input: {
     return (
       !!value &&
       !variableSyntax.test(value) &&
+      !substitutionFunction.test(value) &&
       cssInput(value).trim() === value &&
       !/^(?:initial|inherit|unset|revert(?:-layer|-rule)?)$/i.test(value)
     );
@@ -5959,6 +7726,8 @@ export function createStyles(input: {
   }
 
   type CascadeEntry = {
+    base?: string;
+    shorthand?: string;
     name: string;
     value: string;
     important: boolean;
@@ -5979,9 +7748,12 @@ export function createStyles(input: {
     const order = borderColorSourceOrder.get(style);
     for (let index = 0; index < style._length; index++) {
       const name = style[index] ?? "";
+      const source = shorthandSources?.get(style)?.get(name);
       entries.push({
         name,
-        value: style.getPropertyValue(name),
+        ...(source && { shorthand: source.shorthand }),
+        value:
+          source?.text ?? calculationSources?.get(style)?.get(name) ?? style.getPropertyValue(name),
         important: style.getPropertyPriority(name) === "important",
         order: order?.get(name),
       });
@@ -6001,6 +7773,7 @@ export function createStyles(input: {
     return entries;
   }
   type CascadeInput = {
+    outerDepth?: number;
     weight: number;
     hostContext: boolean;
     base: string | undefined;
@@ -6025,6 +7798,8 @@ export function createStyles(input: {
     winners: ReadonlyMap<string, ComputedWinner>;
     inputs: readonly CascadeInput[] | undefined;
     userAgentDirection: string | undefined;
+    formattingContainer?: true;
+    userAgentFocus?: true;
     userAgentHiddenInput: boolean;
     parent: WeakRef<ComputedFrame> | undefined;
     documentChild: boolean;
@@ -6037,7 +7812,16 @@ export function createStyles(input: {
     viewport: Viewport | undefined;
     baseURL: string | undefined;
     focusRevision?: number | undefined;
+    substitution?: SubstitutionFrame;
+    // The frame's values depend only on winners and ancestors: reusable, and not inherited.
+    staticSubstitution?: true;
+    siblingColor?: boolean;
+    registered?: boolean;
     custom?: CustomProjection;
+    // The frame this one was copied from when its element adopted a sibling's frame.
+    family?: ComputedFrame;
+    // The derived values a deferred target resolves against, kept for inline restyles.
+    resolution?: ResolutionValues;
     units: number;
     characters: number;
     declarationCharacters: number;
@@ -6072,6 +7856,57 @@ export function createStyles(input: {
     if (node && slots?.[owner.role] === frame) {
       delete slots[owner.role];
       if (!slots.target && !slots.ancestor) computedFrames.delete(node);
+    }
+  }
+
+  // Recent frames per parent frame and element shape (namespace, tag, role), newest first.
+  // Sibling lists alternate between a few shapes, such as odd and even rows.
+  const siblingFrames = new WeakMap<ComputedFrame, Map<string, ComputedFrame[]>>();
+  // Copies of one frame hold the same values, so a descendant built under one fits under all.
+  function sameFamily(a: ComputedFrame | undefined, b: ComputedFrame): boolean {
+    return !!a && (a.family ?? a) === (b.family ?? b);
+  }
+  function sameCascadeInputs(a: readonly CascadeInput[], b: readonly CascadeInput[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index++) {
+      const x = a[index]!,
+        y = b[index]!;
+      if (
+        x.weight !== y.weight ||
+        x.hostContext !== y.hostContext ||
+        x.base !== y.base ||
+        x.proximity !== y.proximity ||
+        x.layerIndex !== y.layerIndex ||
+        x.outerDepth !== y.outerDepth ||
+        x.entries.length !== y.entries.length
+      )
+        return false;
+      if (x.entries === y.entries) continue;
+      for (let entry = 0; entry < x.entries.length; entry++) {
+        const p = x.entries[entry]!,
+          q = y.entries[entry]!;
+        if (
+          p !== q &&
+          (p.name !== q.name ||
+            p.value !== q.value ||
+            p.important !== q.important ||
+            p.order !== q.order ||
+            p.base !== q.base ||
+            p.shorthand !== q.shorthand)
+        )
+          return false;
+      }
+    }
+    return true;
+  }
+  function rememberSiblingFrame(parent: ComputedFrame, shape: string, frame: ComputedFrame): void {
+    let shapes = siblingFrames.get(parent);
+    if (!shapes) siblingFrames.set(parent, (shapes = new Map()));
+    const frames = shapes.get(shape);
+    if (!frames) shapes.set(shape, [frame]);
+    else {
+      frames.unshift(frame);
+      if (frames.length > 4) frames.pop();
     }
   }
 
@@ -6151,6 +7986,148 @@ export function createStyles(input: {
     return true;
   }
 
+  // Winners that feed a deferred target's derived values (foreground, font size, display
+  // transformation, custom projection, writing mode) or replace the whole cascade.
+  const restyleStructural = new Set([
+    "all",
+    "color",
+    "color-scheme",
+    "direction",
+    "display",
+    "float",
+    "font-size",
+    "math-depth",
+    "position",
+    "text-orientation",
+    "writing-mode",
+    "zoom",
+  ]);
+  // Values that read the environment, other declarations, the parent or random draws.
+  const restyleContextual =
+    /var\(|env\(|attr\(|if\(|url\(|random|sibling-|anchor|inherit|initial|unset|revert|\\|(?:\d|\b)(?:[sld]?v(?:w|h|i|b|min|max)|cq(?:w|h|i|b|min|max))\b/i;
+
+  /**
+   * Character growth when `next` differs from `previous` only in the literal values of
+   * inline-declared, non-structural longhands at the same positions; undefined otherwise.
+   */
+  function restyledCharacters(
+    previous: ReadonlyMap<string, ComputedWinner>,
+    next: ReadonlyMap<string, ComputedWinner>,
+  ): number | undefined {
+    if (previous.size !== next.size) return;
+    const entries = previous.entries();
+    let characters = 0;
+    let changed = false;
+    for (const [name, value] of next) {
+      const old = entries.next().value;
+      if (!old || old[0] !== name) return;
+      const prior = old[1];
+      if (typeof prior === "string" || typeof value === "string") {
+        if (prior !== value) return;
+        continue;
+      }
+      if (
+        prior.base !== value.base ||
+        prior.shorthand !== value.shorthand ||
+        prior.context !== value.context ||
+        prior.weight !== value.weight ||
+        prior.layer !== value.layer ||
+        prior.layerIndex !== value.layerIndex ||
+        prior.proximity !== value.proximity ||
+        prior.block !== value.block ||
+        prior.order !== value.order
+      )
+        return;
+      if (prior.value === value.value) continue;
+      if (
+        value.weight !== 2 ** 52 ||
+        value.shorthand ||
+        name.startsWith("--") ||
+        restyleStructural.has(name) ||
+        restyleContextual.test(value.value)
+      )
+        return;
+      characters += value.value.length - prior.value.length;
+      changed = true;
+    }
+    return changed ? characters : undefined;
+  }
+
+  /**
+   * The previous deferred target frame with new winners, when an inline write changed only
+   * literal values of properties that its foreground, font size, display transformation and
+   * custom projection do not read; deferred values then resolve lazily from the new winners.
+   * The caller has established the same parent family, user-agent context and environment.
+   */
+  function restyledFrame(
+    previous: ComputedFrame,
+    inputs: readonly CascadeInput[],
+    winners: ReadonlyMap<string, ComputedWinner>,
+    custom: CustomProjection | undefined,
+    parentFrame: ComputedFrame | undefined,
+  ): ComputedFrame | undefined {
+    const resolution = previous.resolution;
+    if (
+      !resolution ||
+      !previous.deferred ||
+      !previous.inputs ||
+      previous.substitution ||
+      !sameCustomProjection(previous.custom, custom)
+    )
+      return;
+    const restyled = restyledCharacters(previous.winners, winners);
+    if (restyled === undefined) return;
+    const before = cascadeInputSize(previous.inputs);
+    const after = cascadeInputSize(inputs);
+    const units = previous.units - before.units + after.units;
+    const characters = previous.characters - before.characters + restyled + after.characters;
+    // The same retention limits as a fully computed frame; otherwise compute it fully.
+    if (
+      units + (custom?.block.names.length ?? 0) * 2 > 2048 ||
+      characters + (custom?.block.characters ?? 0) * 2 > 32768
+    )
+      return;
+    // The values differ from the source frame: no proof or family carries over. Omitting
+    // them by destructuring keeps the copy out of dictionary mode, unlike `delete`.
+    const { reuse: _reuse, focusRevision: _focusRevision, family: _family, ...kept } = previous;
+    return {
+      ...kept,
+      deferred: deferComputedValues(
+        winners,
+        resolution,
+        winningValueResolver(winners, custom?.block, undefined, undefined),
+        previous.viewport,
+        previous.baseURL,
+      ),
+      inputs,
+      winners,
+      parent: parentFrame && new WeakRef(parentFrame),
+      units,
+      characters,
+    };
+  }
+
+  function publishRestyledFrame(element: Raw.Element, frame: ComputedFrame): PublicDeclaration {
+    rememberComputedFrame(element, "target", frame);
+    if (frame.deferred && frameOrder.has(frame)) frame.deferred.retained = new WeakRef(frame);
+    return computedFrameView(frame);
+  }
+
+  /** The budget a frame charges for retaining its cascade inputs. */
+  function cascadeInputSize(inputs: readonly CascadeInput[]): {
+    units: number;
+    characters: number;
+  } {
+    let characters = 0,
+      units = inputs.length;
+    for (const source of inputs) {
+      characters += source.base?.length ?? 0;
+      units += source.entries.length;
+      for (const entry of source.entries) characters += entry.name.length + entry.value.length;
+    }
+    return { units, characters };
+  }
+
   const scopeSelections = new WeakMap<Raw.ParentNode, RuleSelection>();
   function scopeSelection(root: Raw.ParentNode): RuleSelection {
     const existing = scopeSelections.get(root);
@@ -6202,7 +8179,8 @@ export function createStyles(input: {
     node: Raw.Element,
     revision: number | undefined,
   ): PublicDeclaration | undefined {
-    if (adopted.get(input.document)?.values.length) return;
+    if (adopted.get(input.document)?.values.length || input.statePseudos["focus-visible"]?.(node))
+      return;
     if (userAgentRevision !== revision || userAgentSnapshotCount >= 128) {
       userAgentSnapshots = undefined;
       userAgentRevision = revision;
@@ -6242,6 +8220,11 @@ export function createStyles(input: {
               : undefined,
       () => {
         const style = declaration();
+        if (isHTML && uaIsolates.has(tag)) style._setProperty("unicode-bidi", "isolate", "");
+        if (isHTML && uaBlockMargins.has(tag)) {
+          for (const side of ["top", "bottom", "block-start", "block-end"])
+            style._setProperty("margin-" + side, initialFontSize + "px", "");
+        }
         if (isHTML && tag === "mark")
           style._setProperty("background-color", "rgb(255, 255, 0)", "");
         if (button || field)
@@ -6273,27 +8256,119 @@ export function createStyles(input: {
 
   let latestFrameRevision: FrameRevision | undefined;
 
+  // Style revisions after `base`, up to `base + count`, were each advanced by nothing but one
+  // CSSOM inline write; each written element remembers the revision of its latest such write
+  // in a slot, so the record retains no element.
+  let inlineSteps: { base: number; count: number } | undefined;
+  const inlineWriteRevisions = createSlotTable<Raw.Element, number>();
+
+  /** Writes reflected inline text and records the revision step when the write was its only cause. */
+  function writeInlineAttribute(node: Raw.Element, text: string): void {
+    const before = input.styleRevision(input.document);
+    input.writeInlineStyle(node, text);
+    const after = input.styleRevision(input.document);
+    if (before === undefined || after === before) return;
+    // Synchronous reactions to the attribute (custom element callbacks) may have mutated more.
+    if (after !== before + 1) {
+      inlineSteps = undefined;
+      return;
+    }
+    if (!inlineSteps || inlineSteps.base + inlineSteps.count !== before)
+      inlineSteps = { base: before, count: 0 };
+    inlineSteps.count++;
+    inlineWriteRevisions.set(node, after);
+  }
+
+  let styleAttributeScan: { entries: SheetRecord[]; ignored: boolean } | undefined;
+  /** True when no document rule's selector can read a `style` attribute (conservatively). */
+  function selectorsIgnoreStyleAttribute(): boolean {
+    const entries = collect(input.document);
+    if (styleAttributeScan?.entries === entries) return styleAttributeScan.ignored;
+    let ignored = true;
+    const pending = entries.map((record) => record.rules);
+    // Rule nesting is finite and acyclic; imports are declined rather than followed.
+    scan: while (pending.length) {
+      for (const rule of pending.pop() ?? []) {
+        let text: string | undefined = "";
+        if (rule.kind === "style") text = rule.selection.current.text;
+        else if (rule.kind === "declaration")
+          text = rule.view.selectorText ?? (rule.selectors.length ? undefined : "");
+        else if (rule.kind === "import" || rule.kind === "scope") text = undefined;
+        if (text === undefined || /style|\\/i.test(text)) {
+          ignored = false;
+          break scan;
+        }
+        if ("rules" in rule && rule.kind !== "keyframes") pending.push(rule.rules);
+      }
+    }
+    styleAttributeScan = { entries, ignored };
+    return ignored;
+  }
+
+  /** Whether every revision after `proven` up to `current` was an inline write that `node` cannot see. */
+  function inlineStepsSpare(
+    proven: number,
+    current: number | undefined,
+    node: Raw.Element,
+  ): boolean {
+    const steps = inlineSteps;
+    if (
+      !steps ||
+      current === undefined ||
+      proven < steps.base ||
+      proven >= current ||
+      current !== steps.base + steps.count
+    )
+      return false;
+    // Descendants inherit from a written element; nothing else reads its declarations.
+    for (
+      let at: Raw.ParentNode | null = node;
+      at;
+      at = tree.isElementNode(at) ? at.parentNode : null
+    ) {
+      const written = tree.isElementNode(at) ? inlineWriteRevisions.get(at) : undefined;
+      if (written !== undefined && written > proven) return false;
+    }
+    return selectorsIgnoreStyleAttribute();
+  }
+
   function completedFrame(
     frame: ComputedFrame | undefined,
     node: Raw.Element,
     currentRevision: number | undefined,
   ): frame is ComputedFrame {
     const proof = frame?.reuse;
-    return (
-      !!frame &&
-      !!proof &&
-      proof.tree === currentRevision &&
+    if (!frame || !proof) return false;
+    const stepped =
+      proof.tree !== currentRevision &&
+      input.styleRevision(input.document) === currentRevision &&
+      inlineStepsSpare(proof.tree, currentRevision, node);
+    const tree = stepped ? currentRevision : proof.tree;
+    const current =
+      tree === currentRevision &&
       proof.linked === linkedSheetRevision &&
       (!proof.authorSheets || !exposedStylesheets) &&
       !didAdoptStylesheets &&
       ((!frame.viewport && frame.baseURL === undefined) ||
         (sameCompletedEnvironment(frame, node) &&
-          input.styleRevision(input.document) === proof.tree &&
+          input.styleRevision(input.document) === tree &&
           linkedSheetRevision === proof.linked &&
           (!proof.authorSheets || !exposedStylesheets) &&
           !didAdoptStylesheets)) &&
-      (frame.focusRevision === undefined || frame.focusRevision === input.focusRevision())
-    );
+      (frame.focusRevision === undefined || frame.focusRevision === input.focusRevision()) &&
+      // The UA focus ring is the one focus input every frame has; rules add the revision.
+      !!frame.userAgentFocus === (input.statePseudos["focus-visible"]?.(node) === true);
+    if (current && stepped && tree !== undefined) {
+      // Re-prove at the current revision so later reads skip the step walk.
+      if (
+        latestFrameRevision?.tree !== tree ||
+        latestFrameRevision.linked !== proof.linked ||
+        latestFrameRevision.authorSheets !== proof.authorSheets
+      )
+        latestFrameRevision = { tree, linked: proof.linked, authorSheets: proof.authorSheets };
+      frame.reuse = latestFrameRevision;
+    }
+    return current;
   }
 
   function setComputedForeground(style: ComputedDeclaration, color: string): void {
@@ -6305,6 +8380,11 @@ export function createStyles(input: {
     // Element-relative SVG paints need the target cascade. Ordinary declarations
     // differ from their ancestor frame only by the finalized foreground.
     const style = frame.style;
+    const independent = style && partialAncestors?.get(style)?.target;
+    if (independent) {
+      prioritizeAncestor(frame);
+      return independent();
+    }
     if (
       !style ||
       partialAncestors?.has(style) ||
@@ -6385,7 +8465,7 @@ export function createStyles(input: {
       revision !== undefined &&
       input.styleRevision(root) === revision &&
       linkedSheetRevision === linked;
-    if (!available.length && stableCollection && !input.isXML) {
+    if (!available.length && !scriptRegistrations && stableCollection && !input.isXML) {
       const snapshot = userAgentSnapshot(node, revision);
       if (snapshot) return snapshot;
     }
@@ -6421,6 +8501,8 @@ export function createStyles(input: {
   function winningValueResolver(
     winners: ReadonlyMap<string, ComputedWinner>,
     custom: CustomBlock | undefined,
+    substitution: SubstitutionFrame | undefined,
+    registrations: ReadonlyMap<string, RegisteredProperty> | undefined,
   ) {
     let resolver: ReturnType<typeof createVariableResolver> | undefined;
     function lookup(name: string): string | undefined {
@@ -6428,6 +8510,12 @@ export function createStyles(input: {
       return typeof entry === "string" ? entry : (entry?.value ?? custom?.values.get(name));
     }
     function resolveValue(name: string, value: string): string | undefined {
+      if (
+        substitution &&
+        !usesDynamicViewportMath(value) &&
+        (substitutionFunction.test(value) || variableSyntax.test(value))
+      )
+        return substitution.read(name) || undefined;
       if (!variableSyntax.test(value)) return value;
       const variable = !name.startsWith("--") && directVariable.exec(value)?.[1];
       const literal = variable ? lookup(variable) : undefined;
@@ -6471,11 +8559,52 @@ export function createStyles(input: {
       }
       return expanded.getPropertyValue(name) || undefined;
     }
-    return { resolveValue, expandPending };
+    return { resolveValue, expandPending, substitution, registrations };
   }
 
+  // A computed write whose validation stores exactly its own normalized longhand, with no
+  // provenance, is replayed from that text instead of re-validating per element.
+  const validatedWrites = new Map<string, string | null>();
+  // cssstyle's border, flex and box longhand setters rebuild their shorthand from sibling state.
+  const statefulSetter =
+    /^(?:border(?:-(?:top|right|bottom|left))?(?:-(?:width|style|color))?|flex(?:-(?:grow|shrink|basis))?|(?:margin|padding)(?:-(?:top|right|bottom|left))?)$/;
+  function setComputedProperty(style: ComputedDeclaration, name: string, value: string): void {
+    const key = name + "\0" + value;
+    let stored = validatedWrites.get(key);
+    if (stored === undefined) {
+      if (key.length > 512 || statefulSetter.test(name)) {
+        style.setProperty(name, value);
+        return;
+      }
+      stored = leanStoredValue(name, value);
+    }
+    if (stored === undefined) {
+      const probe = declaration();
+      probe.setProperty(name, value);
+      const text = probe._values.get(name);
+      stored =
+        probe._length === 1 &&
+        probe[0] === name &&
+        text !== undefined &&
+        probe.getPropertyPriority(name) === "" &&
+        !shorthandSources?.get(probe)?.size &&
+        !calculationSources?.get(probe)?.size &&
+        !declarationBases?.get(probe)?.size &&
+        !borderColorSourceOrder.has(probe)
+          ? text
+          : null;
+      if (validatedWrites.size >= 4096) validatedWrites.clear();
+      validatedWrites.set(key, stored);
+    }
+    if (stored === null) style.setProperty(name, value);
+    else style._setProperty(name, stored, "");
+  }
+
+  // Resolution reads only named parent values, so a captured subset can stand in for the parent.
+  type ParentValues = Pick<ComputedDeclaration, "getPropertyValue">;
   type ResolutionValues = {
-    prior: ComputedDeclaration | undefined;
+    transformedDisplay: string | undefined;
+    prior: ParentValues | undefined;
     custom: CustomProjection | undefined;
     projected: CustomBlock | undefined;
     fontSize: number;
@@ -6491,12 +8620,15 @@ export function createStyles(input: {
 
   // A child usually needs only inherited values. Keep a complete read available
   // for explicit inheritance of a non-inherited shorthand component.
+  // An independent projection resolved only inherited values and display eagerly.
+  // It captures the parent values it reads and can publish the element as a deferred target.
   type AncestorProjection = {
     complete: () => ComputedDeclaration;
+    target?: () => PublicDeclaration;
     units: number;
     characters: number;
   };
-  let partialAncestors: WeakMap<ComputedDeclaration, AncestorProjection> | undefined;
+  let partialAncestors: WeakMap<ParentValues, AncestorProjection> | undefined;
   function resolveDeclaration(
     winners: ReadonlyMap<string, ComputedWinner>,
     values: ResolutionValues,
@@ -6504,7 +8636,7 @@ export function createStyles(input: {
     readViewport: () => Viewport,
     readBaseURL: () => string,
     property?: string,
-    inheritanceOnly = false,
+    inheritanceOnly: boolean | "independent" = false,
   ): ComputedDeclaration {
     const {
       prior,
@@ -6534,8 +8666,20 @@ export function createStyles(input: {
       // Invalid property names reserve positions across native shorthand rewrites.
       if (placements?.[placementIndex]?.before === name)
         result._setProperty(` ${placementIndex++}`, "1", "");
-      if (inheritanceOnly && typeof winner !== "string" && winner.shorthand && !inherited.has(name))
+      if (
+        inheritanceOnly &&
+        typeof winner !== "string" &&
+        (inheritanceOnly === "independent"
+          ? name !== "display" && !name.startsWith("--")
+          : winner.shorthand) &&
+        !inherited.has(name)
+      )
         continue;
+      if (resolver.substitution && resolver.registrations?.has(name)) {
+        const computed = resolver.substitution.read(name);
+        if (computed) result._setProperty(name, computed, "");
+        continue;
+      }
       if (typeof winner === "string") {
         result._setProperty(name, winner, "");
         continue;
@@ -6546,7 +8690,9 @@ export function createStyles(input: {
       if (context === -1 || context === Infinity) {
         result._setProperty(
           name,
-          !isCustomProperty && name.endsWith("-color")
+          !isCustomProperty &&
+            name.endsWith("-color") &&
+            !(name === "outline-color" && specified === "auto")
             ? resolveColor(specified, { currentColor: color, colorScheme })
             : specified,
           "",
@@ -6554,7 +8700,36 @@ export function createStyles(input: {
         continue;
       }
       if (name === "font-size" && computedFontSize !== undefined) {
-        result._setProperty(name, `${fontSize}px`, "");
+        result._setProperty(name, `${Number(fontSize.toPrecision(6))}px`, "");
+        continue;
+      }
+      // `box-shadow: none` computes to `none` with a literal `transparent` color longhand, as in
+      // jsdom; the substitution read would serialize it as `rgba(0, 0, 0, 0) none`.
+      const offset = name === "box-shadow-color" ? winners.get("box-shadow-offset") : undefined;
+      if (
+        (name === "box-shadow" && specified.toLowerCase() === "none") ||
+        (typeof offset === "object" && offset.value === "none" && specified === "transparent")
+      ) {
+        result._setProperty(name, specified.toLowerCase(), "");
+        continue;
+      }
+      if (
+        resolver.substitution &&
+        (!shorthand ||
+          variableSyntax.test(specified) ||
+          substitutionFunction.test(specified) ||
+          contextualLonghand.test(name)) &&
+        !usesDynamicViewportMath(specified) &&
+        (substitutionFunction.test(specified) ||
+          contextualLonghand.test(name) ||
+          usesTypedValueGrammar(name, specified) ||
+          variableSyntax.test(specified) ||
+          (!isCustomProperty && elementDimension.test(specified)))
+      ) {
+        const computed = resolver.substitution.read(name);
+        if (shorthand && /^(?:(?:column|row)-)?rule$/.test(shorthand))
+          computedGapRules.set(result, resolver.substitution);
+        if (computed) result._setProperty(name, computed, "");
         continue;
       }
       const substituted =
@@ -6574,11 +8749,26 @@ export function createStyles(input: {
             );
       if (value === undefined) {
         const inheritedValue = inherited.has(name) && prior?.getPropertyValue(name);
-        if (inheritedValue) result.setProperty(name, inheritedValue);
+        if (inheritedValue) setComputedProperty(result, name, inheritedValue);
         continue;
       }
       if (isCustomProperty && /^(?:initial|inherit|unset|revert-layer)$/i.test(value)) continue;
-      const initialValue = computedInitialValues.get(name);
+      if (name === "-webkit-box-orient" && (value === "inline-axis" || value === "block-axis")) {
+        result._setProperty(name, value === "inline-axis" ? "horizontal" : "vertical", "");
+        continue;
+      }
+      if (name === "opacity" || name.endsWith("-opacity")) {
+        const fraction = value.endsWith("%") ? Number(value.slice(0, -1)) / 100 : Number(value);
+        if (Number.isFinite(fraction)) {
+          result._setProperty(name, String(Math.max(0, Math.min(1, fraction))), "");
+          continue;
+        }
+      }
+      const initialValue =
+        computedInitialValues.get(name) ??
+        (!isCustomProperty && /^(?:initial|inherit|unset)$/i.test(value)
+          ? longhandDefinition(name)?.initial
+          : undefined);
       if (initialValue !== undefined) {
         const keyword = value.toLowerCase();
         if (keyword === "initial") continue;
@@ -6589,7 +8779,7 @@ export function createStyles(input: {
               ? (partialAncestors?.get(prior)?.complete() ?? prior)
               : prior;
           const inheritedValue = shouldInherit ? source?.getPropertyValue(name) : undefined;
-          if (inheritedValue) result.setProperty(name, inheritedValue);
+          if (inheritedValue) setComputedProperty(result, name, inheritedValue);
           continue;
         }
       }
@@ -6605,14 +8795,20 @@ export function createStyles(input: {
             ? (projected?.values.get(name) ?? prior?.getPropertyValue(name))
             : undefined;
         const fallback = userAgentValue || inheritedValue || (name === "font-size" ? "16px" : "");
-        if (fallback) result.setProperty(name, fallback);
+        if (fallback) setComputedProperty(result, name, fallback);
         continue;
       }
       if (isCustomProperty) {
         // The cascade already selected the case-sensitive name and discarded
         // importance. Custom tokens only need the declaration's value cleanup.
         const tokens = cssInput(value).trim();
-        if (tokens) result._setProperty(name, tokens, "");
+        result._setProperty(name, tokens || " ", "");
+        continue;
+      }
+      if (name === "background-image" && /-gradient\(/i.test(value)) {
+        let images = serializeGradientImages(value, { currentColor: color, colorScheme });
+        if (/url\(/i.test(images)) images = resolveCSSURLs(images, base ?? readBaseURL());
+        result._setProperty(name, images, "");
         continue;
       }
       if (name === "box-shadow") {
@@ -6625,7 +8821,7 @@ export function createStyles(input: {
         continue;
       }
       if (name === "flex-basis") {
-        result.setProperty(name, simplifyCSSCalculation(value));
+        setComputedProperty(result, name, simplifyCSSCalculation(value));
         continue;
       }
       if (name === "font-weight") {
@@ -6667,7 +8863,7 @@ export function createStyles(input: {
         const length = computeNumericValue(value, () => currentViewport);
         const computed =
           name === "outline-width" ? snapOutlineWidth(length, currentViewport.resolution) : length;
-        result.setProperty(name, computed);
+        setComputedProperty(result, name, computed);
         continue;
       }
       if (name === "outline-color" && value.toLowerCase() === "auto") {
@@ -6682,7 +8878,8 @@ export function createStyles(input: {
       // System colors compute in their declaring element's scheme; currentColor
       // paint references retain the target's foreground dependency.
       const paint = target && (name === "fill" || name === "stroke");
-      result.setProperty(
+      setComputedProperty(
+        result,
         name,
         paint
           ? resolveColor(computed, { currentColor: color, colorScheme, fallback: computed })
@@ -6691,9 +8888,55 @@ export function createStyles(input: {
             : computed,
       );
     }
+    if (
+      values.transformedDisplay !== undefined &&
+      (property === undefined || property === "display")
+    )
+      result._setProperty("display", values.transformedDisplay, "");
+    const lineHeight = result._values.get("line-height");
+    if (lineHeight) {
+      const percentage = lineHeight.endsWith("%");
+      const multiplier = Number(percentage ? lineHeight.slice(0, -1) : lineHeight);
+      if (Number.isFinite(multiplier)) {
+        const pixels =
+          Number(((fontSize * multiplier) / (percentage ? 100 : 1)).toPrecision(12)) + "px";
+        if (percentage) result._setProperty("line-height", pixels, "");
+        else unitlessLineHeights.set(result, pixels);
+      }
+    }
     if (property !== undefined) return result;
     if (placements && placementIndex < placements.length)
       result._setProperty(` ${placementIndex}`, "1", "");
+    if (
+      winners.has("margin-block-start") ||
+      winners.has("margin-block-end") ||
+      winners.has("margin-inline-start") ||
+      winners.has("margin-inline-end")
+    ) {
+      const sides = physicalBorderSides(
+        result.getPropertyValue("writing-mode"),
+        result.getPropertyValue("direction") === "rtl",
+      );
+      for (const [index, axis] of [
+        "block-start",
+        "block-end",
+        "inline-start",
+        "inline-end",
+      ].entries()) {
+        const logical = "margin-" + axis;
+        const physical = "margin-" + sides[index];
+        const logicalWinner = objectWinner(winners.get(logical));
+        const physicalWinner = objectWinner(winners.get(physical));
+        if (!logicalWinner && !physicalWinner) continue;
+        const logicalWins =
+          logicalWinner && (!physicalWinner || outranks(logicalWinner, physicalWinner));
+        result._setProperty(
+          logicalWins ? physical : logical,
+          result.getPropertyValue(logicalWins ? logical : physical),
+          "",
+        );
+      }
+    }
     if (borderColorSourceOrder.has(result)) {
       const writingMode = result.getPropertyValue("writing-mode");
       const rtl =
@@ -6714,7 +8957,7 @@ export function createStyles(input: {
     }
     // A shorthand serializer may have rewritten the longhand while storing font.
     if (specifiedFontSize !== undefined && computedFontSize !== undefined)
-      result._setProperty("font-size", `${fontSize}px`, "");
+      result._setProperty("font-size", `${Number(fontSize.toPrecision(6))}px`, "");
     // Finish the target before retaining it: public views must not rewrite color
     // and materialize their shared maps on every getComputedStyle call.
     if (target) setComputedForeground(result, color);
@@ -6805,13 +9048,46 @@ export function createStyles(input: {
     baseURL: string | undefined,
     units: number,
     characters: number,
+    independent = false,
   ): void {
     const { readViewport, readBaseURL } = capturedEnvironment(viewport, baseURL);
     (partialAncestors ??= new WeakMap()).set(style, {
       complete: () => resolveDeclaration(winners, values, resolver, readViewport, readBaseURL),
+      ...(independent && {
+        target: () =>
+          deferComputedValues(
+            winners,
+            { ...values, target: true },
+            resolver,
+            viewport,
+            baseURL,
+          ).publish(),
+      }),
       units,
       characters,
     });
+  }
+
+  // Non-inherited literal values read the parent only through explicit inheritance.
+  function independentOfParent(winners: ReadonlyMap<string, ComputedWinner>): boolean {
+    for (const [name, winner] of winners) {
+      // The foreground resolves before the declaration and never reads it.
+      if (
+        typeof winner === "string" ||
+        inherited.has(name) ||
+        name.startsWith("--") ||
+        name === "color"
+      )
+        continue;
+      if (
+        winner.shorthand ||
+        variableSyntax.test(winner.value) ||
+        substitutionFunction.test(winner.value) ||
+        winner.value.toLowerCase() === "inherit"
+      )
+        return false;
+    }
+    return true;
   }
 
   function deferComputedValues(
@@ -6828,7 +9104,23 @@ export function createStyles(input: {
     const deferred: DeferredComputed = {
       publish: views().deferredPublisher(
         (name) => {
+          if (name === "display" && values.transformedDisplay !== undefined)
+            return values.transformedDisplay;
+          if (resolver.substitution && resolver.registrations?.has(name))
+            return resolver.substitution.read(name);
           if (name === "color" && isSerializedRGB(values.color)) return values.color;
+          // The shorthand and axes can affect each other's computed values.
+          // Without a winner anywhere in the family, all three retain their initial value.
+          if (
+            (name === "overflow" || name === "overflow-x" || name === "overflow-y") &&
+            !winners.has("all") &&
+            !winners.has("overflow") &&
+            !winners.has("overflow-x") &&
+            !winners.has("overflow-y") &&
+            !winners.has("overflow-block") &&
+            !winners.has("overflow-inline")
+          )
+            return "visible";
           const custom = name.startsWith("--");
           if ((!custom && !independentProperties.has(name)) || winners.has("all")) return;
           const known = reads?.get(name);
@@ -6837,7 +9129,7 @@ export function createStyles(input: {
           if (!winner)
             return custom
               ? (values.custom?.block.values.get(name) ?? "")
-              : (computedInitialValues.get(name) ?? "");
+              : (computedInitialValues.get(name) ?? longhandDefinition(name)?.initial ?? "");
           if (typeof winner !== "string") {
             if (winner.shorthand || variableSyntax.test(winner.value)) return;
             if (
@@ -6872,14 +9164,21 @@ export function createStyles(input: {
     return deferred;
   }
 
+  // Substitution frames outlive this computation; keep their reader's context to the element.
+  function elementBaseURL(element: Raw.Element): () => string {
+    return () => input.baseURL(input.ownerDocument(element));
+  }
+
   function computeStyle(
     node: Raw.Element,
     root: Raw.ParentNode | undefined,
     available: SheetRecord[],
     proof?: FrameRevision,
     displays?: AncestorDisplays,
+    pseudo?: string,
   ): PublicDeclaration {
     let reusableEligible = proof !== undefined;
+    // Set once a focus-dependent selector is a candidate anywhere along the computed path.
     let focusRevision: number | undefined;
     function certify(frame: ComputedFrame): void {
       if (
@@ -6917,6 +9216,9 @@ export function createStyles(input: {
     // Only layered styles pay for a global ordering pass. The table lives for this
     // computation, so CSSOM edits, media changes and adoption need no invalidation cache.
     let layerOrders: Map<Raw.ParentNode | undefined, Map<Rule, number>> | undefined;
+    let registrationsByScope:
+      | Map<Raw.ParentNode | undefined, Map<string, RegisteredProperty>>
+      | undefined;
     function layerOrder(target: Raw.ParentNode | undefined): Map<Rule, number> {
       const cache = (layerOrders ??= new Map());
       const previous = cache.get(target);
@@ -6988,7 +9290,14 @@ export function createStyles(input: {
               push(frame.sheet, rule.rules, parent);
           } else if (rule.kind === "supports") {
             if (rule.view.matches) push(frame.sheet, rule.rules, parent);
-          } else if (rule.kind === "style" || rule.kind === "scope" || rule.kind === "container") {
+          } else if (rule.kind === "property") {
+            assignments.set(rule, parent);
+          } else if (
+            rule.kind === "style" ||
+            rule.kind === "scope" ||
+            rule.kind === "container" ||
+            rule.kind === "starting-style"
+          ) {
             // Element-sensitive conditions reserve layer order even when they do not match this element.
             push(frame.sheet, rule.rules, parent);
           }
@@ -7010,10 +9319,46 @@ export function createStyles(input: {
         }
       }
       const order = new Map([...assignments].map(([rule, layer]) => [rule, layer.rank]));
+      const registrations = [...assignments]
+        .filter(([rule]) => rule.kind === "property")
+        .sort((left, right) => left[1].rank - right[1].rank);
+      if (registrations.length) {
+        const definitions = new Map<string, RegisteredProperty>();
+        for (const [rule] of registrations) {
+          if (rule.kind !== "property") continue;
+          const def = rule.view;
+          for (const name of def.names) {
+            try {
+              const registration = registeredProperty(
+                {
+                  name,
+                  syntax: def.syntax,
+                  inherits: def.inherits,
+                  ...(def.initialValue !== null ? { initialValue: def.initialValue } : {}),
+                },
+                undefined,
+                input.DOMException,
+              );
+              definitions.set(name, registration);
+            } catch (error) {
+              // Invalid descriptors keep their CSSOM rule but do not enter the registration map.
+              if (!(error instanceof input.DOMException && error.name === "SyntaxError"))
+                throw error;
+            }
+          }
+        }
+        (registrationsByScope ??= new Map()).set(target, definitions);
+      }
       cache.set(target, order);
       return order;
     }
-    const parents = [{ node, scope: root }];
+    const parents: { node: Raw.Element; scope: Raw.ParentNode | undefined; pseudo?: string }[] =
+      pseudo
+        ? [
+            { node, scope: root, pseudo },
+            { node, scope: root },
+          ]
+        : [{ node, scope: root }];
     let inheritedFrame: ComputedFrame | undefined;
     let scope = root;
     for (let parent = node.parentNode; parent;) {
@@ -7043,7 +9388,10 @@ export function createStyles(input: {
     let fontSize = inheritedFrame?.fontSize ?? initialFontSize;
     let rootFontSize = inheritedFrame?.rootFontSize ?? initialFontSize;
     let color = inheritedFrame?.color ?? initialColor;
-    for (const { node: element, scope } of parents.reverse()) {
+    for (const { node: element, scope, pseudo: activePseudo } of parents.reverse()) {
+      const pseudoFamily = activePseudo?.includes("(")
+        ? activePseudo.slice(0, activePseudo.indexOf("(")) + "(*)"
+        : undefined;
       let subjectTypeName: string | undefined;
       let subjectKeys: Set<string> | undefined;
       function elementSubjectKeys(): Set<string> {
@@ -7059,18 +9407,16 @@ export function createStyles(input: {
         return keys;
       }
       function candidates(rules: Rule[], sheet: Sheet): Rule[] {
-        if (!privateSheet(sheet)) return rules;
+        if (activePseudo || !privateSheet(sheet)) return rules;
         const index = cascadeSubjectIndex(rules, cascadeRuleIndexes, identityRule);
         return index ? indexedSubjects(index, elementSubjectKeys()) : rules;
       }
       let prior = result;
       const parentFrame = frame;
-      const role = element === node ? "target" : "ancestor";
+      const role = element === node && (!pseudo || activePseudo) ? "target" : "ancestor";
       const documentChild = element.parentNode?.nodeName === "#document";
-      const previous = computedFrames.get(element)?.[role];
-      const sameParent =
-        previous &&
-        (parentFrame ? previous.parent?.deref() === parentFrame : previous.parent === undefined);
+      let previous = activePseudo ? undefined : computedFrames.get(element)?.[role];
+      let siblingAdopted = false;
       const inputs: CascadeInput[] = [];
       let themeEntries: readonly CascadeEntry[] | undefined;
       const {
@@ -7083,9 +9429,34 @@ export function createStyles(input: {
         userAgentDisplay,
         userAgentContentVisibility,
         needsDirection,
-      } = userAgentStyle(element);
+      } = activePseudo
+        ? {
+            isHTML: false,
+            tag: "",
+            button: false,
+            field: false,
+            hiddenInput: false,
+            userAgentColor: undefined,
+            userAgentDisplay: /^(?:inline-)?(?:flex|grid)$/.test(
+              prior?.getPropertyValue("display") ?? "",
+            )
+              ? "block"
+              : undefined,
+            userAgentContentVisibility: undefined,
+            needsDirection: false,
+          }
+        : userAgentStyle(element);
+      const userAgentFocus =
+        !activePseudo && input.statePseudos["focus-visible"]?.(element) === true;
       const userAgentDirection = needsDirection ? input.directionality(element) : undefined;
       function sameEnvironment(cached: ComputedFrame): boolean {
+        if (
+          (cached.substitution && !cached.staticSubstitution) ||
+          cached.siblingColor ||
+          cached.registered ||
+          scriptRegistrations
+        )
+          return false;
         const currentViewport = cached.viewport && (viewport ??= input.viewport());
         const sameViewport =
           !cached.viewport ||
@@ -7099,29 +9470,38 @@ export function createStyles(input: {
             : (documentBase ??= input.baseURL(input.ownerDocument(element)));
         return !!sameViewport && cached.baseURL === currentBase;
       }
-      const sameContext =
-        previous &&
-        sameParent &&
-        previous.documentChild === documentChild &&
-        previous.userAgentColor === userAgentColor &&
-        previous.userAgentDisplay === userAgentDisplay &&
-        previous.userAgentContentVisibility === userAgentContentVisibility &&
-        previous.userAgentDirection === userAgentDirection &&
-        previous.userAgentHiddenInput === hiddenInput;
-      // Inline declaration provenance, automatic direction and shadow styling retain
-      // the complete path; serialized attribute equality alone cannot certify them.
-      if (
-        reusableEligible &&
-        (userAgentDirection !== undefined ||
-          input.shadowRoot(element) ||
-          (inlineStyles?.get(element)?.style._length ?? 0) !== 0 ||
-          element.attrs.some((attr) => !attr.namespace && attr.name === "style" && attr.value))
-      )
+      function sameContextAs(previous: ComputedFrame): boolean {
+        return (
+          (parentFrame
+            ? sameFamily(previous.parent?.deref(), parentFrame)
+            : previous.parent === undefined) &&
+          previous.documentChild === documentChild &&
+          previous.userAgentColor === userAgentColor &&
+          previous.userAgentDisplay === userAgentDisplay &&
+          previous.userAgentContentVisibility === userAgentContentVisibility &&
+          !!previous.userAgentFocus === userAgentFocus &&
+          previous.userAgentDirection === userAgentDirection &&
+          previous.userAgentHiddenInput === hiddenInput
+        );
+      }
+      let sameContext = !!previous && sameContextAs(previous);
+      // An element without its own frame may adopt the frame of a sibling with the same shape
+      // (every userAgentStyle input) under the same parent frame when its freshly matched
+      // inputs are equal. Adoption never certifies: the frame's proof belongs to its owner.
+      const shape =
+        previous || activePseudo || !parentFrame
+          ? undefined
+          : `${element.namespaceURI ?? ""} ${element.tagName} ${role} ${button} ${field}`;
+      // Automatic direction and shadow styling retain the complete path. Inline declarations
+      // can certify: every change to them rewrites the style attribute, which advances the
+      // style revision, and their URL bases are fixed when declared.
+      if (reusableEligible && (userAgentDirection !== undefined || input.shadowRoot(element)))
         reusableEligible = false;
       let borderColorBlock = 0;
       let collectLosers = false,
         hasHistory = false,
         hasRollback = false;
+      let outerPart: { host: Raw.Element; names: Set<string>; depth: number } | undefined;
       function take(
         style: DeclarationImplementation,
         weight: number,
@@ -7132,6 +9512,7 @@ export function createStyles(input: {
         immutable = false,
       ): void {
         const old = previous?.inputs?.[inputs.length];
+        const depth = outerPart?.depth ?? (activeSlot ? -1 : undefined);
         if (immutable) {
           const entries = ruleEntries(style);
           if (entries.length >= minimumPackedTokens && themeBlocks.has(entries))
@@ -7139,13 +9520,23 @@ export function createStyles(input: {
           if (
             old?.entries === entries &&
             old.weight === weight &&
+            old.outerDepth === depth &&
             old.hostContext === hostContext &&
             old.base === base &&
             old.proximity === proximity &&
             old.layerIndex === layerIndex
           )
             inputs.push(old);
-          else inputs.push({ weight, hostContext, base, proximity, layerIndex, entries });
+          else
+            inputs.push({
+              weight,
+              hostContext,
+              base,
+              proximity,
+              layerIndex,
+              entries,
+              ...(depth !== undefined && { outerDepth: depth }),
+            });
           return;
         }
         let entries: CascadeEntry[] | undefined;
@@ -7154,23 +9545,43 @@ export function createStyles(input: {
         for (; index < style._length; index++) {
           const name = style[index] ?? "";
           const important = style.getPropertyPriority(name) === "important";
-          const value = style.getPropertyValue(name);
+          const source = shorthandSources?.get(style)?.get(name);
+          const value =
+            source?.text ??
+            calculationSources?.get(style)?.get(name) ??
+            style.getPropertyValue(name);
           const order = declarationOrder?.get(name);
+          const propertyBase = declarationBases?.get(style)?.get(name);
           const priorEntry = old?.entries[index];
           const equal =
             priorEntry &&
+            priorEntry.base === propertyBase &&
             priorEntry.name === name &&
             priorEntry.value === value &&
             priorEntry.important === important &&
+            priorEntry.shorthand === source?.shorthand &&
             priorEntry.order === order;
           if (!entries && !equal) entries = old ? old.entries.slice(0, index) : [];
-          if (entries) entries.push(equal ? priorEntry : { name, important, value, order });
+          if (entries)
+            entries.push(
+              equal
+                ? priorEntry
+                : {
+                    name,
+                    important,
+                    value,
+                    order,
+                    ...(propertyBase && { base: propertyBase }),
+                    ...(source && { shorthand: source.shorthand }),
+                  },
+            );
         }
         if (!entries && old && index !== old.entries.length) entries = old.entries.slice(0, index);
         if (
           !entries &&
           old &&
           old.weight === weight &&
+          old.outerDepth === depth &&
           old.hostContext === hostContext &&
           old.base === base &&
           old.proximity === proximity &&
@@ -7185,9 +9596,12 @@ export function createStyles(input: {
             proximity,
             layerIndex,
             entries: entries ?? old?.entries ?? [],
+            ...(depth !== undefined && { outerDepth: depth }),
           });
         }
       }
+      let sheetRegistrations: Map<string, RegisteredProperty> | undefined;
+      let activeSlot: Raw.Element | undefined;
       function apply(
         sheet: Sheet,
         rules: Rule[],
@@ -7201,9 +9615,21 @@ export function createStyles(input: {
         const { media, href, base } = sheetState(sheet);
         if (media && !mediaListState(media).matches((viewport ??= input.viewport()))) return;
         // Imports form an acyclic graph bounded by loadImports.
-        for (const rule of hostContext || scoped || parentSelection
+        for (const rule of hostContext || outerPart || scoped || parentSelection
           ? rules
           : candidates(rules, sheet)) {
+          if (
+            !hostContext &&
+            !sheetRegistrations &&
+            (rule.kind === "property" ||
+              rule.kind === "scope" ||
+              rule.kind === "container" ||
+              rule.kind === "starting-style")
+          ) {
+            layerOrder(targetScope);
+            sheetRegistrations = registrationsByScope?.get(targetScope);
+          }
+          if (rule.kind === "property" || rule.kind === "starting-style") continue;
           if (rule.kind === "media") {
             if (mediaListState(rule.view.media).matches((viewport ??= input.viewport())))
               apply(
@@ -7312,7 +9738,13 @@ export function createStyles(input: {
           if (
             rule.kind === "layer-statement" ||
             rule.kind === "namespace" ||
+            rule.kind === "view-transition" ||
             rule.kind === "counter-style" ||
+            rule.kind === "font-face" ||
+            rule.kind === "function" ||
+            rule.kind === "font-feature-values" ||
+            rule.kind === "position-try" ||
+            rule.kind === "margin" ||
             rule.kind === "page" ||
             rule.kind === "keyframe" ||
             rule.kind === "keyframes" ||
@@ -7328,10 +9760,33 @@ export function createStyles(input: {
                 ? rule.selectors
                 : (selection?.entries ?? []);
           let score = -1;
-          for (const { match, specificity, hostOnly, subjectKey, subjectType } of selectors) {
+          for (const entry of selectors) {
+            if (entry.part) {
+              if (hostContext || entry.part.local === !!outerPart) continue;
+              const host = outerPart?.host ?? (scope && input.shadowHost(scope));
+              if (!host || !entry.part.origin(host)) continue;
+              const names =
+                outerPart?.names ??
+                new Set(
+                  (
+                    element.attrs.find((attr) => !attr.namespace && attr.name === "part")?.value ??
+                    ""
+                  ).split(/[\t\n\f\r ]+/),
+                );
+              if (!entry.part.names.every((name) => names.has(name))) continue;
+              reusableEligible = false;
+            } else if (outerPart) continue;
+            const { specificity, hostOnly, subjectKey, subjectType } = entry;
+            const match = activePseudo
+              ? entry.pseudo &&
+                (entry.pseudo.text === activePseudo || entry.pseudo.text === pseudoFamily)
+                ? entry.pseudo.match
+                : neverMatchesElement
+              : entry.match;
             if (
               match === neverMatchesElement ||
               hostOnly !== hostContext ||
+              (entry.slot ? !activeSlot || !entry.slot(activeSlot, scoped?.root) : !!activeSlot) ||
               (subjectType !== undefined &&
                 subjectType !== (subjectTypeName ??= elementLocalName(element).toLowerCase())) ||
               (subjectKey !== undefined && !elementSubjectKeys().has(subjectKey))
@@ -7370,7 +9825,7 @@ export function createStyles(input: {
         // Only private, individually anchored sheets can be omitted; unindexed
         // groups keep their exact place in document order.
         const index =
-          !hostContext && !didAdoptStylesheets
+          !activePseudo && !hostContext && !outerPart && !didAdoptStylesheets
             ? cascadeSubjectIndex(
                 records,
                 cascadeSheetIndexes,
@@ -7394,22 +9849,92 @@ export function createStyles(input: {
         }
       }
       applyScope(scope, false);
+      const exposed =
+        scope &&
+        input.shadowHost(scope) &&
+        element.attrs.find((attr) => !attr.namespace && attr.name === "part")?.value;
+      if (exposed && scope) {
+        let host = input.shadowHost(scope);
+        let names = new Set(exposed.split(/[\t\n\f\r ]+/).filter(Boolean));
+        let depth = 0;
+        while (host && names.size) {
+          const outer = input.styleScope(host);
+          if (!outer) break;
+          outerPart = { host, names, depth: ++depth };
+          applyScope(outer, false);
+          const forwarded = new Set<string>();
+          for (const mapping of (
+            host.attrs.find((attr) => !attr.namespace && attr.name === "exportparts")?.value ?? ""
+          ).split(",")) {
+            const match =
+              /^[\t\n\f\r ]*([^\t\n\f\r :,]+)[\t\n\f\r ]*(?::[\t\n\f\r ]*([^\t\n\f\r :,]+)[\t\n\f\r ]*)?$/.exec(
+                mapping,
+              );
+            if (match && names.has(match[1]!)) forwarded.add(match[2] ?? match[1]!);
+          }
+          names = forwarded;
+          host = input.shadowHost(outer);
+        }
+        outerPart = undefined;
+      }
       const shadow = input.shadowRoot(element);
       if (shadow) applyScope(shadow, true);
-      const inline = inlineStyles?.get(element)?.style;
-      if (inline) take(inline, 2 ** 52);
-      else if (element.attrs.some((attr) => !attr.namespace && attr.name === "style" && attr.value))
-        take(inlineStyle(element), 2 ** 52);
+      const parent = element.parentNode;
+      const slotRoot = parent && tree.isElementNode(parent) && input.shadowRoot(parent);
+      if (slotRoot) {
+        activeSlot = input.assignedSlot(element);
+        while (activeSlot) {
+          reusableEligible = false;
+          applyScope(input.styleScope(activeSlot), true);
+          activeSlot = input.assignedSlot(activeSlot);
+        }
+      }
+      if (!activePseudo) {
+        const inline = inlineStyles?.get(element)?.style;
+        if (inline) take(inline, 2 ** 52);
+        else if (
+          element.attrs.some((attr) => !attr.namespace && attr.name === "style" && attr.value)
+        )
+          take(inlineStyle(element), 2 ** 52);
+      }
+      if (shape && !sheetRegistrations) {
+        for (const candidate of siblingFrames
+          .get(parentFrame!.family ?? parentFrame!)
+          ?.get(shape) ?? []) {
+          if (
+            candidate.inputs &&
+            sameCascadeInputs(candidate.inputs, inputs) &&
+            sameContextAs(candidate) &&
+            sameEnvironment(candidate)
+          ) {
+            previous = candidate;
+            siblingAdopted = sameContext = true;
+            break;
+          }
+        }
+      }
       if (
         previous &&
+        !sheetRegistrations &&
         sameContext &&
         previous.inputs &&
         previous.inputs.length === inputs.length &&
-        inputs.every((source, index) => source === previous.inputs?.[index]) &&
+        (siblingAdopted || inputs.every((source, index) => source === previous!.inputs?.[index])) &&
         sameEnvironment(previous)
       ) {
-        prioritizeAncestor(previous);
-        certify(previous);
+        if (siblingAdopted) {
+          // The owner's proof stays with the owner. A copy carries this element's proof and
+          // shares the owner's immutable values, including a deferred publisher.
+          const copy: ComputedFrame = { ...previous, family: previous.family ?? previous };
+          delete copy.reuse;
+          delete copy.focusRevision;
+          certify(copy);
+          rememberComputedFrame(element, role, copy);
+          previous = copy;
+        } else {
+          prioritizeAncestor(previous);
+          certify(previous);
+        }
         if (role === "target") return computedFrameView(previous);
         result = previous.style;
         if (displays) displays.set(element, result?._values.get("display") === "none");
@@ -7423,6 +9948,9 @@ export function createStyles(input: {
         // Winner resolution has its own lexical context; cache hits never allocate it.
         const winners = new Map<string, Winner>();
         let hasVariableShorthand = false;
+        let usesSubstitution = false;
+        let environmentSubstitution = false;
+        let tokenReaders: string[] | undefined;
 
         // Cached frames return above without allocating winner-expansion closures.
         const consider = (name: string, candidate: Winner): void => {
@@ -7451,9 +9979,30 @@ export function createStyles(input: {
             : layerIndex === undefined
               ? undefined
               : -layerIndex;
-          for (const { name, important, value, order } of source.entries) {
+          for (const {
+            name,
+            important,
+            value,
+            order,
+            shorthand,
+            base: propertyBase,
+          } of source.entries) {
             // Normal declarations prefer the outer scope. Important declarations prefer the inner scope.
-            const context = important ? (hostContext ? 3 : 2) : hostContext ? 0 : 1;
+            const offset =
+              source.outerDepth && source.outerDepth > 0
+                ? source.outerDepth / (2 * (source.outerDepth + 1))
+                : 0;
+            const context = important
+              ? hostContext
+                ? source.outerDepth === -1
+                  ? 2.75
+                  : 3
+                : 2 - offset
+              : hostContext
+                ? source.outerDepth === -1
+                  ? 0.25
+                  : 0
+                : 1 + offset;
             if (value.length === 11 && value.toLowerCase() === "revert-rule") continue;
             if (
               (value.length === 6 || value.length === 12) &&
@@ -7461,13 +10010,47 @@ export function createStyles(input: {
             )
               hasRollback = true;
 
-            const winner: Winner = { context, weight, proximity, value, base };
+            if (!environmentSubstitution) {
+              const evaluated =
+                contextualLonghand.test(name) ||
+                (value.includes("(") && usesTypedValueGrammar(name, value));
+              // var() in evaluated values and pending shorthands is checked once the
+              // custom properties it reads are known.
+              const tokenReader =
+                (evaluated || !!shorthand || deferredShorthandLonghands.has(name)) &&
+                variableSyntax.test(value);
+              if (tokenReader) {
+                if (dependsOnWinnersOnly(value.replace(/var\(/gi, "calc(")))
+                  (tokenReaders ??= []).push(value);
+                else environmentSubstitution = true;
+              }
+              environmentSubstitution ||=
+                (evaluated && !tokenReader && !dependsOnWinnersOnly(value)) ||
+                (name.startsWith("--") && /\)var\(/i.test(value)) ||
+                ((name === "container-type" || name === "container") &&
+                  /(?:^|[ /])(?:inline-)?size(?:$| )/.test(value)) ||
+                (value.includes("(") && substitutionFunction.test(value)) ||
+                (!name.startsWith("--") && elementDimension.test(value));
+              usesSubstitution ||= evaluated || environmentSubstitution;
+            }
+            const winner: Winner = {
+              context,
+              weight,
+              proximity,
+              value,
+              base: propertyBase ?? base,
+            };
             const layer = important ? importantLayer : layerIndex;
             if (layer !== undefined) winner.layer = layer;
             if (unmodifiedLayer !== undefined) winner.layerIndex = unmodifiedLayer;
             if (order !== undefined) {
               winner.block = block;
               winner.order = order;
+            }
+            if (shorthand) {
+              hasVariableShorthand = true;
+              consider(name, { ...winner, block, shorthand });
+              continue;
             }
             const colorPair = logicalBorderColorShorthands.get(name);
             if (colorPair) {
@@ -7515,6 +10098,18 @@ export function createStyles(input: {
             consider(name, winner);
           }
         };
+        if (activePseudo === "::before" || activePseudo === "::after")
+          winners.set("content", { context: -1, weight: 0, value: "none" });
+        if (userAgentFocus) {
+          winners.set("outline-style", { context: -1, weight: 0, value: "auto" });
+          winners.set("outline-color", { context: -1, weight: 0, value: "auto" });
+        }
+        if (isHTML && uaIsolates.has(tag))
+          winners.set("unicode-bidi", { context: -1, weight: 0, value: "isolate" });
+        if (isHTML && uaBlockMargins.has(tag)) {
+          for (const side of ["block-start", "block-end"])
+            winners.set("margin-" + side, { context: -1, weight: 0, value: "1em" });
+        }
         if (userAgentColor) winners.set("color", { context: -1, weight: 0, value: userAgentColor });
         if (isHTML && tag === "mark") {
           winners.set("background-color", { context: -1, weight: 0, value: "rgb(255, 255, 0)" });
@@ -7605,22 +10200,50 @@ export function createStyles(input: {
         } else if (hasHistory) {
           for (const winner of winners.values()) if (winner.previous) winner.previous = undefined;
         }
+        const registrations =
+          sheetRegistrations && scriptRegistrations
+            ? new Map([...sheetRegistrations, ...scriptRegistrations])
+            : (scriptRegistrations ?? sheetRegistrations);
+        if (registrations)
+          for (const [name, registration] of registrations) {
+            const current = winners.get(name);
+            if (
+              current?.value === "initial" ||
+              ((!current || current.value === "unset") &&
+                (!registration.inherits || !prior?.getPropertyValue(name)))
+            ) {
+              if (registration.initialValue !== undefined)
+                winners.set(name, { context: -1, weight: 0, value: registration.initialValue });
+              else winners.delete(name);
+            }
+          }
+        const substitutionValues =
+          usesSubstitution ||
+          hasVariableShorthand ||
+          (parentFrame?.substitution && !parentFrame.staticSubstitution) ||
+          registrations?.size
+            ? new Map([...winners].map(([name, winner]) => [name, winner.value]))
+            : undefined;
         const computedWinners: Map<string, ComputedWinner> = winners;
         let custom: CustomProjection | undefined;
         const parentProjection = prior && partialAncestors?.get(prior);
         let materializedParent = false;
         if (parentProjection) {
+          // A new substitution chain copies every parent value, including non-inherited ones.
+          materializedParent = !!(
+            parentProjection.target &&
+            substitutionValues &&
+            !parentFrame?.substitution
+          );
           for (const [name, winner] of winners) {
-            if (!inherited.has(name) && winner.value.toLowerCase() === "inherit") {
-              prior = parentProjection.complete();
-              materializedParent = true;
-              break;
-            }
+            if (materializedParent) break;
+            materializedParent = !inherited.has(name) && winner.value.toLowerCase() === "inherit";
           }
+          if (materializedParent) prior = parentProjection.complete();
         }
         const projected = prior && inheritedCustomBlocks?.get(prior);
         if (prior) {
-          let shared = theme ? undefined : shareableCustomBlock(prior);
+          let shared = theme || registrations ? undefined : shareableCustomBlock(prior);
           if (shared) {
             for (const name of winners.keys()) {
               if (shared.values.has(name)) {
@@ -7637,6 +10260,8 @@ export function createStyles(input: {
             const winner = winners.get(name);
             const value = winner?.value;
             const isCustom = name.startsWith("--");
+            if (isCustom && registrations?.get(name)?.inherits === false && value !== "inherit")
+              return;
             if (isCustom && !winner) {
               if (shared && !projected && shared.values.has(name)) {
                 customEnd++;
@@ -7706,6 +10331,16 @@ export function createStyles(input: {
           custom = { block: theme, placements: [{ before, end: theme.names.length }] };
         }
         custom ??= packCustomWinners(computedWinners);
+        if (tokenReaders && !environmentSubstitution) {
+          const block = custom?.block;
+          const token = (name: string): string | undefined => {
+            const winner = computedWinners.get(name);
+            return typeof winner === "string" ? winner : (winner?.value ?? block?.values.get(name));
+          };
+          environmentSubstitution = tokenReaders.some(
+            (value) => !dependsOnWinnersOnly(value, token),
+          );
+        }
         if (
           previous &&
           sameContext &&
@@ -7713,8 +10348,10 @@ export function createStyles(input: {
           sameWinners(previous.winners, computedWinners) &&
           sameEnvironment(previous)
         ) {
-          prioritizeAncestor(previous);
-          certify(previous);
+          if (!siblingAdopted) {
+            prioritizeAncestor(previous);
+            certify(previous);
+          }
           if (role === "target") return computedFrameView(previous);
           result = previous.style;
           if (displays) displays.set(element, result?._values.get("display") === "none");
@@ -7724,7 +10361,91 @@ export function createStyles(input: {
           color = previous.color;
           continue;
         }
-        const resolver = winningValueResolver(computedWinners, custom?.block);
+        // An inline write that changed only literal values of properties nothing else in the
+        // frame derives from keeps the previous frame's derived values (see restyledFrame).
+        const restyled =
+          role === "target" &&
+          previous?.resolution &&
+          sameContext &&
+          !siblingAdopted &&
+          !substitutionValues &&
+          !registrations &&
+          !theme &&
+          !materializedParent &&
+          sameEnvironment(previous)
+            ? restyledFrame(previous, inputs, computedWinners, custom, parentFrame)
+            : undefined;
+        if (restyled) {
+          certify(restyled);
+          return publishRestyledFrame(element, restyled);
+        }
+        let substitution: SubstitutionFrame | undefined;
+        if (substitutionValues) {
+          const baseURL = elementBaseURL(element);
+          let inheritedFrame = parentFrame?.substitution;
+          if (
+            !inheritedFrame &&
+            prior &&
+            element.parentNode &&
+            tree.isElementNode(element.parentNode)
+          ) {
+            const inheritedValues = new Map(prior._values);
+            inheritedValues.set("color", color);
+            for (const [name, value] of projected?.block.values ?? [])
+              inheritedValues.set(name, value);
+            let root = element.parentNode;
+            while (root.parentNode && tree.isElementNode(root.parentNode)) root = root.parentNode;
+            const rootFrame =
+              root === element.parentNode
+                ? undefined
+                : substitutionFrame(
+                    root,
+                    undefined,
+                    new Map([["font-size", rootFontSize + "px"]]),
+                    !!input.isXML,
+                    baseURL,
+                    registrations,
+                  );
+            inheritedFrame = substitutionFrame(
+              element.parentNode,
+              rootFrame,
+              inheritedValues,
+              !!input.isXML,
+              baseURL,
+              registrations,
+            );
+          }
+          if (custom) {
+            for (const [name, value] of custom.block.values)
+              if (!substitutionValues.has(name)) substitutionValues.set(name, value);
+          }
+          let sheetBases: Map<string, string> | undefined;
+          for (const [name, winner] of winners)
+            if (winner.base) (sheetBases ??= new Map()).set(name, winner.base);
+          substitution = substitutionFrame(
+            element,
+            inheritedFrame,
+            substitutionValues,
+            !!input.isXML,
+            baseURL,
+            registrations,
+            inputs,
+            hasVariableShorthand
+              ? new Map(
+                  [...winners].flatMap(([name, winner]) =>
+                    winner.shorthand ? [[name, winner.shorthand] as const] : [],
+                  ),
+                )
+              : undefined,
+            sheetBases,
+          );
+        }
+        const resolver = winningValueResolver(
+          computedWinners,
+          custom?.block,
+          substitution,
+          registrations,
+        );
         const { resolveValue } = resolver;
         const specifiedScheme = winners.get("color-scheme")?.value;
         const scheme =
@@ -7741,11 +10462,26 @@ export function createStyles(input: {
               : scheme;
         if (!prior) color = systemColor("canvastext", colorScheme) ?? initialColor;
         const specifiedColor = winners.get("color")?.value;
-        const resolvedColor =
+        let resolvedColor =
           specifiedColor === undefined ? undefined : resolveValue("color", specifiedColor);
+        const siblingColor =
+          resolvedColor !== undefined && /sibling-(?:index|count)\(/i.test(resolvedColor);
+        if (siblingColor && resolvedColor) {
+          const siblings = element.parentNode?.childNodes.filter(tree.isElementNode) ?? [element];
+          // Color syntax has already been validated and contains no string tokens.
+          resolvedColor = resolvedColor.replace(
+            /\bsibling-(index|count)\(\s*\)/gi,
+            (_, kind: string) =>
+              String(
+                kind.toLowerCase() === "count" ? siblings.length : siblings.indexOf(element) + 1,
+              ),
+          );
+        }
         const colorKeyword = resolvedColor?.toLowerCase();
         if (userAgentColor && (colorKeyword === "revert" || colorKeyword === "revert-layer"))
           color = resolveColor(userAgentColor, { currentColor: color, colorScheme });
+        else if (substitution && specifiedColor && usesTypedValueGrammar("color", specifiedColor))
+          color = substitution.read("color");
         else
           color = computedTextColor(
             resolvedColor,
@@ -7766,7 +10502,35 @@ export function createStyles(input: {
         );
         if (computedFontSize !== undefined) fontSize = computedFontSize;
         if (element.parentNode?.nodeName === "#document") rootFontSize = fontSize;
+        const layoutValue = (name: string, fallback: string) => {
+          const declared = winners.get(name)?.value;
+          if (declared === undefined) return fallback;
+          const value = resolveValue(name, declared);
+          if (value === "inherit") return prior?.getPropertyValue(name) || fallback;
+          return value && !/^(?:initial|unset|revert(?:-layer)?)$/.test(value) ? value : fallback;
+        };
+        const display = layoutValue("display", userAgentDisplay ?? "inline");
+        const rootBox = documentChild && !activePseudo;
+        let transformedDisplay: string | undefined;
+        if (display === "contents") {
+          if (rootBox) transformedDisplay = "block";
+        } else if (
+          /^(?:inline(?:$|[- ])|table-(?:cell|caption|column|row|header|footer)|ruby(?:$|-))/.test(
+            display,
+          ) &&
+          (rootBox ||
+            parentFrame?.formattingContainer ||
+            /^(?:absolute|fixed)$/.test(layoutValue("position", "static")) ||
+            layoutValue("float", "none") !== "none")
+        ) {
+          const inside = display.replace(/^inline[- ]?/, "");
+          transformedDisplay = /^(?:flex|grid|table|list-item)$/.test(inside) ? inside : "block";
+        }
+        const formattingContainer =
+          /^(?:inline[- ])?(?:flex|grid)$/.test(display) ||
+          (display === "contents" && !rootBox && parentFrame?.formattingContainer);
         const attributes = {
+          transformedDisplay,
           prior,
           custom,
           projected: projected?.block,
@@ -7780,13 +10544,20 @@ export function createStyles(input: {
           userAgentDisplay,
           userAgentContentVisibility,
         };
-        // Keep at most one retained inheritance recipe along an ancestor chain.
-        const partial =
+        // An independent projection captures its parent values, so chains retain no parent.
+        const independent =
           !materializedParent &&
           role === "ancestor" &&
-          hasVariableShorthand &&
-          (!prior || !partialAncestors?.has(prior)) &&
+          independentOfParent(computedWinners) &&
           canDeferValues(computedWinners, attributes, viewport, documentBase);
+        // Keep at most one retained inheritance recipe along an ancestor chain.
+        const partial =
+          independent ||
+          (!materializedParent &&
+            role === "ancestor" &&
+            hasVariableShorthand &&
+            (!prior || !partialAncestors?.has(prior)) &&
+            canDeferValues(computedWinners, attributes, viewport, documentBase));
         const resolved: FrameValues =
           !materializedParent &&
           role === "target" &&
@@ -7808,7 +10579,7 @@ export function createStyles(input: {
                   () => (viewport ??= input.viewport()),
                   () => (documentBase ??= input.baseURL(input.ownerDocument(element))),
                   undefined,
-                  partial,
+                  independent ? "independent" : partial,
                 ),
               };
         result = resolved.style;
@@ -7838,23 +10609,44 @@ export function createStyles(input: {
           for (const entry of source.entries)
             inputCharacters += entry.name.length + entry.value.length;
         }
+        let parentValues: Map<string, string> | undefined;
+        let parentValueCharacters = 0;
+        if (independent && prior) {
+          parentValues = new Map();
+          for (const [name, winner] of computedWinners) {
+            if (typeof winner === "string" || (!inherited.has(name) && !name.startsWith("--")))
+              continue;
+            const value = prior.getPropertyValue(name);
+            parentValues.set(name, value);
+            parentValueCharacters += name.length + value.length;
+          }
+        }
         const parentUnits =
-          (prior?._values.size ?? 0) + (retainedPriorBlock?.names.length ?? 0) * 2;
+          (parentValues?.size ?? prior?._values.size ?? 0) +
+          (retainedPriorBlock?.names.length ?? 0) * 2;
         const parentCharacters =
-          (parentFrame?.declarationCharacters ?? 0) + (retainedPriorBlock?.characters ?? 0) * 2;
+          (parentValues ? parentValueCharacters : (parentFrame?.declarationCharacters ?? 0)) +
+          (retainedPriorBlock?.characters ?? 0) * 2;
         if (partial && result) {
           characters += parentCharacters;
+          const captured = parentValues;
           // A later target can retain this private declaration after its original
           // frame is evicted. Charge the captured winners and parent to that target.
           registerAncestorProjection(
             result,
             computedWinners,
-            attributes,
+            independent
+              ? {
+                  ...attributes,
+                  prior: captured && capturedParentValues(captured),
+                }
+              : attributes,
             resolver,
             viewport,
             documentBase,
             winners.size + parentUnits,
             characters - declarationCharacters,
+            independent,
           );
         }
         const capturedProjection = !result && prior ? partialAncestors?.get(prior) : undefined;
@@ -7870,8 +10662,19 @@ export function createStyles(input: {
           characters + inputCharacters + (custom?.block.characters ?? 0) * 2 <= 32768;
         frame = {
           ...resolved,
+          ...(formattingContainer && { formattingContainer: true as const }),
+          ...(substitution && { substitution }),
+          ...(substitution &&
+            !environmentSubstitution &&
+            !registrations?.size &&
+            (!parentFrame?.substitution || parentFrame.staticSubstitution) && {
+              staticSubstitution: true as const,
+            }),
+          ...(siblingColor ? { siblingColor } : {}),
+          ...(registrations ? { registered: true } : {}),
           inputs: retainInputs ? inputs : undefined,
           userAgentDirection,
+          ...(userAgentFocus ? { userAgentFocus: true as const } : {}),
           userAgentHiddenInput: hiddenInput,
           winners: computedWinners,
           parent: parentFrame && new WeakRef(parentFrame),
@@ -7885,12 +10688,15 @@ export function createStyles(input: {
           viewport: viewport && { ...viewport },
           baseURL: documentBase,
           ...(custom && { custom }),
+          ...(resolved.deferred && { resolution: attributes }),
           declarationCharacters,
           units: units + (retainInputs ? inputUnits : 0),
           characters: characters + (retainInputs ? inputCharacters : 0),
         };
         certify(frame);
-        rememberComputedFrame(element, role, frame);
+        if (!activePseudo) rememberComputedFrame(element, role, frame);
+        if (shape && frame.inputs)
+          rememberSiblingFrame(parentFrame!.family ?? parentFrame!, shape, frame);
         if (frame.deferred && frameOrder.has(frame)) frame.deferred.retained = new WeakRef(frame);
         if (role === "target") return computedFrameView(frame);
         if (displays) displays.set(element, result?._values.get("display") === "none");
@@ -7909,6 +10715,7 @@ export function createStyles(input: {
   }
 
   return {
+    closeComputed: () => views().closeComputed(),
     StyleSheet,
     css,
     CSSStyleSheet,
@@ -7924,12 +10731,37 @@ export function createStyles(input: {
     CSSGroupingRule: ruleInterfaces.CSSGroupingRule,
     CSSConditionRule: ruleInterfaces.CSSConditionRule,
     CSSFontFaceRule: ruleInterfaces.CSSFontFaceRule,
+    CSSFontFeatureValuesRule: ruleInterfaces.CSSFontFeatureValuesRule,
+    get CSSFontFaceDescriptors() {
+      return descriptorRules().fontFaceDescriptors();
+    },
+    CSSViewTransitionRule: ruleInterfaces.CSSViewTransitionRule,
+    CSSFunctionRule: ruleInterfaces.CSSFunctionRule,
+    get CSSFunctionDeclarations() {
+      return descriptorRules().functionInterfaces().CSSFunctionDeclarations;
+    },
+    get CSSFunctionDescriptors() {
+      return descriptorRules().functionInterfaces().CSSFunctionDescriptors;
+    },
+    CSSPositionTryRule: ruleInterfaces.CSSPositionTryRule,
+    get CSSPositionTryDescriptors() {
+      return views().CSSPositionTryDescriptors;
+    },
+    CSSPropertyRule: ruleInterfaces.CSSPropertyRule,
     CSSNamespaceRule: ruleInterfaces.CSSNamespaceRule,
     CSSCounterStyleRule: ruleInterfaces.CSSCounterStyleRule,
     CSSKeyframesRule: ruleInterfaces.CSSKeyframesRule,
     CSSKeyframeRule: ruleInterfaces.CSSKeyframeRule,
+    get CSSMarginDescriptors() {
+      return descriptorRules().pageInterfaces().CSSMarginDescriptors;
+    },
+    get CSSPageDescriptors() {
+      return descriptorRules().pageInterfaces().CSSPageDescriptors;
+    },
+    CSSMarginRule: ruleInterfaces.CSSMarginRule,
     CSSPageRule: ruleInterfaces.CSSPageRule,
     CSSLayerStatementRule: ruleInterfaces.CSSLayerStatementRule,
+    CSSStartingStyleRule: ruleInterfaces.CSSStartingStyleRule,
     CSSLayerBlockRule: ruleInterfaces.CSSLayerBlockRule,
     get CSSStyleDeclaration() {
       return views().CSSStyleDeclaration;
@@ -7944,9 +10776,39 @@ export function createStyles(input: {
     setAdopted,
     applySheet,
     applyInline,
+    captureInlineBase: inlineStyle,
     exposeSheet,
     inlineStyle: publicInlineStyle,
     computedStyle,
+    computedPseudoTarget,
+    pseudoStyle(node: Raw.Element, root: Raw.ParentNode, pseudo: string) {
+      return computeStyle(node, root, collect(root), undefined, undefined, pseudo);
+    },
+    liveView(
+      node: Raw.Element,
+      read: () => PublicDeclaration | undefined,
+      pseudo: string | null | undefined,
+      eligible: () => boolean,
+    ) {
+      if (pseudo !== undefined)
+        return views().liveView(
+          () => (eligible() ? read() : undefined),
+          () => pseudo !== null && input.isConnected(node) && eligible(),
+        );
+      let frame: ComputedFrame | undefined;
+      let snapshot: PublicDeclaration | undefined;
+      return views().liveView(
+        () => {
+          if (!eligible()) return;
+          if (snapshot && completedFrame(frame, node, input.styleRevision(input.document)))
+            return snapshot;
+          snapshot = read();
+          frame = snapshot ? computedFrames.get(node)?.target : undefined;
+          return snapshot;
+        },
+        () => input.isConnected(node) && eligible(),
+      );
+    },
     focusDisplayCheck,
     removeLinkedSheet(node: Raw.Element): void {
       if (sheets.delete(node)) linkedSheetChanged();

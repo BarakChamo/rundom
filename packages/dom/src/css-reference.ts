@@ -1,0 +1,858 @@
+// Loads the pinned upstream CSS grammar on demand for declarations outside cssstyle's coverage.
+import { createRequire } from "node:module";
+
+import { directExpansion, directShorthand, directSpecifiedValue } from "./css-direct-values.js";
+import { canonicalDirectSelector } from "./selector-parser.js";
+
+const require = createRequire(import.meta.url);
+type Property = { initial?: string | null; inherited?: boolean };
+let properties: Record<string, Property> | undefined;
+let context: object | undefined;
+
+export function longhandDefinition(name: string): Property | undefined {
+  const definitions = (properties ??=
+    require("rundom-css-reference/lib/generated/css-property-definitions.js") as Record<
+      string,
+      Property
+    >);
+  return Object.hasOwn(definitions, name) ? definitions[name] : undefined;
+}
+
+type DeclarationParser = {
+  createContext(owner: object): object;
+  parseDestructuredDeclaration(
+    name: string,
+    value: string,
+    important: boolean,
+    context: object,
+  ): unknown;
+  isFailure(result: unknown): boolean;
+  serializeDeclarationValue(declaration: unknown): string;
+};
+let parser: DeclarationParser | undefined;
+
+// Resolved once: a module lookup on every inline write costs more than the parse cache hit.
+function declarationParser(): DeclarationParser {
+  return (parser ??= {
+    ...(require("rundom-css-reference/lib/jsdom/living/css/parse/context.js") as Pick<
+      DeclarationParser,
+      "createContext"
+    >),
+    ...(require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js") as Pick<
+      DeclarationParser,
+      "parseDestructuredDeclaration"
+    >),
+    ...(require("rundom-css-reference/lib/jsdom/living/css/values/value.js") as Pick<
+      DeclarationParser,
+      "isFailure"
+    >),
+    ...(require("rundom-css-reference/lib/jsdom/living/css/serialize.js") as Pick<
+      DeclarationParser,
+      "serializeDeclarationValue"
+    >),
+  });
+}
+
+/** Returns the specified serialization of a valid CSS declaration in an ordinary style rule. */
+function parseDeclaration(name: string, value: string, important = false): unknown {
+  if (!name.startsWith("--") && !longhandDefinition(name)) return;
+  const { createContext, parseDestructuredDeclaration, isFailure } = declarationParser();
+  context ??= createContext({ _globalObject: globalThis });
+  const result = parseDestructuredDeclaration(name, value, important, context);
+  if (!isFailure(result)) return result;
+}
+
+// The same bound as cssstyle's parse LRU: a two-property animation cycle fits.
+const maximumSpecifiedEntries = 4096;
+const maximumSpecifiedValueLength = 256;
+const specifiedValues = new Map<string, string | undefined>();
+
+/**
+ * Returns the specified serialization of `value` for `name`, or undefined when it is invalid.
+ * The parse context is process-global, so the result depends only on its inputs; values that
+ * draw random numbers are never remembered.
+ */
+export function specifiedDeclaration(name: string, value: string): string | undefined {
+  const direct = directSpecifiedValue(name, value);
+  if (direct !== undefined) return direct;
+  return referenceSpecifiedDeclaration(name, value);
+}
+
+/** The pinned grammar's specified serialization; specifiedDeclaration without the direct values. */
+export function referenceSpecifiedDeclaration(name: string, value: string): string | undefined {
+  const cacheable = value.length <= maximumSpecifiedValueLength && !/random/i.test(value);
+  const key = `${name.length}:${name}${value}`;
+  if (cacheable && specifiedValues.has(key)) return specifiedValues.get(key);
+  const parsed = parseDeclaration(name, value);
+  const serialized = parsed ? declarationParser().serializeDeclarationValue(parsed) : undefined;
+  if (!cacheable) return serialized;
+  // Oldest entries leave first; repeated animation and React style values stay resident.
+  if (specifiedValues.size >= maximumSpecifiedEntries)
+    for (const oldest of specifiedValues.keys()) {
+      specifiedValues.delete(oldest);
+      break;
+    }
+  specifiedValues.set(key, serialized);
+  return serialized;
+}
+
+function detachedDeclaration(declarations: readonly unknown[]) {
+  const {
+    implementation: Declaration,
+  }: {
+    implementation: new (
+      global: object,
+      args: never[],
+      options: object,
+    ) => {
+      cssText: string;
+      _inlineParseContext: object;
+      setProperty(name: string, value: string, priority: string): void;
+      removeProperty(name: string): string;
+      getPropertyValue(property: string): string;
+    };
+  } = require("rundom-css-reference/lib/jsdom/living/css/CSSStyleDeclaration-impl.js");
+  return new Declaration(globalThis, [], { baseURL: "about:blank", declarations });
+}
+
+/** Preserves CSSOM ordering when physical and logical declarations overlap. */
+export function orderedDeclaration(text: string) {
+  const { declarations, context } = parseBlock(text);
+  const block = detachedDeclaration(declarations);
+  block._inlineParseContext = context;
+  return block;
+}
+
+function parseBlock(text: string) {
+  const {
+    parseDeclarations,
+  }: {
+    parseDeclarations(text: string, context: object): { name: string; important: boolean }[];
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    createContext,
+  }: {
+    createContext(owner: object): object;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/context.js");
+  context ??= createContext({ _globalObject: globalThis });
+  return { declarations: parseDeclarations(text, context), context };
+}
+/** Serializes CSS blocks containing overlapping shorthands or pending substitutions. */
+export type ShorthandSource = {
+  shorthand: string;
+  text: string;
+  declaration: object;
+  pending: boolean;
+};
+export function serializeDeclarationBlock(
+  text: string,
+  pending?: ReadonlyMap<string, ShorthandSource>,
+): string {
+  const { declarations } = parseBlock(text);
+  return detachedDeclaration(
+    pending?.size
+      ? declarations.map((declaration) => {
+          const source = pending.get(declaration.name);
+          return source?.declaration ?? declaration;
+        })
+      : declarations,
+  ).cssText;
+}
+
+/** Expands a shorthand and serializes it from all of its longhands in declaration order. */
+export function expandedDeclaration(
+  name: string,
+  value: string,
+  important = false,
+):
+  | {
+      text: string;
+      entries: [string, string][];
+      background?: { position: string; repeat: string };
+      declarations: { name: string; pending?: unknown }[];
+    }
+  | undefined {
+  const direct = directExpansion(name, value);
+  if (direct) return { ...direct, declarations: direct.entries.map(([name]) => ({ name })) };
+  return referenceExpandedDeclaration(name, value, important);
+}
+
+/** The pinned grammar's shorthand expansion; expandedDeclaration without the direct values. */
+export function referenceExpandedDeclaration(
+  name: string,
+  value: string,
+  important = false,
+):
+  | {
+      text: string;
+      entries: [string, string][];
+      background?: { position: string; repeat: string };
+      declarations: { name: string; pending?: unknown }[];
+    }
+  | undefined {
+  const parsed = parseDeclaration(name, value, important);
+  if (!parsed) return;
+  const expand: (declaration: unknown) => {
+    name: string;
+    pending?: unknown;
+  }[] = require("rundom-css-reference/lib/jsdom/living/css/parse/shorthand.js");
+  const declarations = expand(parsed);
+  const style = detachedDeclaration(declarations);
+  return {
+    declarations,
+    text: style.getPropertyValue(name),
+    entries: declarations.map(({ name }) => [name, style.getPropertyValue(name)]),
+    ...(name === "background" && {
+      background: {
+        position: style.getPropertyValue("background-position"),
+        repeat: style.getPropertyValue("background-repeat"),
+      },
+    }),
+  };
+}
+
+export type RegisteredProperty = {
+  name: string;
+  syntax: string;
+  inherits: boolean;
+  initialValue?: string;
+};
+
+/** Validates the registration grammar and the independence of its initial value. */
+export function registeredProperty(
+  value: unknown,
+  existing: ReadonlyMap<string, RegisteredProperty> | undefined,
+  Exception: typeof globalThis.DOMException,
+): RegisteredProperty {
+  const {
+    convert,
+  }: {
+    convert(globals: object, input: unknown): RegisteredProperty;
+  } = require("rundom-css-reference/lib/generated/idl/PropertyDefinition.js");
+  const definition = convert(globalThis, value);
+  const { name, syntax, initialValue } = definition;
+  if (!name.startsWith("--") || name.length === 2)
+    throw new Exception("Invalid custom property name", "SyntaxError");
+  if (existing?.has(name))
+    throw new Exception("Custom property is already registered", "InvalidModificationError");
+  const {
+    createVirtualContext,
+  }: {
+    createVirtualContext(global: object, rule: string): object;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/context.js");
+  const ctx = createVirtualContext(globalThis, "@property");
+  const {
+    parseDeclarationValue,
+    parseGrammar,
+  }: {
+    parseDeclarationValue(value: string, descriptor: string, context: object): unknown;
+    parseGrammar(value: string, grammar: unknown, context: object): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    serializeStringFromPrimitive,
+    serializeComponentValue,
+  }: {
+    serializeStringFromPrimitive(value: string): string;
+    serializeComponentValue(value: unknown): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const {
+    isFailure,
+    isComputationallyIndependent,
+  }: {
+    isFailure(value: unknown): boolean;
+    isComputationallyIndependent(value: unknown): boolean;
+  } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+  const {
+    compileRegistrationSyntax,
+    isValidUniversalInitialValue,
+  }: {
+    compileRegistrationSyntax(value: unknown): unknown;
+    isValidUniversalInitialValue(value: unknown): boolean;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/registration.js");
+  const descriptor = parseDeclarationValue(serializeStringFromPrimitive(syntax), "syntax", ctx);
+  if (isFailure(descriptor)) throw new Exception("Invalid syntax descriptor", "SyntaxError");
+  if (initialValue === undefined) return definition;
+  const universal = serializeComponentValue(descriptor) === "*";
+  const initial = universal
+    ? parseDeclarationValue(initialValue, "initial-value", ctx)
+    : parseGrammar(initialValue, compileRegistrationSyntax(descriptor), ctx);
+  if (
+    isFailure(initial) ||
+    !(universal ? isValidUniversalInitialValue(initial) : isComputationallyIndependent(initial))
+  )
+    throw new Exception("Invalid initial value", "SyntaxError");
+  return { ...definition, initialValue: serializeComponentValue(initial) };
+}
+
+/** Preserves valid general-enclosed syntax when the media evaluator cannot match a feature. */
+export function specifiedMediaQuery(value: string): string {
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    isFailure,
+  }: {
+    isFailure(value: unknown): boolean;
+  } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue(value: unknown): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const result = parseGrammar(value, "<media-query-list>");
+  return isFailure(result) ? "not all" : serializeComponentValue(result);
+}
+
+/** Reads an import URL with request modifiers, preserving its canonical CSS spelling. */
+export function importResource(
+  source: string,
+): { href: string; cssText: string; end: number } | undefined {
+  const {
+    value,
+  }: {
+    value: { rules: { name: string; prelude?: string }[] };
+  } = require("rundom-css-reference/lib/jsdom/living/css/rules/definitions.js");
+  const grammar = value.rules.find((rule) => rule.name === "@import")?.prelude;
+  if (!grammar) throw new Error("Missing CSS import grammar");
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const prelude = parseGrammar(source, grammar);
+  if (!Array.isArray(prelude)) return;
+  const resource = prelude[0];
+  if (!Array.isArray(resource?.value) || typeof resource.value[0]?.value !== "string") return;
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue(node: unknown): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  return {
+    href: resource.value[0].value,
+    cssText: serializeComponentValue(resource),
+    end: resource.end,
+  };
+}
+
+interface ConditionSyntax {
+  name: string;
+  query: string;
+}
+export function parseContainerConditions(
+  text: string,
+): { text: string; conditions: readonly ConditionSyntax[] } | undefined {
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const ast = parseGrammar(text, "<container-condition>#");
+  if (!Array.isArray(ast)) return;
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue(node: unknown): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const conditions = ast.map(([name, query]) =>
+    Object.freeze({ name: serializeComponentValue(name), query: serializeComponentValue(query) }),
+  );
+  return { text: serializeComponentValue(ast), conditions: Object.freeze(conditions) };
+}
+
+/**
+ * Returns the reference serialization of a selector list, or undefined when it is invalid.
+ * Lists in the direct grammar are serialized without loading the reference engine.
+ */
+export function canonicalSelectorList(
+  text: string,
+  namespaces?: ReadonlyMap<string, string>,
+): string | undefined {
+  return (
+    (namespaces?.size ? undefined : canonicalDirectSelector(text)) ??
+    referenceSelectorList(text, namespaces)
+  );
+}
+
+const canonicalSelectors = new Map<string, string | null>();
+/** Serializes a selector list through the pinned reference grammar. */
+export function referenceSelectorList(
+  text: string,
+  namespaces?: ReadonlyMap<string, string>,
+): string | undefined {
+  const shared = !namespaces?.size && text.length <= 1024;
+  const cached = shared ? canonicalSelectors.get(text) : undefined;
+  if (cached !== undefined) return cached ?? undefined;
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string, context: object): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    createVirtualContext,
+  }: {
+    createVirtualContext(global: object, name: string): { namespaces: Map<string, string> };
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/context.js");
+  const context = createVirtualContext(globalThis, "@style");
+  if (namespaces) for (const [prefix, uri] of namespaces) context.namespaces.set(prefix, uri);
+  const parsed = parseGrammar(text, "<selector-list>", context);
+  const {
+    serializeNativeSelector,
+  }: {
+    serializeNativeSelector(value: unknown, context: object): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/utils/serialize-selectors.js");
+  const result = Array.isArray(parsed)
+    ? serializeNativeSelector(parsed, { selectorNamespaces: context.namespaces })
+    : undefined;
+  if (shared) {
+    if (canonicalSelectors.size >= 256) canonicalSelectors.clear();
+    canonicalSelectors.set(text, result ?? null);
+  }
+  return result;
+}
+
+/** Evaluates selector feature support, including discarded branches in forgiving lists. */
+export function selectorFeatureSupported(selector: string): boolean {
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string, global: object): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    isFailure,
+  }: {
+    isFailure(value: unknown): boolean;
+  } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+  const evaluate: (
+    condition: unknown,
+    global: object,
+  ) => boolean = require("rundom-css-reference/lib/jsdom/living/css/match/support.js");
+  const condition = parseGrammar(`(selector(${selector}))`, "<supports-condition>", globalThis);
+  return !isFailure(condition) && evaluate(condition, globalThis);
+}
+
+export function validPseudoSelectorList(
+  text: string,
+  namespaces?: ReadonlyMap<string, string>,
+): boolean {
+  return canonicalSelectorList(text, namespaces) !== undefined;
+}
+
+// Width and height ranges in px, as responsive CSS-in-JS writes them, serialize and match without
+// the reference engine; css-media-direct.test.ts compares every admitted shape with the grammar.
+const directFeatureSource = String.raw`\(\s*(min-|max-)?(width|height)\s*:\s*(\d{1,6}(?:\.\d{1,4})?)px\s*\)`;
+const directMedia = new RegExp(
+  String.raw`^\s*(?:(only\s+screen|screen|all)\s+and\s+)?(${directFeatureSource}(?:\s+and\s+${directFeatureSource})*)\s*$`,
+);
+const directFeature = new RegExp(directFeatureSource, "g");
+
+/** Parses a lowercase query of px width/height ranges for the default 1024x768 device, or returns undefined. */
+export function directMediaQuery(text: string): { media: string; matches: boolean } | undefined {
+  const query = directMedia.exec(text);
+  if (!query) return;
+  const type = query[1]?.replace(/\s+/, " ");
+  let matches = true;
+  const features: string[] = [];
+  for (const [, range = "", axis, number] of query[2]!.matchAll(directFeature)) {
+    const value = Number(number);
+    const size = axis === "width" ? 1024 : 768;
+    features.push(`(${range}${axis}: ${value}px)`);
+    matches &&=
+      range === "min-" ? size >= value : range === "max-" ? size <= value : size === value;
+  }
+  return {
+    media: (type && type !== "all" ? `${type} and ` : "") + features.join(" and "),
+    matches,
+  };
+}
+
+/** Parses one query and precomputes its result for the default headless device. */
+export function defaultMediaQuery(text: string): { media: string; matches?: boolean } {
+  return directMediaQuery(text) ?? referenceMediaQuery(text);
+}
+
+/** The pinned grammar's parse, serialization and default-device match of one media query. */
+export function referenceMediaQuery(text: string): { media: string; matches?: boolean } {
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(text: string, grammar: string): object[];
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue(ast: object): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const ast = parseGrammar(text, "<media-query-list>");
+  const media = serializeComponentValue(ast);
+  // Page color scheme and scripting depend on the owning document.
+  if (/prefers-color-scheme|scripting/i.test(media)) return { media };
+  const match: (
+    ast: object,
+  ) => boolean = require("rundom-css-reference/lib/jsdom/living/css/match/media.js");
+  return { media, matches: match(ast) };
+}
+
+/** Position-area resolves axes without element or layout inputs. */
+export function computedPositionArea(value: string): string {
+  const specified = parseDeclaration("position-area", value) as { value: unknown } | undefined;
+  if (!specified) return value;
+  const {
+    getComputedValue,
+  }: {
+    getComputedValue(name: string, element: undefined, value: unknown): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/resolve.js");
+  const {
+    serializeDeclarationValue,
+  }: {
+    serializeDeclarationValue(declaration: object): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  return serializeDeclarationValue({
+    name: "position-area",
+    computed: true,
+    value: getComputedValue("position-area", undefined, specified.value),
+  });
+}
+
+/** The grammar supplies the component list for overlapping CSS shorthands. */
+export function grammarLonghands(name: string): readonly string[] | undefined {
+  if (
+    name !== "all" &&
+    name !== "font" &&
+    !/^(?:(?:(?:row|column)-)?rule|grid|corner|animation|font-variant|white-space|text-wrap|text-spacing|font-synthesis|size|border-(?:block|inline)(?:-(?:start|end))?|scroll-timeline|view-timeline|text-align|border-radius|border-image|contain-intrinsic-size|flex|text-emphasis|text-decoration-inset|container|flex-flow|caret|margin-block|margin-inline|padding-block|padding-inline|vertical-align|transition|gap|grid-gap|inset|scroll-padding|scroll-margin|place|list-style|text-box|overflow-clip-margin|mask|columns|column-rule|position-try|offset)(?:-|$)/.test(
+      name,
+    )
+  )
+    return;
+  const shorthands: ReadonlyMap<
+    string,
+    readonly [readonly string[]]
+  > = require("rundom-css-reference/lib/jsdom/living/css/properties/shorthands.js");
+  const groups = shorthands.get(name);
+  return groups && (groups.length === 1 ? groups[0] : groups.flat());
+}
+
+export function serializeShorthand(
+  name: string,
+  children: readonly string[],
+  read: (name: string) => string,
+  priority: (name: string) => string,
+  computed = false,
+): string {
+  const importance = priority(children[0]!);
+  const texts = new Map<string, string>();
+  for (const child of children) {
+    const text = read(child);
+    if (!text || priority(child) !== importance) return "";
+    texts.set(child, text);
+  }
+  return (
+    directShorthand(name, (child) => texts.get(child) ?? "") ??
+    referenceShorthand(name, texts, computed)
+  );
+}
+
+/** The pinned grammar's shorthand serialization from longhand texts. */
+export function referenceShorthand(
+  name: string,
+  texts: ReadonlyMap<string, string>,
+  computed = false,
+): string {
+  const declarations = [];
+  for (const [child, text] of texts) {
+    const parsed = parseDeclaration(child, text);
+    if (!parsed) return "";
+    declarations.push(parsed);
+  }
+  const {
+    serializeDeclarationValue,
+  }: {
+    serializeDeclarationValue(declaration: object): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  return serializeDeclarationValue({ name, computed, shorthand: true, value: declarations });
+}
+
+/** Keeps the nested, ordered OpenType feature maps local to their CSS rule. */
+export function fontFeatureValues(
+  text: string,
+): { cssText: string; fontFamily: string } | undefined {
+  const {
+    parseStyleSheetSyntax,
+  }: {
+    parseStyleSheetSyntax(text: string): { name: string }[];
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const rules = parseStyleSheetSyntax(text);
+  if (rules.length !== 1 || rules[0]?.name !== "font-feature-values") return;
+  const {
+    implementation: FontFeatures,
+  }: {
+    implementation: new (
+      global: object,
+      args: never[],
+      syntax: object,
+    ) => { cssText: string; fontFamily: string };
+  } = require("rundom-css-reference/lib/jsdom/living/css/CSSFontFeatureValuesRule-impl.js");
+  return new FontFeatures(globalThis, [], rules[0]);
+}
+
+export type PositionTryStyle = {
+  readonly length: number;
+  cssText: string;
+  item(index: number): string;
+  setProperty(name: string, value: string, priority?: string): void;
+  getPropertyValue(name: string): string;
+  getPropertyPriority(name: string): string;
+  removeProperty(name: string): string;
+};
+export type PositionTry = {
+  readonly name: string;
+  readonly cssText: string;
+  readonly style: PositionTryStyle;
+};
+
+export type FontFaceData = {
+  cssText: string;
+  style: PositionTryStyle & { readonly parentRule: object | null };
+};
+export type BoundRule<T> = { data: T; bind(owner: object): void };
+
+function bindRule<T>(impl: object): BoundRule<T> {
+  const utils: {
+    wrapperForImpl(impl: object): T;
+    wrapperSymbol: symbol;
+  } = require("rundom-css-reference/lib/generated/idl/utils.js");
+  return {
+    data: utils.wrapperForImpl(impl),
+    bind(owner) {
+      Reflect.set(impl, utils.wrapperSymbol, owner);
+    },
+  };
+}
+
+/** Redirects generated CSSOM parent references to their public RunDOM wrapper. */
+export function bindCSSWrapper(wrapper: object, owner: object): void {
+  const utils: {
+    implForWrapper(wrapper: object): object;
+    wrapperSymbol: symbol;
+  } = require("rundom-css-reference/lib/generated/idl/utils.js");
+  Reflect.set(utils.implForWrapper(wrapper), utils.wrapperSymbol, owner);
+}
+
+export type PropertyDescriptors = {
+  readonly names: readonly string[];
+  readonly syntax: string;
+  readonly inherits: boolean;
+  readonly initialValue: string | null;
+};
+
+export type FunctionRuleData<List> = {
+  readonly name: string;
+  readonly cssText: string;
+  readonly cssRules: List;
+  readonly returnType: string;
+  getParameters(): { name: string; type: string; defaultValue?: string }[];
+  insertRule(rule: string, index?: number): number;
+  deleteRule(index: number): void;
+};
+
+/** Binds the descriptor grammar to the owning stylesheet's URL and invalidation callbacks. */
+export function createDescriptorRuleParser(
+  baseURL: () => string,
+  changed: () => void,
+  declarationPrototype: () => object,
+  exposeInterface: <T extends Function>(name: string, real: T) => T,
+) {
+  // Interface reads must not initialize the grammar, so the parser loads with the first rule.
+  function parseRule(text: string, global: object) {
+    const parser: {
+      parseRule(
+        text: string,
+        global: object,
+      ):
+        | PositionTry
+        | PropertyDescriptors
+        | { cssText: string; fontFamily: string }
+        | { message: string };
+    } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+    return parser.parseRule(text, global);
+  }
+  const globals = {
+    Object,
+    Array,
+    TypeError,
+    Error,
+    Number,
+    String,
+    DOMException,
+    _document: { baseURLSerialized: baseURL, _clearStyleSheetCache: changed },
+  };
+  for (const name of [
+    "CSSRule",
+    "CSSPositionTryRule",
+    "CSSFontFeatureValuesRule",
+    "CSSStyleDeclaration",
+    "CSSPositionTryDescriptors",
+  ]) {
+    const idl: { install(global: object, names: string[]): void } = require(
+      "rundom-css-reference/lib/generated/idl/" + name + ".js",
+    );
+    idl.install(globals, ["Window"]);
+  }
+  function pageInterfaces() {
+    if (!Object.hasOwn(globals, "CSSPageDescriptors")) {
+      for (const name of [
+        "CSSGroupingRule",
+        "CSSRuleList",
+        "CSSMarginRule",
+        "CSSMarginDescriptors",
+        "CSSPageDescriptors",
+      ]) {
+        if (Object.hasOwn(globals, name)) continue;
+        const idl: { install(global: object, names: string[]): void } = require(
+          "rundom-css-reference/lib/generated/idl/" + name + ".js",
+        );
+        idl.install(globals, ["Window"]);
+      }
+      Object.setPrototypeOf(
+        Reflect.get(globals, "CSSStyleDeclaration").prototype,
+        declarationPrototype(),
+      );
+      exposeInterface("CSSMarginDescriptors", Reflect.get(globals, "CSSMarginDescriptors"));
+      exposeInterface("CSSPageDescriptors", Reflect.get(globals, "CSSPageDescriptors"));
+    }
+    return {
+      CSSPageDescriptors: Reflect.get(globals, "CSSPageDescriptors"),
+      CSSMarginDescriptors: Reflect.get(globals, "CSSMarginDescriptors"),
+    };
+  }
+  return {
+    pageInterfaces,
+    descriptor<T extends object>(
+      binding: "CSSCounterStyleRule" | "CSSViewTransitionRule" | "CSSPageRule",
+      text: string,
+    ): BoundRule<T> | undefined {
+      if (binding === "CSSPageRule") pageInterfaces();
+      if (!Object.hasOwn(globals, binding)) {
+        const idl: { install(global: object, names: string[]): void } = require(
+          "rundom-css-reference/lib/generated/idl/" + binding + ".js",
+        );
+        idl.install(globals, ["Window"]);
+      }
+      const impl = parseRule(text, globals);
+      return "message" in impl ? undefined : bindRule<T>(impl);
+    },
+    fontFaceDescriptors() {
+      if (!Object.hasOwn(globals, "CSSFontFaceRule")) {
+        for (const name of ["CSSFontFaceDescriptors", "CSSFontFaceRule"]) {
+          const idl: { install(global: object, names: string[]): void } = require(
+            "rundom-css-reference/lib/generated/idl/" + name + ".js",
+          );
+          idl.install(globals, ["Window"]);
+        }
+        exposeInterface("CSSFontFaceDescriptors", Reflect.get(globals, "CSSFontFaceDescriptors"));
+      }
+      return (globals as typeof globals & { CSSFontFaceDescriptors: Function })
+        .CSSFontFaceDescriptors;
+    },
+    fontFace(text: string) {
+      this.fontFaceDescriptors();
+      const impl = parseRule(text, globals);
+      if (!("style" in impl)) return;
+      return bindRule<FontFaceData>(impl);
+    },
+    functionInterfaces() {
+      if (!Object.hasOwn(globals, "CSSFunctionRule")) {
+        for (const name of [
+          "CSSRuleList",
+          "CSSGroupingRule",
+          "CSSConditionRule",
+          "CSSSupportsRule",
+          "CSSMediaRule",
+          "CSSContainerRule",
+          "CSSFunctionRule",
+          "CSSFunctionDeclarations",
+          "CSSFunctionDescriptors",
+        ]) {
+          const idl: { install(global: object, names: string[]): void } = require(
+            "rundom-css-reference/lib/generated/idl/" + name + ".js",
+          );
+          idl.install(globals, ["Window"]);
+        }
+        exposeInterface("CSSFunctionDeclarations", Reflect.get(globals, "CSSFunctionDeclarations"));
+        exposeInterface("CSSFunctionDescriptors", Reflect.get(globals, "CSSFunctionDescriptors"));
+      }
+      return globals as typeof globals & {
+        CSSFunctionDescriptors: Function;
+        CSSFunctionDeclarations: Function;
+      };
+    },
+    functionRule<List>(text: string) {
+      this.functionInterfaces();
+      const impl = parseRule(text, globals);
+      if (!("getParameters" in impl)) return;
+      return bindRule<FunctionRuleData<List>>(impl);
+    },
+    property(text: string) {
+      if (!Object.hasOwn(globals, "CSSPropertyRule")) {
+        const idl: {
+          install(global: object, names: string[]): void;
+        } = require("rundom-css-reference/lib/generated/idl/CSSPropertyRule.js");
+        idl.install(globals, ["Window"]);
+      }
+      const rule = parseRule(text, globals);
+      if ("initialValue" in rule) return rule;
+    },
+    position(text: string) {
+      const rule = parseRule(text, globals);
+      if (!("style" in rule)) return;
+      const {
+        wrapperForImpl,
+      }: {
+        wrapperForImpl(implementation: object): PositionTry;
+      } = require("rundom-css-reference/lib/generated/idl/utils.js");
+      return wrapperForImpl(rule);
+    },
+    font(text: string) {
+      const rule = parseRule(text, globals);
+      return "fontFamily" in rule ? rule : undefined;
+    },
+  };
+}
+
+/** Returns the canonical selector for a supported computed-style pseudo target. */
+export function computedPseudoTarget(text: string): string | null {
+  const {
+    parsePseudoElementSelectors,
+  }: {
+    parsePseudoElementSelectors(input: string, global: object): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue(value: unknown): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const {
+    elements,
+  }: {
+    elements: Record<string, unknown>;
+  } = require("rundom-css-reference/lib/jsdom/living/css/values/pseudos.js");
+  const selectors = parsePseudoElementSelectors(text, globalThis);
+  if (!Array.isArray(selectors)) return null;
+  let result = "";
+  for (const token of selectors) {
+    const name = token.name ?? token.value;
+    const argument = token.name ? token.value : null;
+    if (
+      name === "part" ||
+      name === "slotted" ||
+      (argument?.types.includes("<pt-name-and-class-selector>") &&
+        !argument[0].types.includes("<custom-ident>")) ||
+      !Object.hasOwn(elements, token.name ? name + "()" : name)
+    )
+      return null;
+    result += serializeComponentValue(token);
+  }
+  return result || null;
+}

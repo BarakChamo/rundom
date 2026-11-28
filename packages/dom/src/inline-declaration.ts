@@ -94,11 +94,17 @@ export class InlineDeclaration<Node> implements DeclarationImplementation {
     return this.access.materialize(this.node);
   }
   get _length(): number {
-    return this.block()?.entries.length ?? this.materialize()._length;
+    const block = this.block();
+    if (block) return block.entries.length;
+    const style = this.materialize();
+    return style.publicNames?.()?.length ?? style._length;
   }
   item(index: number): string | undefined {
     const block = this.block();
-    return block ? block.entries[index]?.[0] : this.materialize()[index];
+    if (block) return block.entries[index]?.[0];
+    const style = this.materialize();
+    const names = style.publicNames?.();
+    return names ? names[index] : style[index];
   }
   get cssText(): string {
     return this.block()?.text ?? this.materialize().cssText;

@@ -5,12 +5,25 @@ import { elementLocalName } from "./xml.js";
 import { normalizeSelector, parseSelectorList } from "./selector-syntax.js";
 
 import { simpleSelectorList } from "./selectors.js";
+import { parseDirectSelector, type DirectComplex } from "./selector-parser.js";
 
 const require = createRequire(import.meta.url);
 type Hints = readonly (readonly string[])[];
 const plans = new Map<string, Hints | null>();
 const empty: readonly Raw.Element[] = [];
 const fold = (value: string) => value.toLowerCase();
+
+function directHints(list: readonly DirectComplex[]): Hints | undefined {
+  if (list.length > 32) return undefined;
+  const branches = list.map((branch) =>
+    (branch.compounds.at(-1) ?? []).flatMap((part) => {
+      if (part.kind === "id" || part.kind === "class") return [`${part.kind}:${fold(part.name)}`];
+      if (part.kind === "attr") return [`attr:${fold(part.name)}`];
+      return part.kind === "type" && part.name !== "*" ? [`tag:${fold(part.name)}`] : [];
+    }),
+  );
+  return branches.every((branch) => branch.length > 0) ? branches : undefined;
+}
 
 /** Supplies positive subject constraints only; absence requires ordinary tree traversal. */
 export function queryCandidateHints(selector: string): Hints | undefined {
@@ -30,37 +43,40 @@ export function queryCandidateHints(selector: string): Hints | undefined {
     const branches = simpleSelectorList(selector);
     if (branches)
       return branches.map((branch) => ["tag" in branch ? `tag:${fold(branch.tag)}` : "attr:role"]);
-    try {
-      const css: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
-      const ast = parseSelectorList(normalizeSelector(selector));
-      if (ast.type === "SelectorList" && ast.children.size <= 32) {
-        const branches: string[][] = [];
-        ast.children.forEach((branch) => {
-          const anchors: string[] = [];
-          if (branch.type === "Selector")
-            branch.children.forEach((part) => {
-              if (part.type === "Combinator") anchors.length = 0;
-              else if (part.type === "IdSelector")
-                anchors.push(`id:${fold(css.ident.decode(part.name))}`);
-              else if (part.type === "ClassSelector")
-                anchors.push(`class:${fold(css.ident.decode(part.name))}`);
-              else if (part.type === "AttributeSelector") {
-                if (part.name.name.includes("\\")) return;
-                const local = part.name.name.split("|").at(-1);
-                if (local && local !== "*") anchors.push(`attr:${fold(css.ident.decode(local))}`);
-              } else if (part.type === "TypeSelector") {
-                if (part.name.includes("\\")) return;
-                const local = part.name.split("|").at(-1);
-                if (local && local !== "*") anchors.push(`tag:${fold(css.ident.decode(local))}`);
-              }
-            });
-          branches.push(anchors);
-        });
-        if (branches.length && branches.every((branch) => branch.length > 0)) hints = branches;
+    const direct = parseDirectSelector(selector);
+    if (direct) hints = directHints(direct.list);
+    else
+      try {
+        const css: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+        const ast = parseSelectorList(normalizeSelector(selector));
+        if (ast.type === "SelectorList" && ast.children.size <= 32) {
+          const branches: string[][] = [];
+          ast.children.forEach((branch) => {
+            const anchors: string[] = [];
+            if (branch.type === "Selector")
+              branch.children.forEach((part) => {
+                if (part.type === "Combinator") anchors.length = 0;
+                else if (part.type === "IdSelector")
+                  anchors.push(`id:${fold(css.ident.decode(part.name))}`);
+                else if (part.type === "ClassSelector")
+                  anchors.push(`class:${fold(css.ident.decode(part.name))}`);
+                else if (part.type === "AttributeSelector") {
+                  if (part.name.name.includes("\\")) return;
+                  const local = part.name.name.split("|").at(-1);
+                  if (local && local !== "*") anchors.push(`attr:${fold(css.ident.decode(local))}`);
+                } else if (part.type === "TypeSelector") {
+                  if (part.name.includes("\\")) return;
+                  const local = part.name.split("|").at(-1);
+                  if (local && local !== "*") anchors.push(`tag:${fold(css.ident.decode(local))}`);
+                }
+              });
+            branches.push(anchors);
+          });
+          if (branches.length && branches.every((branch) => branch.length > 0)) hints = branches;
+        }
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
       }
-    } catch (error) {
-      if (!(error instanceof SyntaxError)) throw error;
-    }
   }
   if (plans.size >= 256) plans.clear();
   plans.set(selector, hints ?? null);
@@ -143,6 +159,11 @@ let staticQueryCharacters = 0;
 const focusPseudos = new Set(["focus", "focus-visible", "focus-within"]);
 
 function dependsOnTree(selector: string, allowFocus: boolean): boolean {
+  const direct = parseDirectSelector(selector);
+  if (direct)
+    return [...direct.pseudos].every(
+      (name) => treePseudos.has(name) || (allowFocus && focusPseudos.has(name)),
+    );
   const css: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
   try {
     const ast = parseSelectorList(normalizeSelector(selector));

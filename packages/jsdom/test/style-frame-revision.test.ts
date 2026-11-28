@@ -76,7 +76,7 @@ describe("getComputedStyle repeated reads", () => {
       sheet.disabled = false;
       sheet.deleteRule(0);
       expect(window.getComputedStyle(node).color).not.toBe("rgb(0, 128, 0)");
-      expect(before.color).toBe("rgb(255, 0, 0)");
+      expect(before.color).toBe("rgb(0, 0, 0)");
     } finally {
       window.close();
     }
@@ -144,7 +144,7 @@ describe("getComputedStyle repeated reads", () => {
       sheet.textContent = "p{color:blue}";
       window.document.head?.append(sheet);
       expect(window.getComputedStyle(node).color).toBe("rgb(0, 0, 255)");
-      expect(before.color).not.toBe("rgb(0, 0, 255)");
+      expect(before.color).toBe("rgb(0, 0, 255)");
     } finally {
       window.close();
     }
@@ -174,7 +174,7 @@ describe("getComputedStyle repeated reads", () => {
       for (let i = 0; i < 8; i++) window.getComputedStyle(node);
       node.checked = true;
       expect(window.getComputedStyle(node).color).toBe("rgb(255, 0, 0)");
-      expect(before.color).not.toBe("rgb(255, 0, 0)");
+      expect(before.color).toBe("rgb(255, 0, 0)");
     } finally {
       window.close();
     }
@@ -191,6 +191,8 @@ describe("getComputedStyle repeated reads", () => {
         sheet = window.document.createElement("style");
       sheet.textContent = ":host{color:red}";
       root.append(sheet);
+      expect(window.getComputedStyle(node).length).toBe(0);
+      root.append(window.document.createElement("slot"));
       expect(window.getComputedStyle(node).color).toBe("rgb(255, 0, 0)");
     } finally {
       window.close();

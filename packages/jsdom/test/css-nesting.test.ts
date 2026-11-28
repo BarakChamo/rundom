@@ -195,7 +195,7 @@ describe("RunDOM nesting cascade", () => {
       if (!(inner instanceof w.CSSStyleRule)) throw new Error("Expected child rule");
       inner.selectorText = "& > em";
       expect(w.getComputedStyle(child).color).toBe("rgb(255, 0, 0)");
-      expect(old.color).toBe("rgb(0, 0, 255)");
+      expect(old.color).toBe("rgb(255, 0, 0)");
     } finally {
       w.close();
     }

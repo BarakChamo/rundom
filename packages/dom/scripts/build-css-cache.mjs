@@ -6,25 +6,52 @@ import { Script } from "node:vm";
 import { resolve, dirname } from "node:path";
 import { encodeCachedBundle } from "./encode-cached-bundle.mjs";
 
-const filename = resolve("dist/css-runtime-implementation.cjs");
-encodeCachedBundle(filename);
-const source = readFileSync(filename, "utf8");
-const script = new Script(Module.wrap(source), { filename });
-const module = { exports: {} };
-Reflect.apply(script.runInThisContext(), module.exports, [
-  module.exports,
-  createRequire(filename),
-  module,
-  filename,
-  dirname(filename),
-]);
+// Compiles one CommonJS artifact, runs `warm` against its exports, and writes digest-bound code-only data.
+// The module is registered as dist/<name>.cjs, so artifacts requiring each other share this instance.
+function cacheArtifact(name, warm) {
+  const filename = resolve(`dist/${name}-implementation.cjs`);
+  const loader = resolve(`dist/${name}.cjs`);
+  encodeCachedBundle(filename);
+  copyFileSync("src/css-runtime-loader.cjs", loader);
+  const source = readFileSync(filename, "utf8");
+  const script = new Script(Module.wrap(source), { filename });
+  const module = new Module(loader);
+  module.filename = loader;
+  module.loaded = true;
+  Module._cache[loader] = module;
+  Reflect.apply(script.runInThisContext(), module.exports, [
+    module.exports,
+    createRequire(filename),
+    module,
+    filename,
+    dirname(filename),
+  ]);
+  warm(module.exports);
+  writeFileSync(
+    `dist/${name}.cache`,
+    Buffer.concat([createHash("sha256").update(source).digest(), script.createCachedData()]),
+  );
+}
 // Compile initialization functions as well; the resulting cache contains code, never their mutable state.
-for (const name of ["cssTree", "cssSelect", "cssColor", "cssValueParser", "cssStyle"])
-  Reflect.get(module.exports, name);
-writeFileSync(
-  "dist/css-runtime.cache",
-  Buffer.concat([createHash("sha256").update(source).digest(), script.createCachedData()]),
-);
+cacheArtifact("css-runtime", (runtime) => {
+  for (const name of ["cssTree", "cssSelect", "cssColor", "cssValueParser", "cssStyle"])
+    Reflect.get(runtime, name);
+});
+// Module initialization runs once per process, so its compiled factories are worth caching.
+// Table artifacts come first, so the engine's requests into them resolve to these registered
+// instances. build-css-runtime.mjs passes each table artifact's module paths as a JSON argument.
+for (const [name, paths] of Object.entries(JSON.parse(process.argv[2] ?? "{}")))
+  cacheArtifact(name, (table) => {
+    for (const path of paths) table.load(path);
+  });
+cacheArtifact("css-reference", (reference) => {
+  for (const path of [
+    "lib/jsdom/living/css/CSSStyleDeclaration-impl.js",
+    "lib/jsdom/living/css/parse/parser.js",
+    "lib/jsdom/living/css/resolve.js",
+  ])
+    reference.load(path);
+});
 // Reflection needs the ordered accessor names without evaluating the CSS engine in each worker.
 const basePrototype = createRequire(import.meta.url)("cssstyle").CSSStyleDeclaration.prototype;
 const properties = Object.entries(Object.getOwnPropertyDescriptors(basePrototype))
@@ -33,5 +60,18 @@ const properties = Object.entries(Object.getOwnPropertyDescriptors(basePrototype
       name !== "cssText" && !name.startsWith("_") && descriptor.get && descriptor.set,
   )
   .map(([name]) => name);
+// New CSSOM IDL attributes can precede support in the cssstyle parser.
+const { JSDOM } = createRequire(import.meta.url)("rundom-css-reference");
+const { window } = new JSDOM();
+for (const [name, descriptor] of Object.entries(
+  Object.getOwnPropertyDescriptors(window.CSSStyleProperties.prototype),
+)) {
+  if (descriptor.get && descriptor.set && !properties.includes(name)) properties.push(name);
+}
+const positionDescriptors = Object.keys(window.CSSPositionTryDescriptors.prototype);
+writeFileSync(
+  "dist/css-position-descriptor-names.cjs",
+  `module.exports = ${JSON.stringify(positionDescriptors)};\n`,
+);
+window.close();
 writeFileSync("dist/css-property-names.cjs", `module.exports = ${JSON.stringify(properties)};\n`);
-copyFileSync("src/css-runtime-loader.cjs", "dist/css-runtime.cjs");

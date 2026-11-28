@@ -12,7 +12,7 @@ describe.each([
   it.each([
     ["border: 1px; border-top: 1px", "border: 1px;"],
     ["border-width: 1px", "border-width: 1px;"],
-    ["background: transparent", "background: transparent;"],
+    ["background: transparent", "background: none;"],
     [
       "border-top: 1px; border-right: 1px; border-bottom: 1px; border-left: 1px; border-image: none",
       "border: 1px;",

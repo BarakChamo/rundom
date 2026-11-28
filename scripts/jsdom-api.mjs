@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
 
-const revision = "058c0f55f369a70bcb113d660ae562b9066f2d44";
+const revision = "b76da26fd3b2786771b493f0bbec8dbd7a3d36d0";
 const checkout = new URL("../.cache/jsdom-reference/", import.meta.url);
 const referenceEntry = new URL("lib/api.js", checkout).href;
 const candidateCommonJS = new URL("../packages/jsdom/dist/jsdom.cjs", import.meta.url).href;

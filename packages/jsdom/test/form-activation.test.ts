@@ -809,7 +809,32 @@ it("closes the nearest dialog using the submitter's final method and value", () 
   }
 });
 
-it("uses rendered slot ancestry and reflected inert state when focusing", () => {
+it("distinguishes the core browser inert contract from the jsdom facade", async () => {
+  const { createWindow } = await import("@run-dom/dom");
+  const { window } = createWindow("<main><button>Save</button></main>");
+  const facade = new JSDOM("<iframe></iframe>").window;
+  try {
+    const main = window.document.querySelector("main");
+    const button = window.document.querySelector("button");
+    if (!(main instanceof window.HTMLElement) || !(button instanceof window.HTMLElement))
+      throw new Error("Expected an interactive subtree");
+    main.inert = true;
+    expect(main.matches("[inert]")).toBe(true);
+    button.focus();
+    expect(window.document.activeElement).not.toBe(button);
+    main.inert = false;
+    button.focus();
+    expect(window.document.activeElement).toBe(button);
+    expect("matchMedia" in facade).toBe(false);
+    expect(typeof window.matchMedia).toBe("function");
+    expect("inert" in facade.HTMLElement.prototype).toBe(false);
+  } finally {
+    window.close();
+    facade.close();
+  }
+});
+
+it("uses rendered slot ancestry and matches jsdom inert assignment when focusing", () => {
   const { window } = new JSDOM("<main><input></main><input hidden style='display: block'>");
   try {
     const host = window.document.querySelector("main");
@@ -830,10 +855,11 @@ it("uses rendered slot ancestry and reflected inert state when focusing", () => 
     expect(window.document.activeElement).toBe(shown);
 
     shadow.innerHTML = "<slot></slot>";
+    expect("inert" in window.HTMLElement.prototype).toBe(false);
     host.inert = true;
-    expect(host.hasAttribute("inert")).toBe(true);
+    expect(host.hasAttribute("inert")).toBe(false);
     slotted.focus();
-    expect(window.document.activeElement).toBe(shown);
+    expect(window.document.activeElement).toBe(slotted);
     host.inert = false;
     slotted.focus();
     expect(window.document.activeElement).toBe(slotted);

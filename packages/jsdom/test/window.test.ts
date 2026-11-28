@@ -405,8 +405,8 @@ it("cascades pending shorthand substitutions as individual longhands", () => {
     const target = window.document.querySelector("main");
     if (!target) throw new Error("Expected a styled target");
     const style = window.getComputedStyle(target);
-    expect(style.getPropertyValue("margin-top")).toBe("0");
-    expect(style.getPropertyValue("padding-left")).toBe("0");
+    expect(style.getPropertyValue("margin-top")).toBe("0px");
+    expect(style.getPropertyValue("padding-left")).toBe("0px");
     expect(style.getPropertyValue("border-width")).toBe("2px 2px 2px 8px");
     expect(style.getPropertyValue("border-top-color")).toBe("rgb(0, 0, 255)");
   } finally {
@@ -438,7 +438,7 @@ it("supports legacy virtual-console forwarding and error suppression", () => {
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM, Console: VirtualConsole },
-  { name: "jsdom 30.1.3", Constructor: reference, Console: ReferenceConsole },
+  { name: "jsdom 31.0.1", Constructor: reference, Console: ReferenceConsole },
 ])("$name public Window contracts", ({ Constructor, Console }) => {
   it("creates a fresh quirks-mode document for empty markup", () => {
     // Given two separately created empty windows
@@ -472,7 +472,7 @@ describe.each([
       const style = window.getComputedStyle(child);
       expect(style.getPropertyValue("opacity")).toBe("1");
       expect(style.getPropertyValue("background-image")).toBe("none");
-      expect(style.getPropertyValue("box-shadow")).toBe("none");
+      expect(style.getPropertyValue("box-shadow")).toBe("currentcolor none");
       expect(style.getPropertyValue("grid-row")).toBe("auto");
       expect(style.getPropertyValue("font-variant")).toBe("small-caps");
       expect(child.style.getPropertyValue("opacity")).toBe("");
@@ -507,7 +507,7 @@ describe.each([
         },
       ]) {
         expect(edit).toThrow(window.DOMException);
-        expect(edit).toThrow(/can not be modified/);
+        expect(edit).toThrow(/read-only style declaration/);
       }
       expect(style.getPropertyValue("visibility")).toBe("hidden");
       expect(style.getPropertyValue("background-color")).toBe("rgba(0, 0, 0, 0)");
@@ -535,7 +535,7 @@ describe.each([
       const light = window.getComputedStyle(child);
       expect(light.getPropertyValue("border-top-color")).toBe("rgb(255, 0, 0)");
       expect(light.color).toBe("rgb(255, 0, 0)");
-      expect(dark.color).toBe("rgb(0, 0, 255)");
+      expect(dark.color).toBe("rgb(255, 0, 0)");
     } finally {
       window.close();
     }
@@ -627,7 +627,7 @@ describe.each([
       expect(first.getPropertyValue("padding")).toBe("30px 20px");
       parent.style.setProperty("font-size", "20px");
       expect(window.getComputedStyle(child).getPropertyValue("padding")).toBe("60px 20px");
-      expect(first.getPropertyValue("padding")).toBe("30px 20px");
+      expect(first.getPropertyValue("padding")).toBe("60px 20px");
     } finally {
       window.close();
     }
@@ -657,7 +657,7 @@ describe.each([
     }
   });
 
-  it("inherits computed background position axes and repeats them across image layers", () => {
+  it("preserves the inherited background position list independently of image layers", () => {
     const { window } = new Constructor(
       '<main style="font-size: 20px; background-position: 1em 2em">' +
         '<p style="background-image: none, none; background-position-x: inherit; background-position-y: bottom"></p></main>',
@@ -666,8 +666,8 @@ describe.each([
       const target = window.document.querySelector("p");
       if (!target) throw new Error("Expected a styled paragraph");
       const style = window.getComputedStyle(target);
-      expect(style.getPropertyValue("background-position-x")).toBe("20px, 20px");
-      expect(style.getPropertyValue("background-position")).toBe("20px 100%, 20px 100%");
+      expect(style.getPropertyValue("background-position-x")).toBe("20px");
+      expect(style.getPropertyValue("background-position")).toBe("20px 100%");
     } finally {
       window.close();
     }
@@ -702,8 +702,7 @@ describe.each([
       const style = window.getComputedStyle(target);
       expect(style.getPropertyValue("background-position")).toBe("10px 20px, 30px 40px");
       expect(style.getPropertyValue("background")).toBe(
-        "none no-repeat scroll 10px 20px / cover padding-box border-box, " +
-          "rgb(255, 0, 0) none repeat-x scroll 30px 40px / contain padding-box border-box",
+        "10px 20px / cover no-repeat, 30px 40px / contain repeat-x rgb(255, 0, 0)",
       );
     } finally {
       window.close();
@@ -1203,7 +1202,8 @@ describe.each([
       expect(document.getElementById("original")).toBeNull();
       expect(document.getElementById("replacement")?.textContent).toBe("new");
       expect(document.body?.id).toBe("executed");
-      expect(document.readyState).toBe("complete");
+      expect(document.readyState).toBe("loading");
+      document.close();
     } finally {
       window.close();
     }
@@ -1492,7 +1492,7 @@ describe.each([
     );
   });
 
-  it("dispatches separate trusted document and window load events", async () => {
+  it("dispatches a trusted Window load event with the legacy Document target", async () => {
     // Given a new document and listeners at both ends of the document-to-window event path
     const { window } = new Constructor("<p>loaded</p>");
     const { document } = window;
@@ -1525,16 +1525,9 @@ describe.each([
         );
       });
 
-      // Then each listener receives its own at-target dispatch with the document as target
-      expect(Object.is(handlerTarget, document)).toBe(true);
+      // Document is the legacy event target. Only the Window listener receives the event.
+      expect(handlerTarget).toBeNull();
       expect(calls).toEqual([
-        {
-          documentTarget: true,
-          windowListener: false,
-          pathLength: 1,
-          trusted: true,
-          readyState: "complete",
-        },
         {
           documentTarget: true,
           windowListener: true,
@@ -2899,7 +2892,7 @@ describe("RunDOM package", () => {
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name source locations", ({ Constructor }) => {
   it("reports original offsets for parsed nodes after a document mutation", () => {
     // Given: a source-tracked document with implied structure.
@@ -2934,7 +2927,7 @@ describe.each([
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name document URL", ({ Constructor }) => {
   it("updates retained Location and document views together after reconfiguration", () => {
     // Given: a Window with a canonicalized URL and a retained Location.
@@ -3798,7 +3791,7 @@ it("installs global event handlers on their Web IDL interfaces", () => {
   }
 });
 
-it("resolves computed box shadow colors and normalizes shadow lists", () => {
+it("serializes computed box-shadow lists and their longhands", () => {
   // Given an inset shadow using currentColor and a second shadow with no explicit color.
   const { window } = new JSDOM(
     '<p style="color: red; box-shadow: inset 1px 2px currentColor, 0 2px"></p>',
@@ -3807,15 +3800,16 @@ it("resolves computed box shadow colors and normalizes shadow lists", () => {
     const paragraph = window.document.querySelector("p");
     if (!(paragraph instanceof window.HTMLElement)) throw new Error("Missing paragraph");
 
-    // When the computed style is read, both shadows use the element color and absolute offsets.
+    // CSSOM omits the default color, blur and spread when serializing the shorthand.
     expect(window.getComputedStyle(paragraph).getPropertyValue("box-shadow")).toBe(
-      "rgb(255, 0, 0) 1px 2px 0px 0px inset, rgb(255, 0, 0) 0px 2px 0px 0px",
+      "1px 2px inset, 0px 2px",
     );
 
-    // The authored declaration retains its original tokens.
-    expect(paragraph.style.getPropertyValue("box-shadow")).toBe(
-      "inset 1px 2px currentColor, 0 2px",
+    // Both color components preserve the currentcolor keyword.
+    expect(window.getComputedStyle(paragraph).getPropertyValue("box-shadow-color")).toBe(
+      "currentcolor, currentcolor",
     );
+    expect(paragraph.style.getPropertyValue("box-shadow")).toBe("1px 2px inset, 0px 2px");
   } finally {
     window.close();
   }
@@ -3938,7 +3932,7 @@ it("keeps repeated HTML documents and template contents independent", () => {
 
 describe.each([
   { name: "RunDOM", Constructor: JSDOM },
-  { name: "jsdom 30.1.3", Constructor: reference },
+  { name: "jsdom 31.0.1", Constructor: reference },
 ])("$name reflected token lists", ({ Constructor }) => {
   it("reflects link relationships and output control IDs through stable live lists", () => {
     // Given elements whose reflected attributes contain repeated tokens.

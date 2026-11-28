@@ -1,4 +1,7 @@
 // Evaluates CSS feature queries using the same syntax and selector parsers as stylesheets.
+import { acceptsAnchors, anchorComponents } from "./css-anchor.js";
+import { specifiedDeclaration } from "./css-reference.js";
+import { ownedString } from "./owned-string.js";
 import { createRequire } from "node:module";
 import { parseSizeDeclaration } from "./css-sizing.js";
 import { hasContextlessPercentage } from "./css-numeric.js";
@@ -22,7 +25,7 @@ function supportedDeclaration(property: string, value: CssNode | string): boolea
     parsed = typeof value === "string" ? parse(value, { context: "value" }) : value;
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
-    return false;
+    return typeof value === "string" && specifiedDeclaration(property, value) !== undefined;
   }
   if (property.startsWith("--")) return true;
   const propertyName = property.toLowerCase();
@@ -32,14 +35,16 @@ function supportedDeclaration(property: string, value: CssNode | string): boolea
     cssPropertyDefinitions: ReadonlyMap<string, { legacyAliasOf?: string }>;
   } = require("./css-runtime.cjs");
   const name = cssPropertyDefinitions.get(propertyName)?.legacyAliasOf ?? propertyName;
-  const text = generate(parsed);
+  const text = typeof value === "string" ? value : generate(parsed);
+  if (acceptsAnchors(name) && /\banchor(?:-size)?\(/i.test(text) && !/var\(/i.test(text))
+    return anchorComponents(name, text) !== undefined;
   if (name === "size") return parseSizeDeclaration(text) !== undefined;
   if (hasContextlessPercentage(name, text)) return false;
   // Use the same patched grammar as CSSStyleDeclaration without initializing its prototype.
   const { parsePropertyValue }: { parsePropertyValue: (name: string, value: string) => unknown } =
     require("./css-runtime.cjs").cssValueParser;
   const result = parsePropertyValue(name, text.toLowerCase() === "revert-rule" ? "initial" : text);
-  return result !== undefined && result !== "";
+  return (result !== undefined && result !== "") || specifiedDeclaration(name, text) !== undefined;
 }
 
 // Keep this aligned with the at-rules that the stylesheet reader exposes through CSSOM.
@@ -163,12 +168,19 @@ export function readSupportsCondition(
 }
 
 /** Creates the Window CSS namespace and shares its condition evaluator with CSS imports. */
-export function createCSSNamespace(selector: (source: string) => boolean) {
+export function createCSSNamespace(
+  selector: (source: string) => boolean,
+  register: (definition: unknown) => void,
+) {
   const namespace = {
+    registerProperty(definition: unknown): void {
+      if (!arguments.length) throw new TypeError("A property definition is required");
+      register(definition);
+    },
     supports(conditionOrProperty: string, value?: string): boolean {
       if (arguments.length === 0) throw new TypeError("A CSS condition or property is required");
-      const source = `${conditionOrProperty}`;
-      if (arguments.length > 1) return supportedDeclaration(source, `${value}`);
+      const source = ownedString(`${conditionOrProperty}`);
+      if (arguments.length > 1) return supportedDeclaration(source, ownedString(`${value}`));
       const condition = parseCondition(source) ?? parseCondition(`(${source})`);
       return condition !== undefined && evaluateCondition(condition, selector) === true;
     },

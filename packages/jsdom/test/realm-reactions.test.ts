@@ -545,7 +545,7 @@ describe.each([
   { name: "RunDOM", Constructor: JSDOM },
   { name: "jsdom", Constructor: Reference },
 ])("$name parser document topology", ({ Constructor }) => {
-  it.each(["element", "doctype"])("drops a doctype token after an existing %s child", (kind) => {
+  it.each(["element", "doctype"])("rejects a doctype token after an existing %s child", (kind) => {
     // Given: author code modifies an explicitly opened document before its first write.
     const { window: w } = new Constructor();
     try {
@@ -557,7 +557,9 @@ describe.each([
           : doc.implementation.createDocumentType("x", "", "");
       doc.appendChild(child);
       // When/Then: the token neither appends an illegal child nor rewrites the existing doctype.
-      doc.write("<!doctype html>");
+      expect(() => doc.write("<!doctype html>")).toThrowError(
+        expect.objectContaining({ name: "HierarchyRequestError" }),
+      );
       expect(Array.from(doc.childNodes)).toEqual([child]);
       if (kind === "doctype") expect(doc.doctype?.name).toBe("x");
     } finally {

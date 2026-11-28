@@ -23,7 +23,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun scripts/build-css-runtime.mjs && bun build src/window.ts --target=node --format=esm --outfile=dist/window.js --packages=external && bun build src/window.ts --target=node --format=cjs --outdir=dist --entry-naming=window-implementation.cjs --minify-whitespace --minify-syntax --sourcemap=linked --define import.meta.url=RUN_DOM_MODULE_URL --banner 'const RUN_DOM_MODULE_URL = require(\"node:url\").pathToFileURL(__filename).href;' && node scripts/build-window-cache.mjs",
+    "build": "bun scripts/build-css-runtime.mjs && bun scripts/build-window.mjs && node scripts/build-window-cache.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "oxlint src test scripts",
     "test": "node ../../node_modules/vitest/vitest.mjs run"
@@ -38,6 +38,7 @@
     "cssstyle": "6.2.0",
     "html-encoding-sniffer": "7.0.0",
     "parse5": "8.1.0",
+    "rundom-css-reference": "npm:jsdom@31.0.1",
     "saxes": "6.0.0",
     "w3c-xmlserializer": "6.0.0",
     "whatwg-url": "17.2.0",

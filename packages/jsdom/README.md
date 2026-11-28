@@ -2,11 +2,11 @@
 
 RunDOM implements the jsdom API for Node.js test suites. It aims to shorten the edit-and-test loop for coding agents and reduce the memory each worker holds when several agents run checks in parallel.
 
-Use the **[jsdom documentation](https://github.com/jsdom/jsdom#readme)** for setup options, API usage and examples. With this package installed under the name `jsdom`, existing imports can use that name. Identical behavior is the compatibility target. Both parser modes passed all 634 pinned upstream API tests. The broader Svelte runtime and hydration selection still has 90 cases that pass with jsdom and fail with RunDOM.
+Use the **[jsdom documentation](https://github.com/jsdom/jsdom#readme)** for setup options, API usage and examples. With this package installed under the name `jsdom`, existing imports can use that name. Identical behavior is the compatibility target. The development build passed the same 672 API tests as jsdom 31.0.1. RunDOM passes every Svelte case that passed on jsdom in the tested selection. Web Platform Tests still show compatibility gaps. [Version-specific compatibility and benchmark results](https://github.com/BarakChamo/rundom/blob/qualification/jsdom-31-0-1/docs/jsdom-31-qualification.md)
 
 ## Node API
 
-The synchronous Node facade exports `JSDOM`, `VirtualConsole`, `CookieJar`, `toughCookie`, and `requestInterceptor` through ESM and CommonJS. The constructor accepts strings, buffers, ArrayBuffers, and views. It sniffs byte encodings and chooses HTML or XML parsing from `contentType`. `serialize()` returns the current document markup. Set `includeNodeLocations: true` at construction to retrieve original parser offsets with `nodeLocation(node)`. Implied elements return `null` and programmatically created nodes return `undefined`.
+The synchronous Node facade exports `JSDOM`, `VirtualConsole`, `CookieJar`, `toughCookie`, and `requestInterceptor` through ESM and CommonJS. The `./vitest-environment` export is an opt-in Vitest environment that installs Window globals on first use; see the [Vitest preset](../../docs/vitest-preset.md). The constructor accepts strings, buffers, ArrayBuffers, and views. It sniffs byte encodings and chooses HTML or XML parsing from `contentType`. `serialize()` returns the current document markup. Set `includeNodeLocations: true` at construction to retrieve original parser offsets with `nodeLocation(node)`. Implied elements return `null` and programmatically created nodes return `undefined`.
 
 ```ts
 import { JSDOM } from "@run-dom/jsdom";

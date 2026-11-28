@@ -1,5 +1,4 @@
 // Loads the initial document and applies cookies on every redirect hop.
-import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { createRequire } from "node:module";
 import type { Dispatcher } from "undici";
@@ -208,7 +207,11 @@ function requestTransport(options: TransportOptions, lifetime: AbortController) 
         drain: async () => {},
         cancel: () => {},
         read: async () =>
-          Uint8Array.from(await readFile(url, signal ? { signal } : undefined)).buffer,
+          Uint8Array.from(
+            await process
+              .getBuiltinModule("node:fs/promises")
+              .readFile(url, signal ? { signal } : undefined),
+          ).buffer,
       };
     }
     if (url.protocol === "data:") {

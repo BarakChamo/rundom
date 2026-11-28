@@ -1,6 +1,5 @@
 // Implements the synchronous Node-facing entry point for the standalone DOM.
 import { createDocumentFragment, createWindow } from "@run-dom/dom";
-import { open } from "node:fs/promises";
 import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { inspect } from "node:util";
@@ -36,7 +35,7 @@ type Options = {
   resources?: "usable" | (TransportOptions & { userAgent?: string });
 };
 
-const defaultUserAgent = `Mozilla/5.0 (${process.platform || "unknown OS"}) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/30.1.3`;
+const defaultUserAgent = `Mozilla/5.0 (${process.platform || "unknown OS"}) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/31.0.1`;
 
 function userAgentFor(resources: Options["resources"]): string {
   return (
@@ -69,7 +68,8 @@ export class JSDOM {
       ([".xml", ".xhtml", ".xht"].includes(extname(filename))
         ? "application/xhtml+xml"
         : "text/html");
-    const file = await open(filename);
+    // node:fs/promises pulls in a dozen modules a parsed-markup Window never needs.
+    const file = await process.getBuiltinModule("node:fs/promises").open(filename);
     let bytes: Buffer;
     let modifiedMs: number;
     try {
@@ -132,6 +132,7 @@ export class JSDOM {
     const transport = typeof resources === "object" ? resources : undefined;
     this.#realm = createWindow({
       ...markup,
+      jsdomCompatibility: true,
       lastModifiedMs: options[sourceLastModified],
       createWebSocket: (context) =>
         createWebSocketClass({
@@ -213,6 +214,12 @@ export class JSDOM {
               );
             },
           }),
+      reportXMLParsingError: (cause) => {
+        this.virtualConsole.emit(
+          "jsdomError",
+          Object.assign(new Error("Could not parse XML", { cause }), { type: "xml-parsing" }),
+        );
+      },
       reportStyleError: (sheetText, cause) => {
         const error = new Error("Could not parse CSS stylesheet", { cause });
         this.virtualConsole.emit(

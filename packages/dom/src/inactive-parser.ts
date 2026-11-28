@@ -1,5 +1,6 @@
-// Uses parse5's own token boundaries while consuming literal runs in an inactive document.
+// Batches literal runs where parse5's inactive tree builder inserts the same text.
 import {
+  InsertionMode,
   Parser,
   Tokenizer,
   TokenizerMode,
@@ -11,6 +12,11 @@ import {
 // Each pattern stops before a code unit that needs preprocessing or changes the tokenizer state.
 // Text also stops at HTML whitespace because parse5 gives whitespace its own token in table modes.
 const textBoundary = /[<&\0\t\n\f\r \uD800-\uDFFF]/g;
+// In body and text modes, whitespace following character data joins the same Text node.
+// CR still needs preprocessing. A literal LF needs no rewriting when locations are off.
+const mixedTextBoundary = /[<&\0\r\uD800-\uDFFF]/g;
+// Script data and raw text preserve ampersands literally, including entity-like spellings.
+const rawTextBoundary = /[<\0\r\uD800-\uDFFF]/g;
 const doubleQuotedBoundary = /["&\0\n\r\uD800-\uDFFF]/g;
 const singleQuotedBoundary = /['&\0\n\r\uD800-\uDFFF]/g;
 const commentBoundary = /[-<\0\n\r\uD800-\uDFFF]/g;
@@ -27,6 +33,10 @@ function independentString(value: string): string {
 }
 
 class LiteralTokenizer extends Tokenizer {
+  constructor(private readonly parser: Parser<Raw.DefaultTreeAdapterMap>) {
+    super(parser.options, parser);
+  }
+
   protected override _stateTagName(cp: number): void {
     const token = this.currentToken;
     if (cp >= 97 && cp <= 122 && token && "attrs" in token && !token.tagName) {
@@ -69,6 +79,17 @@ class LiteralTokenizer extends Tokenizer {
     if (this.runEnd - this.runStart !== 4 || cp <= 32 || cp >= 127) return;
     const input = this.preprocessor;
     if (this.runEnd !== input.pos + 1) return;
+    if (
+      boundary === textBoundary &&
+      !this.inForeignNode &&
+      (this.parser.insertionMode === InsertionMode.IN_BODY ||
+        this.parser.insertionMode === InsertionMode.TEXT)
+    ) {
+      boundary =
+        this.state === TokenizerMode.SCRIPT_DATA || this.state === TokenizerMode.RAWTEXT
+          ? rawTextBoundary
+          : mixedTextBoundary;
+    }
     boundary.lastIndex = this.runEnd;
     const stop = boundary.exec(input.html)?.index ?? input.html.length;
     this.consumedAfterSnapshot += stop - this.runEnd;
@@ -107,11 +128,17 @@ class LiteralTokenizer extends Tokenizer {
 export function parseLiteralDocument(
   markup: string,
   options: ParserOptions<Raw.DefaultTreeAdapterMap>,
+  defaultTextInsertion = options.treeAdapter === undefined,
 ): Raw.Document {
-  if (markup.length < 1024 || options.sourceCodeLocationInfo || options.onParseError)
+  if (
+    !defaultTextInsertion ||
+    markup.length < 1024 ||
+    options.sourceCodeLocationInfo ||
+    options.onParseError
+  )
     return parse(markup, options);
   const parser = new Parser<Raw.DefaultTreeAdapterMap>(options);
-  parser.tokenizer = new LiteralTokenizer(parser.options, parser);
+  parser.tokenizer = new LiteralTokenizer(parser);
   parser.tokenizer.write(markup, true);
   return parser.document;
 }

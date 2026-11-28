@@ -20,7 +20,7 @@ console.log(dom.window.document.querySelector("button").textContent); // Apply
 dom.window.close();
 ```
 
-Use the **[jsdom documentation](https://github.com/jsdom/jsdom#readme)** for the API, constructor options and examples. RunDOM aims to match jsdom’s observable behavior. Both parser modes passed all 634 pinned upstream API tests. Some differences remain in broader suites, including 90 cases that passed with jsdom in the Svelte runtime and hydration selection. [Compatibility results](docs/real-project-benchmarks-direct-css.md#compatibility)
+Use the **[jsdom documentation](https://github.com/jsdom/jsdom#readme)** for the API, constructor options and examples. RunDOM aims to match jsdom’s observable behavior. The development build passed the same 672 API tests as jsdom 31.0.1. RunDOM passes every Svelte case that passed on jsdom in the tested selection. Web Platform Tests still show compatibility gaps. [Version-specific compatibility and benchmark results](docs/jsdom-31-css-values-qualification.md)
 
 ## Measured time and memory
 
@@ -58,4 +58,4 @@ Set `RUN_DOM_HTML_PARSER=rust` before loading the facade to exercise eligible in
 
 The [performance laboratory](docs/performance-lab.md) provides `bun run benchmark:lab prepare`, then `run`, `compare`, `profile`, `memory` and `parallel` against a frozen cohort. It covers checked reads/writes/queries/events/styles, first and repeated operations, multiple windows, CPU/allocation attribution and lifetime checkpoints.
 
-Measured findings and the next implementation batch are recorded in [performance evidence](docs/performance-lab-results.md) and the [remaining TurboDOM gaps](docs/remaining-turbodom-optimization-plan.md).
+Measured findings are recorded in [performance evidence](docs/performance-lab-results.md). Where RunDOM still trails TurboDOM, why, and what was tried is in the [TurboDOM gap analysis](docs/turbodom-gap-analysis.md).

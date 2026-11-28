@@ -1,9 +1,11 @@
 // Extends the pinned CSS parser's style-block dispatch while retaining its tokenizer and recovery.
 import { createRequire } from "node:module";
 import type { Block, CssLocation, CssNode, List, ParseOptions } from "css-tree";
+import { scanFlatStyleSheet, UnreadDeclarationBlock } from "./css-flat-sheet.js";
 const require = createRequire(import.meta.url);
 type Parse = typeof import("css-tree").parse;
 type Tokens = {
+  BadString: number;
   Delim: number;
   Comma: number;
   Colon: number;
@@ -178,40 +180,6 @@ function hasNesting(parser: BlockParser): boolean {
 const compactDeclarations =
   /^(?:(?:--|-?)[a-zA-Z_][\w-]*:(?:[a-zA-Z_0-9#%.,+ \t-]|var\(--[a-zA-Z_][\w-]*\))+;)+$/;
 
-class UnreadDeclarationBlock implements Block {
-  readonly type = "Block";
-  #source: string | undefined;
-  #children: List<CssNode> | undefined;
-
-  constructor(source: string) {
-    this.#source = source;
-  }
-  get children(): List<CssNode> {
-    if (this.#children) return this.#children;
-    const source = this.#source;
-    if (source === undefined) throw new Error("An unread declaration block must own its source");
-    const children = new (css().List)<CssNode>();
-    // Admission excludes escaped separators, comments and priorities. Normal declarations
-    // trim their raw value, while custom properties retain surrounding CSS whitespace.
-    let start = 0;
-    while (start < source.length) {
-      const colon = source.indexOf(":", start);
-      const end = source.indexOf(";", colon + 1);
-      const property = source.slice(start, colon);
-      const rawValue = source.slice(colon + 1, end);
-      children.push({
-        type: "Declaration",
-        property,
-        important: false,
-        value: { type: "Raw", value: property.startsWith("--") ? rawValue : rawValue.trim() },
-      });
-      start = end + 1;
-    }
-    this.#source = undefined;
-    return (this.#children = children);
-  }
-}
-
 /** Tests leaf shape without expanding declarations whose source already proves it. */
 export function hasOnlyDeclarations(block: Block): boolean {
   return (
@@ -229,7 +197,7 @@ function unreadBlock(parser: BlockParser): Block | undefined {
   const source = parser.source.slice(start, end);
   if (!source.endsWith(";") || !compactDeclarations.test(source)) return;
   parser.skip(closing - parser.tokenIndex + 1);
-  return new UnreadDeclarationBlock(source);
+  return new UnreadDeclarationBlock(source, css().List);
 }
 
 function nestingParser(configuration: ParserConfiguration): ParserConfiguration {
@@ -263,77 +231,46 @@ function nestingParser(configuration: ParserConfiguration): ParserConfiguration 
   return configuration;
 }
 
-// These prelude tokens cannot contain structural braces, escapes or comments.
-// CSS selector validation and specificity remain with the regular selector parser.
-const compactPrelude = /^(?:[\w.#:,*+~> \t\r\n\f-]|\[[a-zA-Z_][\w-]*(?:[~^$|*]?="[\w -]+")?\])+$/;
-const compactMedia = /^@media[ \t\r\n\f]+(\((?:min|max)-(?:width|height):[ \t]*\d+(?:\.\d+)?px\))$/;
-
-function compactStyleSheet(source: string): CssNode | undefined {
-  if (source.length < 4096 || source.length > 262144 || !source.endsWith("}")) return;
-  const { List } = css();
-  const root = new List<CssNode>();
-  const parents = [root];
-  let cursor = 0;
-  // Each accepted rule or group consumes an entire bounded source span. Recovery,
-  // escaping, and more complex values retain the native tokenizer and diagnostics.
-  while (cursor < source.length) {
-    const code = source.charCodeAt(cursor);
-    if (code === 32 || (code >= 9 && code <= 13 && code !== 11)) {
-      cursor++;
-      continue;
-    }
-    if (code === 125) {
-      if (parents.length === 1) return;
-      parents.pop();
-      cursor++;
-      continue;
-    }
-    const open = source.indexOf("{", cursor);
-    if (open < 0 || open - cursor > 1024) return;
-    const heading = source.slice(cursor, open).replace(/[ \t\r\n\f]+$/, "");
-    const children = parents.at(-1);
-    if (!children) return;
-    if (code === 64) {
-      const condition = compactMedia.exec(heading)?.[1];
-      if (!condition || parents.length > 8) return;
-      const grouped = new List<CssNode>();
-      children.push({
-        type: "Atrule",
-        name: "media",
-        prelude: { type: "Raw", value: condition },
-        block: { type: "Block", children: grouped },
-      });
-      parents.push(grouped);
-      cursor = open + 1;
-      continue;
-    }
-    if (!compactPrelude.test(heading)) return;
-    const end = source.indexOf("}", open + 1);
-    if (end < 0 || end - open > 4097) return;
-    const raw = source.slice(open + 1, end);
-    // The closing brace can terminate the final declaration in place of a semicolon.
-    const body = raw.endsWith(";") ? raw : raw + ";";
-    if (!compactDeclarations.test(body)) return;
-    children.push({
-      type: "Rule",
-      prelude: { type: "Raw", value: heading },
-      block: new UnreadDeclarationBlock(body),
-    });
-    cursor = end + 1;
-  }
-  return parents.length === 1 ? { type: "StyleSheet", children: root } : undefined;
-}
-
 /** Parses stylesheet structure using the same token stream for nesting detection and recovery. */
-export function parseNestingStyleSheet(source: string, options: ParseOptions): CssNode {
+export function parseNestingStyleSheet(
+  source: string,
+  options: ParseOptions,
+  report: (message: string) => void,
+): CssNode {
+  // Only tokenize separately when a raw delimiter count could reach the upstream
+  // nesting limit, or multiline quoted text could contain a bad-string token.
+  const openings = /[[({]/g;
+  let count = 0;
+  if (source.length >= 129) while (count < 129 && openings.test(source)) count++;
+  if (count === 129 || (/["']/.test(source) && /[\n\r\f]/.test(source))) {
+    const runtime = css();
+    const tokens = runtime.tokenTypes;
+    const stack: number[] = [];
+    let exceeded = false;
+    runtime.tokenize(source, (type) => {
+      if (exceeded) return;
+      if (type === tokens.BadString) report("Bad string");
+      if (type === tokens.Function || type === tokens.LeftParenthesis)
+        stack.push(tokens.RightParenthesis);
+      else if (type === tokens.LeftCurlyBracket) stack.push(tokens.RightCurlyBracket);
+      else if (type === tokens.LeftSquareBracket) stack.push(tokens.RightSquareBracket);
+      else if (type === stack.at(-1)) stack.pop();
+      exceeded = stack.length > 128;
+    });
+    if (exceeded) {
+      const empty: CssNode = { type: "StyleSheet", children: new runtime.List<CssNode>() };
+      report("CSS nesting limit exceeded");
+      return empty;
+    }
+  }
   if (
     !options.positions &&
     options.parseRulePrelude === false &&
     options.parseAtrulePrelude === false &&
     options.parseValue === false
   ) {
-    const compact = compactStyleSheet(source);
-    if (compact) return compact;
+    const flat = scanFlatStyleSheet(source, css().List);
+    if (flat) return flat;
   }
   const first = source.indexOf("{");
   if (!source.includes("@") && (first === -1 || source.indexOf("{", first + 1) === -1))

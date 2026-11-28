@@ -88,21 +88,52 @@ export function replaceSystemColors(value: string, scheme: string): string {
   return end ? output + value.slice(end) : value;
 }
 
-/** Serializes modern color functions while retaining system keywords until computation. */
+// The relative-color grammar and precision follow the pinned jsdom CSS implementation.
+const functionalColor =
+  /^\s*(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark|contrast-color)\(/i;
+export function functionalColorValue(
+  value: string,
+  currentColor?: string,
+  scheme = "light",
+): string | undefined {
+  if (!functionalColor.test(value)) return;
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar: (source: string, grammar: string) => unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const {
+    isFailure,
+  }: {
+    isFailure: (value: unknown) => boolean;
+  } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue: (value: unknown) => string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const parsed = parseGrammar(
+    currentColor === undefined ? value : replaceSystemColors(value, scheme),
+    "<color>",
+  );
+  if (isFailure(parsed)) return;
+  if (currentColor === undefined) return serializeComponentValue(parsed);
+  const {
+    resolveColor,
+  }: {
+    resolveColor: (value: unknown, context: object) => unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/utils/resolve-color.js");
+  const resolved = resolveColor(parsed, {
+    used: true,
+    colorScheme: () => (scheme.includes("dark") && !scheme.startsWith("light") ? "dark" : "light"),
+    get currentColor() {
+      return parseGrammar(currentColor, "<color>");
+    },
+  });
+  return resolved ? serializeComponentValue(resolved) : undefined;
+}
+
+/** Preserves authored color channels until computed-value resolution, including inherited variables. */
 export function specifiedColorFunction(value: string): string | undefined {
-  if (
-    !/^\s*(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\(/i.test(value)
-  )
-    return undefined;
-  // Variables are owned by the declaration's substitution path, including case-sensitive names.
-  if (/var\(/i.test(value)) return undefined;
-  // Serialization is not validation: the color library repairs some invalid syntax.
-  const { parsePropertyValue }: { parsePropertyValue: (name: string, value: string) => unknown } =
-    require("./css-runtime.cjs").cssStyle;
-  if (parsePropertyValue("color", value) === undefined) return undefined;
-  const { resolve }: typeof import("@asamuzakjp/css-color") = require("./css-runtime.cjs").cssColor;
-  const substituted = replaceSystemColors(value, "light");
-  const serialized = resolve(substituted, { format: "specifiedValue", nullable: true });
-  if (!serialized) return undefined;
-  return substituted === value ? serialized : value.trim();
+  return /var\(/i.test(value) ? undefined : functionalColorValue(value);
 }

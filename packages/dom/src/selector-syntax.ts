@@ -8,6 +8,26 @@ type Tokenizer = {
   tokenize: (source: string, visit: (type: number, start: number, end: number) => void) => void;
 };
 
+/** Validates type-selector placement and canonicalizes attribute modifiers inside a compound. */
+export function validSelectorCompounds(selector: Extract<CssNode, { type: "Selector" }>): boolean {
+  let hasSimple = false;
+  for (const part of selector.children) {
+    if (part.type === "Combinator") {
+      hasSimple = false;
+      continue;
+    }
+    if (part.type === "TypeSelector" && hasSimple) return false;
+    if (part.type === "AttributeSelector" && part.flags) {
+      const { ident }: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
+      const flag = ident.decode(part.flags);
+      if (!part.matcher || !/^[iIsS]$/.test(flag)) return false;
+      part.flags = flag.toLowerCase();
+    }
+    hasSimple = true;
+  }
+  return true;
+}
+
 /** Reads a functional :state() argument as one decoded CSS identifier. */
 export function customStateIdentifier(node: CssNode): string {
   const css: typeof import("css-tree") = require("./css-runtime.cjs").cssTree;
@@ -58,6 +78,22 @@ export function normalizeSelector(source: string): string {
 /** Parses selector syntax, discarding malformed branches only inside :is() and :where(). */
 export function parseSelectorList(source: string): CssNode {
   const css: typeof import("css-tree") & Tokenizer = require("./css-runtime.cjs").cssTree;
+  // CSSTree recognizes pseudo tokens but does not constrain a pseudo-element's
+  // arguments or what can follow it. Validate transition selectors before matching.
+  if (/::view-transition/i.test(source) && !source.includes("|")) {
+    const {
+      parseGrammar,
+    }: {
+      parseGrammar: (text: string, grammar: string) => unknown;
+    } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+    const {
+      isFailure,
+    }: {
+      isFailure: (result: unknown) => boolean;
+    } = require("rundom-css-reference/lib/jsdom/living/css/values/value.js");
+    if (isFailure(parseGrammar(source, "<complex-selector-list>")))
+      throw new SyntaxError("Invalid view-transition pseudo-element selector");
+  }
   if (!/:(?:is|where)\(/i.test(source) && !source.includes("\\"))
     return css.parse(source, { context: "selectorList" });
   const roots: Region[] = [];
@@ -144,4 +180,38 @@ export function parseSelectorList(source: string): CssNode {
   return css.parse(roots.length ? rewrite(0, source.length, roots) : source, {
     context: "selectorList",
   });
+}
+
+/** Recognizes an entire selector whose subject is a CSS pseudo-element. */
+export function purePseudoSelector(
+  source: string,
+): { text: string; specificity: readonly [number, number, number] } | null | undefined {
+  if (
+    !source.startsWith("::") ||
+    source.includes(",") ||
+    source.includes("&") ||
+    (!source.includes("(") && !source.slice(2).includes(":"))
+  )
+    return;
+  const {
+    parseGrammar,
+  }: {
+    parseGrammar(t: string, g: string): unknown;
+  } = require("rundom-css-reference/lib/jsdom/living/css/parse/parser.js");
+  const parsed = parseGrammar(source, "<complex-selector-list>");
+  if (!Array.isArray(parsed)) return null;
+  const selector = parsed[0];
+  if (parsed.length !== 1 || selector?.units?.length !== 1 || !selector.units[0].pseudos?.length)
+    return;
+  const {
+    serializeComponentValue,
+  }: {
+    serializeComponentValue(v: unknown): string;
+  } = require("rundom-css-reference/lib/jsdom/living/css/serialize.js");
+  const {
+    getSelectorSpecificity,
+  }: {
+    getSelectorSpecificity(v: unknown): readonly [number, number, number];
+  } = require("rundom-css-reference/lib/jsdom/living/css/utils/selector-specificity.js");
+  return { text: serializeComponentValue(parsed), specificity: getSelectorSpecificity(selector) };
 }
