@@ -332,4 +332,38 @@ describe("Query cache character data", () => {
       w.close();
     }
   });
+
+  it("answers a cycle of 512 distinct selectors from the current tree across mutations", () => {
+    // Given: 256 rows and a warm cycle of 512 distinct id and class selectors.
+    const rows = Array.from({ length: 256 }, (_, i) => `<p class="item" id="row${i}"></p>`);
+    const { window: w } = new JSDOM(`<main>${rows.join("")}</main>`);
+    try {
+      const selectors = Array.from({ length: 512 }, (_, i) =>
+        i % 2 ? `.extra-${i >> 1}` : `.item#row${i >> 1}`,
+      );
+      const read = () => selectors.map((selector) => [...w.document.querySelectorAll(selector)]);
+      read();
+      const before = read();
+      const row = (index: number) => w.document.getElementById(`row${index}`);
+      // When: one row gains a class, one row loses its id and one row is removed.
+      row(3)?.classList.add("extra-3");
+      const renamed = row(4);
+      renamed?.removeAttribute("id");
+      const removed = row(5);
+      removed?.remove();
+      const after = read();
+      // Then: every remembered answer reflects the edits and the other answers are unchanged.
+      expect(before[6]?.length).toBe(1);
+      expect(before[7]).toEqual([]);
+      expect(after[7]).toEqual([row(3)]);
+      expect(after[8]).toEqual([]);
+      expect(after[10]).toEqual([]);
+      expect(renamed).not.toBeNull();
+      expect(removed).not.toBeNull();
+      const untouched = (_: unknown, i: number) => i !== 7 && i !== 8 && i !== 10;
+      expect(after.filter(untouched)).toEqual(before.filter(untouched));
+    } finally {
+      w.close();
+    }
+  });
 });

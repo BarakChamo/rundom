@@ -77,4 +77,29 @@ describe("Node side data lifetime", () => {
     `);
     expect(promoted).toBeLessThan(4);
   }, 60000);
+
+  it("lets a discarded tree with inline styles die in a minor GC", () => {
+    // Given: a detached tree of 160 elements built with createElement
+    // When: every element writes and reads an inline style property, one element is
+    //   materialized through setAttribute, and the tree is mounted, unmounted and dropped
+    // Then: scavenges promote almost nothing, because inline style views do not hold the tree
+    const promoted = promotedPerOperation(`
+      const root = document.createElement("div");
+      for (let i = 0; i < 40; i++) {
+        const row = document.createElement("div");
+        for (let j = 0; j < 4; j++) {
+          const span = document.createElement("span");
+          span.style.color = "red";
+          if (span.style.color !== "red") throw new Error("bad style");
+          row.appendChild(span);
+        }
+        row.setAttribute("style", "width: 1px");
+        void row.style.width;
+        root.appendChild(row);
+      }
+      document.body.appendChild(root);
+      document.body.removeChild(root);
+    `);
+    expect(promoted).toBeLessThan(4);
+  }, 60000);
 });

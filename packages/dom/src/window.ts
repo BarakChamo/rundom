@@ -3357,7 +3357,7 @@ function buildWindow(
       queryResultCharacters -= selector.length;
     }
     if (
-      (queryResults?.size ?? 0) >= 128 ||
+      (queryResults?.size ?? 0) >= 512 ||
       queryResultUnits + size > 8192 ||
       queryResultCharacters + selector.length > 32768
     ) {
@@ -17184,8 +17184,17 @@ function buildWindow(
       indices.set(owner, next);
       return next;
     }
+    // The index is rebuilt exactly when namedRevision advances, so an empty index stays empty
+    // until then and ordinary member reads skip the lookup.
+    let emptyAt = -1;
     function visible(key: PropertyKey): key is string {
-      return typeof key === "string" && !Object.hasOwn(target, key) && names().has(key);
+      if (typeof key !== "string" || emptyAt === namedRevision) return false;
+      const known = names();
+      if (!known.size) {
+        emptyAt = namedRevision;
+        return false;
+      }
+      return !Object.hasOwn(target, key) && known.has(key);
     }
     function resolve(key: string): object | undefined {
       const entries = names().get(key);
@@ -21174,12 +21183,26 @@ function buildWindow(
     }
   }
 
+  // A root is inert when the scan below would visit nothing or only the root and find nothing:
+  // not an element, or a leaf (no element child, no shadow root) of no insertion kind without a
+  // style attribute. Leaves are never recorded, so skipping the scan changes no summary either.
+  function insertedRootIsInert(root: Raw.ChildNode): boolean {
+    return (
+      !tree.isElementNode(root) ||
+      (leafKinds(root) === 0 && (!root.attrs.length || attribute(root, "style") === null))
+    );
+  }
+
   function finishInsertedContent(roots: readonly Raw.ChildNode[], parent: Raw.ParentNode): void {
+    const scriptsEnabled = options.runScripts === "dangerously";
+    if (roots.every(insertedRootIsInert)) {
+      if (scriptsEnabled && tree.isElementNode(parent)) activateInsertedScript(parent);
+      return;
+    }
     // Capture the eligible descendants before scripts can mutate or remove later entries.
     const active: Raw.Element[] = [];
     const checked: Raw.Element[] = [];
     let hasStyles = false;
-    const scriptsEnabled = options.runScripts === "dangerously";
     const pending: Raw.Element[] = [];
     // Only recorded subtrees can be skipped, so a detached parent is resolved on first need.
     let kinds = 0;
