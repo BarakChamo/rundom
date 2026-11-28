@@ -40,7 +40,7 @@ import { InlineDeclaration, parseInlineBlock } from "./inline-declaration.js";
 import { parseSizeDeclaration } from "./css-sizing.js";
 import { acceptsAnchors, anchorComponents } from "./css-anchor.js";
 import { hasContextlessPercentage, serializeCSSMath } from "./css-numeric.js";
-import { directExpansion, directSpecifiedValue } from "./css-direct-values.js";
+import { cssWideKeywords, directExpansion, directSpecifiedValue } from "./css-direct-values.js";
 import {
   createDeclarationViews,
   type DeclarationImplementation,
@@ -5190,7 +5190,7 @@ const leanDimensions = new Map<string, LeanDimension>([
   ),
 ]);
 const leanTime = /^-?(?:0|[1-9]\d{0,3})(?:\.\d{0,4}[1-9])?m?s$/;
-const leanTransitionProperty = /^(?!(?:initial|inherit|unset|revert|revert-layer)$)[a-z][a-z-]*$/;
+const leanTransitionProperty = /^[a-z][a-z-]*$/;
 
 function leanDimension(name: string, value: string): string | undefined {
   const accepts = leanDimensions.get(name);
@@ -5223,7 +5223,9 @@ function leanEntries(
   if (
     (name === "transition-delay" && leanTime.test(value)) ||
     (name === "transition-duration" && leanTime.test(value) && !value.startsWith("-")) ||
-    (name === "transition-property" && leanTransitionProperty.test(value))
+    (name === "transition-property" &&
+      leanTransitionProperty.test(value) &&
+      !cssWideKeywords.has(value))
   )
     return [[name, value]];
   if (name === "color" || name === "background-color") {

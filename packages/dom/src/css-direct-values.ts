@@ -51,9 +51,17 @@ function serializeDimension(text: string, accepts: Accepts): string | undefined 
   return serializeNumber(value) + unit;
 }
 
-// The reference grammar's <generic-font-complete> and <generic-font-incomplete> keywords, and the
-// CSS-wide keywords plus "default", which a family name cannot be.
-const genericFamilies = new Set([
+/** The reference's CSS-wide keywords (the grammar of `all`); css-direct-values.test.ts compares them. */
+export const cssWideKeywords: ReadonlySet<string> = new Set([
+  "initial",
+  "inherit",
+  "unset",
+  "revert",
+  "revert-layer",
+  "revert-rule",
+]);
+/** The reference's <generic-font-complete> and <generic-font-incomplete> keywords, compared likewise. */
+export const genericFamilies: ReadonlySet<string> = new Set([
   "serif",
   "sans-serif",
   "system-ui",
@@ -66,7 +74,8 @@ const genericFamilies = new Set([
   "ui-monospace",
   "ui-rounded",
 ]);
-const reservedWords = new Set(["default", "initial", "inherit", "unset", "revert", "revert-layer"]);
+// The CSS-wide keywords plus "default", which a family name cannot be.
+const reservedWords = new Set(["default", ...cssWideKeywords]);
 const familyWord = /^-?[a-zA-Z_][\w-]*$/;
 const quotedFamily = /^(?:"([\x20\x21\x23-\x5b\x5d-\x7e]*)"|'([\x20-\x26\x28-\x5b\x5d-\x7e]*)')$/;
 
