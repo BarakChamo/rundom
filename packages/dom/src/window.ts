@@ -3357,7 +3357,7 @@ function buildWindow(
       queryResultCharacters -= selector.length;
     }
     if (
-      (queryResults?.size ?? 0) >= 128 ||
+      (queryResults?.size ?? 0) >= 512 ||
       queryResultUnits + size > 8192 ||
       queryResultCharacters + selector.length > 32768
     ) {
