@@ -120,11 +120,16 @@ class Registration extends SlotTarget {
   }
 }
 
+// A live computed view resolves its source on every read, and that source only needs the
+// declaration behind the snapshot it returns. While a live view resolves its source, snapshot
+// publication returns the never-escaping target itself instead of wrapping it in another proxy.
+let resolvingLiveSource = false;
+
 function declarationImplementation(view: object): DeclarationImplementation {
   let implementation = implementations.get(view);
   if (!implementation) {
-    const target = ComputedView.target(view);
-    implementation = target && ComputedTarget.resolver(target)?.(target);
+    const target = ComputedView.target(view) ?? view;
+    implementation = ComputedTarget.resolver(target)?.(target);
   }
   if (!implementation) throw new TypeError("Illegal invocation");
   return implementation;
@@ -573,7 +578,14 @@ export function createDeclarationViews(input: {
   function computedValue(target: object): DeclarationImplementation {
     const source = computedSource(target);
     if (typeof source !== "function") return source ?? (empty ??= input.emptyComputed());
-    const current = source();
+    const resolving = resolvingLiveSource;
+    resolvingLiveSource = true;
+    let current: object | undefined;
+    try {
+      current = source();
+    } finally {
+      resolvingLiveSource = resolving;
+    }
     return current ? declarationImplementation(current) : (empty ??= input.emptyComputed());
   }
   const indexedNames = new WeakMap<DeclarationImplementation, readonly string[]>();
@@ -619,6 +631,7 @@ export function createDeclarationViews(input: {
   ): CSSStyleProperties {
     const target = Object.create(prototype) as CSSStyleProperties;
     new ComputedTarget(target, value, computedValue, connected);
+    if (resolvingLiveSource) return target;
     const view = new Proxy<CSSStyleProperties>(target, computedHandler);
     new ComputedView(view, target);
     return view;

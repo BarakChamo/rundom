@@ -6061,8 +6061,15 @@ function serializeRGB(value: string): string | undefined {
   return alpha === 1 ? `rgb(${channels})` : `rgba(${channels}, ${alpha})`;
 }
 
+// Warm computed reads ask about the same frame color on every call; the check is pure.
+let lastRGBValue: string | undefined;
+let lastRGBSerialized = false;
 function isSerializedRGB(value: string): boolean {
-  return serializeRGB(value) === value;
+  if (value !== lastRGBValue) {
+    lastRGBSerialized = serializeRGB(value) === value;
+    lastRGBValue = value;
+  }
+  return lastRGBSerialized;
 }
 
 // CSSOM serializes an eight-bit alpha with two decimals when that round-trips,
