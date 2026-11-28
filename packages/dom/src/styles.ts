@@ -5163,6 +5163,7 @@ const leanKeywords = new Map<string, ReadonlySet<string>>(
     "font-weight": "normal bold 300 400 500 600 700",
     "text-overflow": "ellipsis clip",
     "object-fit": "contain cover fill none",
+    "transition-behavior": "normal allow-discrete",
   }).map(([name, words]) => [name, new Set(words.split(" "))]),
 );
 // Lengths, percentages and (where accepted) unitless numbers in the spelling cssstyle stores as is.
@@ -5184,7 +5185,12 @@ const leanDimensions = new Map<string, LeanDimension>([
   ["font-size", { negative: false, number: false }],
   ["letter-spacing", { negative: true, number: false }],
   ["line-height", { negative: false, number: true }],
+  ...["top-left", "top-right", "bottom-right", "bottom-left"].map(
+    (corner) => [`border-${corner}-radius`, { negative: false, number: false }] as const,
+  ),
 ]);
+const leanTime = /^-?(?:0|[1-9]\d{0,3})(?:\.\d{0,4}[1-9])?m?s$/;
+const leanTransitionProperty = /^(?!(?:initial|inherit|unset|revert|revert-layer)$)[a-z][a-z-]*$/;
 
 function leanDimension(name: string, value: string): string | undefined {
   const accepts = leanDimensions.get(name);
@@ -5214,6 +5220,12 @@ function leanEntries(
   if (leanKeywords.get(name)?.has(value)) return [[name, value]];
   const dimension = leanDimension(name, value);
   if (dimension !== undefined) return [[name, dimension]];
+  if (
+    (name === "transition-delay" && leanTime.test(value)) ||
+    (name === "transition-duration" && leanTime.test(value) && !value.startsWith("-")) ||
+    (name === "transition-property" && leanTransitionProperty.test(value))
+  )
+    return [[name, value]];
   if (name === "color" || name === "background-color") {
     const color = value.startsWith("#") ? serializeHexColor(value) : serializeRGB(value);
     return color === undefined ? undefined : [[name, color]];
@@ -5243,6 +5255,12 @@ function leanEntries(
   if ((name === "border-radius" && !value.includes("(")) || name === "transition")
     return directExpansion(name, value)?.entries;
   return undefined;
+}
+
+/** The text cssstyle stores for a declaration that stores only itself, when known without it. */
+function leanStoredValue(name: string, value: string): string | undefined {
+  const entries = leanEntries(name, value);
+  return entries?.length === 1 && entries[0]![0] === name ? entries[0]![1] : undefined;
 }
 
 /** A block of plain declarations as cssstyle would store it, or undefined when any declaration declines. */
@@ -8295,6 +8313,9 @@ export function createStyles(input: {
         style.setProperty(name, value);
         return;
       }
+      stored = leanStoredValue(name, value);
+    }
+    if (stored === undefined) {
       const probe = declaration();
       probe.setProperty(name, value);
       const text = probe._values.get(name);

@@ -1,6 +1,7 @@
 // Pins that stylesheet blocks built without cssstyle store, cascade and expose exactly what the cssstyle path does.
 import { describe, expect, it } from "vitest";
 import { JSDOM } from "@run-dom/jsdom";
+import { JSDOM as ReferenceJSDOM } from "jsdom";
 
 // A leading declaration that the lean builder declines and the cssstyle path drops, so the block
 // behind it takes the general path while storing the same entries.
@@ -83,6 +84,19 @@ const lengthProperties = [
   "letter-spacing",
 ];
 const others = [
+  "border-top-left-radius: 4px",
+  "border-bottom-right-radius: 50%",
+  "border-top-right-radius: -2px",
+  "transition-duration: 0.25s",
+  "transition-duration: 250ms",
+  "transition-duration: -1s",
+  "transition-delay: -0.5s",
+  "transition-delay: 0s",
+  "transition-property: background-color",
+  "transition-property: all",
+  "transition-property: none",
+  "transition-property: inherit",
+  "transition-behavior: allow-discrete",
   "text-align: left",
   "display: table-cell",
   "overflow: clip",
@@ -229,5 +243,36 @@ describe("lean stylesheet declarations", () => {
     };
     // Then: each step reads identically
     expect(run("")).toEqual(run(decline));
+  });
+
+  it("computes single declarations as jsdom computes them", () => {
+    // Given: every single declaration in a sheet, in RunDOM and in jsdom 31.0.1
+    // RunDOM already differed from jsdom on these before lean blocks existed; they take the
+    // cssstyle path (or a computed path the lean blocks do not touch) either way.
+    const knownDifferences = new Set([
+      "line-height: 50%",
+      "transition-duration: -1s",
+      "transition: opacity 200ms, transform 200ms",
+    ]);
+    const single = declarations.filter(
+      (text) => !/!important|^--|^[A-Z]/.test(text) && !knownDifferences.has(text),
+    );
+    const rules = single.map((text, i) => `.s${i}{${text}}`).join("");
+    const markup = `<style>${rules}</style>${single.map((_, i) => `<p class="s${i}"></p>`).join("")}`;
+    const ours = new JSDOM(markup).window;
+    const theirs = new ReferenceJSDOM(markup).window;
+    try {
+      for (const [i, text] of single.entries()) {
+        const name = text.split(":")[0]!.trim();
+        // When: the declared property is read from getComputedStyle
+        const read = (window: typeof ours | typeof theirs) =>
+          window.getComputedStyle(window.document.querySelector(`.s${i}`)!).getPropertyValue(name);
+        // Then: both report the same value
+        expect(read(ours), text).toBe(read(theirs));
+      }
+    } finally {
+      ours.close();
+      theirs.close();
+    }
   });
 });
