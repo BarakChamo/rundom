@@ -208,6 +208,42 @@ describe.each([
     }
   });
 
+  it("exposes the first name added after many member reads of a document without names", () => {
+    // Given: a document with no named elements whose members were read many times.
+    const { window: w } = new Constructor("<!doctype html><body><img id=i>");
+    try {
+      const d = w.document;
+      for (let index = 0; index < 50; index++) expect(d.body).not.toBeNull();
+      expect([Reflect.get(d, "pic"), Reflect.has(d, "pic")]).toEqual([undefined, false]);
+      const image = d.getElementById("i");
+      const form = d.createElement("form");
+      form.setAttribute("name", "late");
+      const other = d.implementation.createHTMLDocument("");
+      expect(other.body).not.toBeNull();
+      const embed = other.createElement("embed");
+      embed.setAttribute("name", "e");
+      // When: a name attribute is added, removed, and a named form is inserted and removed.
+      image?.setAttribute("name", "pic");
+      const named = [Reflect.get(d, "pic"), Reflect.has(d, "pic"), Object.keys(d).includes("pic")];
+      image?.removeAttribute("name");
+      const unnamed = Reflect.get(d, "pic");
+      d.body?.append(form);
+      const inserted = Reflect.get(d, "late");
+      form.remove();
+      other.body?.append(embed);
+      // Then: each change is visible at once, and names stay scoped to their own document.
+      expect(named).toEqual([image, true, true]);
+      expect(unnamed).toBeUndefined();
+      expect(inserted).toBe(form);
+      expect(Reflect.get(d, "late")).toBeUndefined();
+      expect(typeof d.getElementById).toBe("function");
+      expect(Reflect.get(other, "e")).toBe(embed);
+      expect(Reflect.get(d, "e")).toBeUndefined();
+    } finally {
+      w.close();
+    }
+  });
+
   it("shadows inherited built-ins while preserving expandos, unforgeable location and named write restrictions", () => {
     // Given: an ordinary expando and named content that shadows inherited and own members.
     const { window: w } = new Constructor();

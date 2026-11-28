@@ -17184,8 +17184,17 @@ function buildWindow(
       indices.set(owner, next);
       return next;
     }
+    // The index is rebuilt exactly when namedRevision advances, so an empty index stays empty
+    // until then and ordinary member reads skip the lookup.
+    let emptyAt = -1;
     function visible(key: PropertyKey): key is string {
-      return typeof key === "string" && !Object.hasOwn(target, key) && names().has(key);
+      if (typeof key !== "string" || emptyAt === namedRevision) return false;
+      const known = names();
+      if (!known.size) {
+        emptyAt = namedRevision;
+        return false;
+      }
+      return !Object.hasOwn(target, key) && known.has(key);
     }
     function resolve(key: string): object | undefined {
       const entries = names().get(key);
