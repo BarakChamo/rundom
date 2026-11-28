@@ -1,6 +1,7 @@
 // Loads the pinned upstream CSS grammar on demand for declarations outside cssstyle's coverage.
 import { createRequire } from "node:module";
 
+import { directExpansion, directShorthand, directSpecifiedValue } from "./css-direct-values.js";
 import { canonicalDirectSelector } from "./selector-parser.js";
 
 const require = createRequire(import.meta.url);
@@ -72,6 +73,13 @@ const specifiedValues = new Map<string, string | undefined>();
  * draw random numbers are never remembered.
  */
 export function specifiedDeclaration(name: string, value: string): string | undefined {
+  const direct = directSpecifiedValue(name, value);
+  if (direct !== undefined) return direct;
+  return referenceSpecifiedDeclaration(name, value);
+}
+
+/** The pinned grammar's specified serialization; specifiedDeclaration without the direct values. */
+export function referenceSpecifiedDeclaration(name: string, value: string): string | undefined {
   const cacheable = value.length <= maximumSpecifiedValueLength && !/random/i.test(value);
   const key = `${name.length}:${name}${value}`;
   if (cacheable && specifiedValues.has(key)) return specifiedValues.get(key);
@@ -153,6 +161,24 @@ export function serializeDeclarationBlock(
 
 /** Expands a shorthand and serializes it from all of its longhands in declaration order. */
 export function expandedDeclaration(
+  name: string,
+  value: string,
+  important = false,
+):
+  | {
+      text: string;
+      entries: [string, string][];
+      background?: { position: string; repeat: string };
+      declarations: { name: string; pending?: unknown }[];
+    }
+  | undefined {
+  const direct = directExpansion(name, value);
+  if (direct) return { ...direct, declarations: direct.entries.map(([name]) => ({ name })) };
+  return referenceExpandedDeclaration(name, value, important);
+}
+
+/** The pinned grammar's shorthand expansion; expandedDeclaration without the direct values. */
+export function referenceExpandedDeclaration(
   name: string,
   value: string,
   important = false,
@@ -515,11 +541,27 @@ export function serializeShorthand(
   priority: (name: string) => string,
   computed = false,
 ): string {
-  const declarations = [];
   const importance = priority(children[0]!);
+  const texts = new Map<string, string>();
   for (const child of children) {
     const text = read(child);
     if (!text || priority(child) !== importance) return "";
+    texts.set(child, text);
+  }
+  return (
+    directShorthand(name, (child) => texts.get(child) ?? "") ??
+    referenceShorthand(name, texts, computed)
+  );
+}
+
+/** The pinned grammar's shorthand serialization from longhand texts. */
+export function referenceShorthand(
+  name: string,
+  texts: ReadonlyMap<string, string>,
+  computed = false,
+): string {
+  const declarations = [];
+  for (const [child, text] of texts) {
     const parsed = parseDeclaration(child, text);
     if (!parsed) return "";
     declarations.push(parsed);

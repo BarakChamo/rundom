@@ -3,6 +3,7 @@
 import { createRequire } from "node:module";
 import type { DefaultTreeAdapterTypes as Raw } from "parse5";
 
+import { directEasingList } from "./css-direct-values.js";
 import type { RegisteredProperty } from "./css-reference.js";
 
 const require = createRequire(import.meta.url);
@@ -227,6 +228,11 @@ export function substitutionFrame(
     read(name) {
       // Context-free winners resolve once per process; a frame is built only on a miss.
       const text = values.get(name);
+      // A declared easing list computes to its own serialization; no frame is needed.
+      if (name === "transition-timing-function" && text !== undefined && !shorthands?.has(name)) {
+        const easing = directEasingList(text);
+        if (easing !== undefined) return easing;
+      }
       const key =
         text === undefined
           ? undefined
