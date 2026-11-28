@@ -10,10 +10,21 @@ export type DirectSimple =
       readonly operator: string | null;
       readonly value: string;
       readonly flag: string | null;
+      /** Whether the value was written as a string rather than an identifier. */
+      readonly quoted?: boolean;
     }
   | { readonly kind: "pseudo"; readonly name: string }
-  | { readonly kind: "nth"; readonly name: string; readonly a: number; readonly b: number }
-  | { readonly kind: "list"; readonly name: string; readonly list: readonly DirectComplex[] };
+  | {
+      readonly kind: "nth";
+      readonly name: string;
+      readonly a: number;
+      readonly b: number;
+    }
+  | {
+      readonly kind: "list";
+      readonly name: string;
+      readonly list: readonly DirectComplex[];
+    };
 
 /** Compounds in source order; `combinators[i]` joins `compounds[i]` and `compounds[i + 1]`. */
 export type DirectComplex = {
@@ -90,7 +101,115 @@ export function parseDirectSelector(text: string): DirectSelector | undefined {
   return parsed;
 }
 
-function parseText(text: string): DirectSelector | undefined {
+// Names outside the matching grammar that the reference selector grammar accepts and serializes
+// unchanged (lowercased); selector-canonical.test.ts compares each one with the reference engine.
+const canonicalOnlyPseudoClasses = new Set([
+  "hover",
+  "active",
+  "scope",
+  "autofill",
+  "user-valid",
+  "user-invalid",
+  "fullscreen",
+  "modal",
+  "open",
+  "popover-open",
+]);
+const canonicalPseudoElements = new Set([
+  "before",
+  "after",
+  "first-line",
+  "first-letter",
+  "placeholder",
+  "marker",
+  "backdrop",
+  "selection",
+  "file-selector-button",
+]);
+const legacyPseudoElements = new Set(["before", "after", "first-line", "first-letter"]);
+const canonicalCache = new Map<string, string | null>();
+
+/**
+ * Serializes a selector list exactly as the pinned reference grammar does, or returns undefined
+ * when the list is outside the direct grammar (extended with user-action pseudo-classes and
+ * trailing pseudo-elements). Any list this accepts is valid in the reference grammar.
+ */
+export function canonicalDirectSelector(text: string): string | undefined {
+  if (text.length > 4096) return undefined;
+  const known = canonicalCache.get(text);
+  if (known !== undefined) return known ?? undefined;
+  const parsed = outsideGrammar.test(text) ? undefined : parseText(text, true);
+  const result = parsed && serializeList(parsed.list);
+  if (canonicalCache.size >= 256) canonicalCache.clear();
+  canonicalCache.set(text, result ?? null);
+  return result;
+}
+
+function serializeList(list: readonly DirectComplex[]): string | undefined {
+  const parts: string[] = [];
+  for (const complex of list) {
+    let text = "";
+    for (let index = 0; index < complex.compounds.length; index++) {
+      const compound = serializeCompound(complex.compounds[index]!);
+      if (compound === undefined) return undefined;
+      const combinator = complex.combinators[index - 1];
+      text +=
+        combinator === undefined
+          ? compound
+          : combinator === " "
+            ? ` ${compound}`
+            : ` ${combinator} ${compound}`;
+    }
+    parts.push(text);
+  }
+  return parts.join(", ");
+}
+
+function serializeCompound(compound: readonly DirectSimple[]): string | undefined {
+  let text = "";
+  for (const part of compound) {
+    switch (part.kind) {
+      case "type":
+        if (part.name !== "*" || compound.length === 1) text += part.name;
+        break;
+      case "id":
+        text += `#${part.name}`;
+        break;
+      case "class":
+        text += `.${part.name}`;
+        break;
+      case "attr":
+        if (part.quoted && part.value.includes("\t")) return undefined;
+        text += `[${part.name}`;
+        if (part.operator)
+          text +=
+            part.operator + (part.quoted ? `"${part.value.replaceAll('"', '\\"')}"` : part.value);
+        text += part.flag ? ` ${part.flag}]` : "]";
+        break;
+      case "pseudo":
+        // Pseudo-element names keep their own leading colon.
+        text += `:${part.name}`;
+        break;
+      case "nth":
+        text += `:${part.name}(${serializeNth(part.a, part.b)})`;
+        break;
+      case "list": {
+        const inner = serializeList(part.list);
+        if (inner === undefined) return undefined;
+        text += `:${part.name}(${inner})`;
+      }
+    }
+  }
+  return text;
+}
+
+function serializeNth(a: number, b: number): string {
+  if (a === 0) return String(b);
+  const step = a === 1 ? "n" : a === -1 ? "-n" : `${a}n`;
+  return b === 0 ? step : b > 0 ? `${step}+${b}` : `${step}${b}`;
+}
+
+function parseText(text: string, canonical = false): DirectSelector | undefined {
   let at = 0;
   const pseudos = new Set<string>();
   function space(): boolean {
@@ -128,6 +247,9 @@ function parseText(text: string): DirectSelector | undefined {
       compounds.push(parts);
       const spaced = space();
       const next = text[at];
+      // A pseudo-element ends its complex selector.
+      if (parts.at(-1)!.name.startsWith(":"))
+        return next === undefined || next === "," ? { compounds, combinators } : undefined;
       if (next === ">" || next === "+" || next === "~") {
         at++;
         space();
@@ -147,6 +269,7 @@ function parseText(text: string): DirectSelector | undefined {
       if (type) parts.push({ kind: "type", name: type });
     }
     for (;;) {
+      if (canonical && parts.at(-1)?.name.startsWith(":")) return parts;
       const next = text[at];
       if (next === "#" || next === ".") {
         at++;
@@ -160,7 +283,7 @@ function parseText(text: string): DirectSelector | undefined {
         parts.push(part);
       } else if (next === ":") {
         at++;
-        const part = pseudo(depth);
+        const part = canonical && text[at] === ":" ? pseudoElement(depth) : pseudo(depth);
         if (!part) return undefined;
         parts.push(part);
       } else return parts.length ? parts : undefined;
@@ -174,12 +297,14 @@ function parseText(text: string): DirectSelector | undefined {
     const test = read(operator)?.[0] ?? null;
     let value = "";
     let flag: string | null = null;
+    let isString = false;
     if (test) {
       space();
       const literal = read(quoted)?.[0];
       const word = literal === undefined ? read(identifier)?.[0] : undefined;
       if (literal === undefined && word === undefined) return undefined;
       value = literal === undefined ? (word ?? "") : literal.slice(1, -1);
+      isString = literal !== undefined;
       space();
       const modifier = read(identifier)?.[0];
       if (modifier !== undefined) {
@@ -190,14 +315,33 @@ function parseText(text: string): DirectSelector | undefined {
     }
     if (text[at] !== "]") return undefined;
     at++;
-    return { kind: "attr", name: attributeName, operator: test, value, flag };
+    return {
+      kind: "attr",
+      name: attributeName,
+      operator: test,
+      value,
+      flag,
+      quoted: isString,
+    };
+  }
+  function pseudoElement(depth: number): DirectSimple | undefined {
+    at++;
+    const elementName = read(identifier)?.[0].toLowerCase();
+    if (depth > 0 || !elementName || !canonicalPseudoElements.has(elementName)) return undefined;
+    return { kind: "pseudo", name: `:${elementName}` };
   }
   function pseudo(depth: number): DirectSimple | undefined {
     const pseudoName = read(identifier)?.[0].toLowerCase();
     if (!pseudoName) return undefined;
     pseudos.add(pseudoName);
-    if (text[at] !== "(")
-      return directPseudoClasses.has(pseudoName) ? { kind: "pseudo", name: pseudoName } : undefined;
+    if (text[at] !== "(") {
+      if (directPseudoClasses.has(pseudoName)) return { kind: "pseudo", name: pseudoName };
+      if (!canonical) return undefined;
+      if (canonicalOnlyPseudoClasses.has(pseudoName)) return { kind: "pseudo", name: pseudoName };
+      return depth === 0 && legacyPseudoElements.has(pseudoName)
+        ? { kind: "pseudo", name: `:${pseudoName}` }
+        : undefined;
+    }
     at++;
     space();
     let part: DirectSimple | undefined;
