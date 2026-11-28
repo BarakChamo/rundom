@@ -77,4 +77,30 @@ describe("direct CSS tier", () => {
       window.close();
     }
   });
+
+  it("computes jsdom's user-agent display for form controls and marquee", () => {
+    // Given: elements jsdom's default stylesheet makes inline-block, and neighbours it does not
+    const { window } = new JSDOM(
+      '<input id="a"><button id="b"></button><select id="c"></select><marquee id="d"></marquee><input type="checkbox" id="e"><textarea id="f"></textarea><input type="hidden" id="g"><span id="h"></span>',
+    );
+    try {
+      // When: their computed display is read
+      const displays = ["a", "b", "c", "d", "e", "f", "g", "h"].map(
+        (id) => window.getComputedStyle(window.document.getElementById(id)!).display,
+      );
+      // Then: they match jsdom 31.0.1
+      expect(displays).toEqual([
+        "inline-block",
+        "inline-block",
+        "inline-block",
+        "inline-block",
+        "inline-block",
+        "inline",
+        "none",
+        "inline",
+      ]);
+    } finally {
+      window.close();
+    }
+  });
 });
