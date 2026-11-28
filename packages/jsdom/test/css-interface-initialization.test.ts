@@ -60,8 +60,8 @@ it("reads user-agent visibility without loading CSS and updates a retained decla
         button.style.color = "red";
         const second = window.getComputedStyle(button);
         assert.notEqual(first, second);
-        assert.equal(second.display, "inline");
-        assert.equal(first.display, "inline");
+        assert.equal(second.display, "inline-block");
+        assert.equal(first.display, "inline-block");
         assert.equal(first.color, "rgb(255, 0, 0)");
         assert.equal(first.borderBlockStartColor, "rgb(51, 51, 51)");
         assert.equal(first.item(0), "accent-color");
