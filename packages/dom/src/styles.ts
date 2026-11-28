@@ -8253,10 +8253,11 @@ export function createStyles(input: {
 
   let latestFrameRevision: FrameRevision | undefined;
 
-  // Style revisions advanced by nothing but one CSSOM inline write each: `elements[i]` was
-  // written at revision `base + i + 1`. Elements are weak because a collected element
-  // cannot be an ancestor of a live one.
-  let inlineSteps: { base: number; elements: WeakRef<Raw.Element>[] } | undefined;
+  // Style revisions after `base`, up to `base + count`, were each advanced by nothing but one
+  // CSSOM inline write; each written element remembers the revision of its latest such write
+  // in a slot, so the record retains no element.
+  let inlineSteps: { base: number; count: number } | undefined;
+  const inlineWriteRevisions = createSlotTable<Raw.Element, number>();
 
   /** Writes reflected inline text and records the revision step when the write was its only cause. */
   function writeInlineAttribute(node: Raw.Element, text: string): void {
@@ -8269,13 +8270,10 @@ export function createStyles(input: {
       inlineSteps = undefined;
       return;
     }
-    if (!inlineSteps || inlineSteps.base + inlineSteps.elements.length !== before)
-      inlineSteps = { base: before, elements: [] };
-    if (inlineSteps.elements.length === 32) {
-      inlineSteps.elements.shift();
-      inlineSteps.base++;
-    }
-    inlineSteps.elements.push(new WeakRef(node));
+    if (!inlineSteps || inlineSteps.base + inlineSteps.count !== before)
+      inlineSteps = { base: before, count: 0 };
+    inlineSteps.count++;
+    inlineWriteRevisions.set(node, after);
   }
 
   let styleAttributeScan: { entries: SheetRecord[]; ignored: boolean } | undefined;
@@ -8316,16 +8314,17 @@ export function createStyles(input: {
       current === undefined ||
       proven < steps.base ||
       proven >= current ||
-      current !== steps.base + steps.elements.length
+      current !== steps.base + steps.count
     )
       return false;
-    for (let index = proven - steps.base; index < steps.elements.length; index++) {
-      const written = steps.elements[index]?.deref();
-      if (!written) continue;
-      // Descendants inherit from the written element; nothing else reads its declarations.
+    // Descendants inherit from a written element; nothing else reads its declarations.
+    for (
       let at: Raw.ParentNode | null = node;
-      while (at && at !== written) at = tree.isElementNode(at) ? at.parentNode : null;
-      if (at) return false;
+      at;
+      at = tree.isElementNode(at) ? at.parentNode : null
+    ) {
+      const written = tree.isElementNode(at) ? inlineWriteRevisions.get(at) : undefined;
+      if (written !== undefined && written > proven) return false;
     }
     return selectorsIgnoreStyleAttribute();
   }

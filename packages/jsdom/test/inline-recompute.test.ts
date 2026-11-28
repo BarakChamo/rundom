@@ -119,17 +119,17 @@ describe("CSSStyleDeclaration inline write followed by getComputedStyle", () => 
     const fresh = open();
     try {
       snapshot(warm);
-      node(warm, "a").style.opacity = "0.5";
-      expect(warm.getComputedStyle(node(warm, "c")).opacity).toBe("1");
-      node(warm, "s").style.fontSize = "30px";
-      node(warm, "d").style.color = "red";
-      expect(warm.getComputedStyle(node(warm, "c")).width).toBe("60px");
-      node(warm, "c").style.left = "4px";
+      Reflect.set(node(warm, "a").style, "opacity", "0.5");
+      expect(warm.getComputedStyle(node(warm, "c")).getPropertyValue("opacity")).toBe("1");
+      Reflect.set(node(warm, "s").style, "fontSize", "30px");
+      Reflect.set(node(warm, "d").style, "color", "red");
+      expect(warm.getComputedStyle(node(warm, "c")).getPropertyValue("width")).toBe("60px");
+      Reflect.set(node(warm, "c").style, "left", "4px");
       // When: the same final declarations are set on a fresh Window
-      node(fresh, "a").style.opacity = "0.5";
-      node(fresh, "s").style.fontSize = "30px";
-      node(fresh, "d").style.color = "red";
-      node(fresh, "c").style.left = "4px";
+      Reflect.set(node(fresh, "a").style, "opacity", "0.5");
+      Reflect.set(node(fresh, "s").style, "fontSize", "30px");
+      Reflect.set(node(fresh, "d").style, "color", "red");
+      Reflect.set(node(fresh, "c").style, "left", "4px");
       // Then: both Windows compute the same values everywhere
       expect(snapshot(warm)).toEqual(snapshot(fresh));
     } finally {
@@ -147,20 +147,21 @@ describe("CSSStyleDeclaration inline write followed by getComputedStyle", () => 
           return ["style"];
         }
         attributeChangedCallback(): void {
-          node(window, "d").className = this.style.opacity === "0.5" ? "inherit em" : "";
+          node(window, "d").className =
+            this.style.getPropertyValue("opacity") === "0.5" ? "inherit em" : "";
         }
       }
       window.customElements.define("x-reactive", Reactive);
       const reactive = window.document.createElement("x-reactive");
       node(window, "m").append(reactive);
       const target = node(window, "d");
-      expect(window.getComputedStyle(target).width).toBe("auto");
+      expect(window.getComputedStyle(target).getPropertyValue("width")).toBe("auto");
       // When: the custom element's inline opacity is written
-      reactive.style.opacity = "0.5";
+      Reflect.set(reactive.style, "opacity", "0.5");
       // Then: the class set by the reaction applies to the sibling
-      expect(window.getComputedStyle(target).width).toBe("40px");
-      reactive.style.opacity = "1";
-      expect(window.getComputedStyle(target).width).toBe("auto");
+      expect(window.getComputedStyle(target).getPropertyValue("width")).toBe("40px");
+      Reflect.set(reactive.style, "opacity", "1");
+      expect(window.getComputedStyle(target).getPropertyValue("width")).toBe("auto");
     } finally {
       window.close();
     }
@@ -171,13 +172,13 @@ describe("CSSStyleDeclaration inline write followed by getComputedStyle", () => 
     const window = open();
     try {
       const aside = node(window, "a");
-      expect(window.getComputedStyle(aside).color).toBe("rgb(0, 128, 0)");
+      expect(window.getComputedStyle(aside).getPropertyValue("color")).toBe("rgb(0, 128, 0)");
       // When: the preceding paragraph's inline opacity starts and stops matching the rule
-      node(window, "p").style.opacity = "0.25";
+      Reflect.set(node(window, "p").style, "opacity", "0.25");
       // Then: the sibling's color follows
-      expect(window.getComputedStyle(aside).color).toBe("rgb(1, 2, 3)");
-      node(window, "p").style.opacity = "0.5";
-      expect(window.getComputedStyle(aside).color).toBe("rgb(0, 128, 0)");
+      expect(window.getComputedStyle(aside).getPropertyValue("color")).toBe("rgb(1, 2, 3)");
+      Reflect.set(node(window, "p").style, "opacity", "0.5");
+      expect(window.getComputedStyle(aside).getPropertyValue("color")).toBe("rgb(0, 128, 0)");
     } finally {
       window.close();
     }

@@ -44,9 +44,7 @@ describe("CSSStyleDeclaration.cssText on an inline declaration", () => {
     // Then: every read matches a declaration that was never read
     expectSameText([
       (e) => e.style.setProperty("opacity", "0.5"),
-      (e) => {
-        e.style.opacity = "0.25";
-      },
+      (e) => Reflect.set(e.style, "opacity", "0.25"),
       (e) => e.style.setProperty("opacity", "0.25", "important"),
       (e) => e.style.setProperty("color", "blue"),
       (e) => e.style.setProperty("opacity", "1"),
@@ -56,31 +54,21 @@ describe("CSSStyleDeclaration.cssText on an inline declaration", () => {
   it("should follow removeProperty, the cssText setter and invalid writes", () => {
     expectSameText([
       (e) => e.style.removeProperty("color"),
-      (e) => {
-        e.style.cssText = "left: 2px; margin: 1px 2px";
-      },
+      (e) => Reflect.set(e.style, "cssText", "left: 2px; margin: 1px 2px"),
       (e) => e.style.setProperty("left", "not a length"),
       (e) => e.style.removeProperty("margin-left"),
-      (e) => {
-        e.style.cssText = "";
-      },
+      (e) => Reflect.set(e.style, "cssText", ""),
     ]);
   });
 
   it("should follow attribute writes, removal and shorthand interplay", () => {
     expectSameText([
       (e) => e.setAttribute("style", "border: 1px solid red; padding: 2px"),
-      (e) => {
-        e.style.borderTopColor = "blue";
-      },
+      (e) => Reflect.set(e.style, "borderTopColor", "blue"),
       (e) => e.style.setProperty("padding-left", "3px"),
-      (e) => {
-        e.style.margin = "var(--m)";
-      },
+      (e) => Reflect.set(e.style, "margin", "var(--m)"),
       (e) => e.removeAttribute("style"),
-      (e) => {
-        e.style.background = "url(a.png) no-repeat";
-      },
+      (e) => Reflect.set(e.style, "background", "url(a.png) no-repeat"),
     ]);
   });
 
