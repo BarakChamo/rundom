@@ -38,6 +38,7 @@ import {
   packedLeafText,
 } from "./private-template-copy.js";
 import { createWrapperHandles } from "./wrapper-handles.js";
+import { createSlotTable } from "./slot-table.js";
 import { createStaticNodeListFactory } from "./static-node-list.js";
 import { randomFillSync, randomUUID } from "node:crypto";
 import {
@@ -1124,7 +1125,7 @@ const wrappers = createWrapperHandles();
 const documentRealms = new WeakMap<Raw.Document, symbol>();
 type CollectionMembers<T> = { length: () => number; at: (index: number) => T | undefined };
 // The store is shared across Window factories so borrowed Web IDL methods preserve receiver identity.
-const collectionRecords = new WeakMap<
+const collectionRecords = createSlotTable<
   object,
   {
     kind: "nodes" | "elements";
@@ -5348,8 +5349,8 @@ function buildWindow(
   });
 
   type Members<T> = CollectionMembers<T>;
-  const childLists = new WeakMap<Node, NodeList<Node>>();
-  const elementLists = new WeakMap<Node, HTMLCollection>();
+  const childLists = createSlotTable<Node, NodeList<Node>>();
+  const elementLists = createSlotTable<Node, HTMLCollection>();
 
   function collectionNames(candidate: Node): string[] {
     const record = raw(candidate);
@@ -5379,7 +5380,7 @@ function buildWindow(
     receiver: object,
     kind: "nodes" | "elements",
   ): Members<T> {
-    const record = collectionRecords.get(receiver);
+    const record = collectionRecords.read(receiver);
     if (!record || record.kind !== kind) throw new TypeError("Illegal invocation");
     // Only collectionView writes these slots, with typed Node members from its owning Window.
     return record.members as Members<T>;
@@ -6453,8 +6454,8 @@ function buildWindow(
   }
 
   let partLists: WeakMap<Element, DOMTokenList> | undefined;
-  const classLists = new WeakMap<Element, DOMTokenList>();
-  const tokenLists = new WeakMap<
+  const classLists = createSlotTable<Element, DOMTokenList>();
+  const tokenLists = createSlotTable<
     object,
     {
       owner: Element;
@@ -6466,7 +6467,7 @@ function buildWindow(
   >();
 
   function tokenList(list: object) {
-    const state = tokenLists.get(list);
+    const state = tokenLists.read(list);
     if (!state) throw new TypeError("Expected a DOMTokenList");
     const source = attribute(element(state.owner), state.attributeName);
     if (source !== state.source) {
@@ -7878,7 +7879,7 @@ function buildWindow(
 
   let customRegistry: CustomElementRegistry | undefined;
 
-  let datasets: WeakMap<Element, DOMStringMap> | undefined;
+  const datasets = createSlotTable<Element, DOMStringMap>();
 
   class DOMStringMap {
     [name: string]: string | undefined;
@@ -7946,7 +7947,7 @@ function buildWindow(
   }
 
   function datasetFor(owner: Element): DOMStringMap {
-    const map = (datasets ??= new WeakMap());
+    const map = datasets;
     let dataset = map.get(owner);
     if (!dataset) {
       const foreign = foreignIdentity(owner);
