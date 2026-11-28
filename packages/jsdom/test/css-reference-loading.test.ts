@@ -64,11 +64,11 @@ describe("Window CSS reference loading", () => {
       for (const key of Object.getOwnPropertyNames(window)) {
         try { void window[key]; } catch {}
       }
-      // Then: only the interface artifact of the CSS reference was loaded
+      // Then: no CSS artifact was loaded, not even the reference interface wrappers
       const artifacts = Object.keys(require.cache)
-        .filter((path) => path.startsWith(${JSON.stringify(domDist + "/css-reference")}))
+        .filter((path) => path.startsWith(${JSON.stringify(domDist + "/css-")}))
         .map((path) => path.slice(${JSON.stringify(domDist.length + 1)}));
-      assert.deepEqual(artifacts, ["css-reference-interfaces.cjs"]);
+      assert.deepEqual(artifacts, []);
       window.close();
       process.stdout.write("verified");
     `);

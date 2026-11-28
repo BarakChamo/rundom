@@ -6641,6 +6641,7 @@ export function createStyles(input: {
   queueInlineLoad: (owner: Raw.Element) => void;
   importCompleted: (owner: Raw.Element, type: "load" | "error") => void;
   writeInlineStyle: (node: Raw.Element, text: string) => void;
+  exposeInterface: <T extends Function>(name: string, real: T) => T;
 }) {
   function supportsSelector(selector: string): boolean {
     if (selector.includes(":") && !selector.includes("::details-content"))
@@ -6672,6 +6673,7 @@ export function createStyles(input: {
       input.baseURL,
       linkedSheetChanged,
       () => views().CSSStyleDeclaration.prototype,
+      input.exposeInterface,
     ));
   }
   const ruleInterfaces = createRuleInterfaces(
@@ -6712,6 +6714,7 @@ export function createStyles(input: {
       objectPrototype: input.objectPrototype,
       functionPrototype: input.functionPrototype,
       arrayValues: input.arrayValues,
+      exposeInterface: input.exposeInterface,
     }));
   }
   let declarationClass: ReturnType<typeof createDeclarationInterface> | undefined;

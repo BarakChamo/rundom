@@ -56,17 +56,12 @@ describe("RunDOM start-up loading", () => {
     const loads = startupLoads();
     // Then: each phase loads only the artifacts it needs
     const base = ["jsdom.cjs", "jsdom-implementation.cjs", "window.cjs"];
-    const css = [
-      ...base,
-      "css-runtime.cjs",
-      "css-position-descriptor-names.cjs",
-      "css-reference-interfaces.cjs",
-      "css-property-names.cjs",
-    ];
+    const runtime = [...base, "css-runtime.cjs"];
     expect(loads.require!.artifacts).toEqual(base);
-    expect(loads.create!.artifacts).toEqual([...base, "css-runtime.cjs"]);
-    expect(loads.globals!.artifacts).toEqual(css);
-    expect(loads.style!.artifacts).toEqual(css);
+    expect(loads.create!.artifacts).toEqual(runtime);
+    // Reading globals publishes CSS interface objects lazily, so no CSS table or wrapper loads.
+    expect(loads.globals!.artifacts).toEqual(runtime);
+    expect(loads.style!.artifacts).toEqual([...runtime, "css-property-names.cjs"]);
   });
 
   it("parses an Emotion-shaped stylesheet and reads computed styles without the reference engine", () => {
