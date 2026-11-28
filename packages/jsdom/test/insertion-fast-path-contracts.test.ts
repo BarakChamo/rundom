@@ -272,3 +272,76 @@ describe("Node insertion and removal fast path", () => {
     dom.window.close();
   });
 });
+
+describe("Node insertion of leaves and text without scan-worthy content", () => {
+  it("prepares a connected empty script once a text node is appended to it", () => {
+    // Given: a scripted page with an empty connected script element.
+    const { dom, window, document, host } = page(undefined, true);
+    const script = host.appendChild(document.createElement("script"));
+    // When: a text node, a leaf with no insertion kind, is appended to the script.
+    script.appendChild(document.createTextNode("globalThis.ran=1"));
+    // Then: the script parent is still prepared and runs.
+    expect(window.eval("globalThis.ran")).toBe(1);
+    dom.window.close();
+  });
+
+  it("captures the document base for a leaf whose style attribute uses url()", () => {
+    // Given: a document base and a childless element with a URL-valued inline style.
+    const { dom, window, document, host } = page(
+      "<!doctype html><head><base href='http://a.test/x/'></head><body><main id=host></main>",
+    );
+    const leaf = document.createElement("div");
+    leaf.setAttribute("style", "background-image:url(a.png)");
+    // When: the leaf is inserted and the base changes afterwards.
+    host.appendChild(leaf);
+    const base = document.querySelector("base");
+    if (!base) throw new Error("Expected a base element");
+    base.href = "http://b.test/y/";
+    // Then: the inline URL keeps the base from insertion time, as jsdom does.
+    expect(window.getComputedStyle(leaf).backgroundImage).toBe('url("http://a.test/x/a.png")');
+    dom.window.close();
+  });
+
+  it("serves consumers that appear after many plain leaf mutations", () => {
+    // Given: a live class collection read before 1,000 unobserved leaf appends and removals.
+    const { dom, window, document, host } = page(undefined, true);
+    const live = document.getElementsByClassName("k");
+    expect(live.length).toBe(0);
+    window.eval(
+      "globalThis.log=[];globalThis.pending=document.createElement('x-fast');host.appendChild(pending);host.removeChild(pending)",
+    );
+    for (let index = 0; index < 1000; index++) {
+      const leaf = host.appendChild(document.createElement("span"));
+      host.removeChild(leaf);
+      host.removeChild(host.appendChild(document.createTextNode("t")));
+    }
+    const tagged = document.createElement("i");
+    tagged.className = "k";
+    const plain = host.appendChild(document.createElement("p"));
+    // When: a classed leaf is inserted, an ID is added to a leaf inserted unobserved, a custom
+    // element definition and an observer appear, and a range is created.
+    host.appendChild(tagged);
+    const liveAfterAppend = [live.length, live[0]];
+    host.removeChild(tagged);
+    expect(document.getElementById("late")).toBeNull();
+    plain.id = "late";
+    window.eval(
+      "customElements.define('x-fast',class extends HTMLElement{connectedCallback(){log.push('c')}});host.appendChild(pending)",
+    );
+    const observer = new window.MutationObserver(() => {});
+    observer.observe(host, { childList: true });
+    const late = host.appendChild(document.createElement("b"));
+    const range = document.createRange();
+    range.selectNodeContents(host);
+    host.removeChild(late);
+    // Then: each consumer sees the current tree and later mutations.
+    expect(liveAfterAppend).toEqual([1, tagged]);
+    expect(live.length).toBe(0);
+    expect(document.getElementById("late")).toBe(plain);
+    expect(window.eval("log.join()")).toBe("c");
+    expect(observer.takeRecords().map((record) => record.addedNodes.length)).toEqual([1, 0]);
+    expect([range.endContainer, range.endOffset]).toEqual([host, 2]);
+    observer.disconnect();
+    dom.window.close();
+  });
+});

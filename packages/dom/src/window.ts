@@ -21174,12 +21174,26 @@ function buildWindow(
     }
   }
 
+  // A root is inert when the scan below would visit nothing or only the root and find nothing:
+  // not an element, or a leaf (no element child, no shadow root) of no insertion kind without a
+  // style attribute. Leaves are never recorded, so skipping the scan changes no summary either.
+  function insertedRootIsInert(root: Raw.ChildNode): boolean {
+    return (
+      !tree.isElementNode(root) ||
+      (leafKinds(root) === 0 && (!root.attrs.length || attribute(root, "style") === null))
+    );
+  }
+
   function finishInsertedContent(roots: readonly Raw.ChildNode[], parent: Raw.ParentNode): void {
+    const scriptsEnabled = options.runScripts === "dangerously";
+    if (roots.every(insertedRootIsInert)) {
+      if (scriptsEnabled && tree.isElementNode(parent)) activateInsertedScript(parent);
+      return;
+    }
     // Capture the eligible descendants before scripts can mutate or remove later entries.
     const active: Raw.Element[] = [];
     const checked: Raw.Element[] = [];
     let hasStyles = false;
-    const scriptsEnabled = options.runScripts === "dangerously";
     const pending: Raw.Element[] = [];
     // Only recorded subtrees can be skipped, so a detached parent is resolved on first need.
     let kinds = 0;
