@@ -5709,6 +5709,9 @@ function defaultDisplay(tag: string): string {
   if (nonRenderedElements.has(tag)) return "none";
   if (blockElements.has(tag)) return "block";
   if (tag === "li" || tag === "summary") return "list-item";
+  // jsdom's default stylesheet: "input, button", "marquee" and "select" are inline-block.
+  if (tag === "input" || tag === "button" || tag === "select" || tag === "marquee")
+    return "inline-block";
   return tableDisplay.get(tag) ?? "inline";
 }
 
