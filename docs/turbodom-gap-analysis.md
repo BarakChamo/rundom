@@ -63,7 +63,7 @@ Across all three batches no Web Platform Test assertion that RunDOM passed was l
 
 | Scenario family                                | Ratio after batch 3         | Cause                                                                          |
 | ---------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------ |
-| Global read, warm                              | about 10× span, 3× peak RSS | Per-Window interface objects; the `Request` getter loads Node's undici         |
+| Global read, warm                              | about 10× span, 3× peak RSS | Per-Window interface objects                                                   |
 | Window create and close                        | 4.3× span, 1.9× peak        | Per-Window classes: about 14M instructions against a measured V8 floor of 5.3M |
 | `parse-html` family (new Window per operation) | 2.9–3.7× span               | Same as Window creation                                                        |
 | First style use in the lab                     | 5–8×                        | TurboDOM has almost no CSS engine                                              |
@@ -84,7 +84,7 @@ Each of these was built or modelled and measured; reasons are in `docs/project-g
 
 ## Next candidates
 
-- Lazy `Request` and related fetch globals, so Vitest's global read stops loading undici (tracked as a GitHub issue).
+- Per-file start cost: profile a fresh Vitest worker. Undici is loaded by Vitest itself before RunDOM (measured on issue #5), so the remaining cost is most likely module loading, about 560M instructions per worker; not yet measured.
 - Inline write pipeline: one validation per write, incremental `style` attribute reflection.
 - Material UI single-process peak RSS read about 30 MiB higher after batch 3 in three CI runs; the cause is not yet identified.
 - `css/css-cascade/all-prop-revert-layer-noop.html` takes 9–10 s, at the testharness limit, on every build.
